@@ -62,7 +62,7 @@ export function itemCard(
   const bg = scene.add.rectangle(0, 0, w, h, 0x1e2140).setStrokeStyle(6, border);
   const glow = scene.add.rectangle(0, -h / 2 + 18, w - 12, 30, rarity.color, 0.25);
   const rarityText = text(scene, 0, -h / 2 + 18, rarity.label, 18, rarity.css);
-  const icon = scene.add.image(0, -10, `icon_${def.kind}`).setTint(def.color).setScale(1.1);
+  const icon = scene.add.image(0, -8, def.sprite).setTint(variant === "golden" ? 0xffd700 : def.color).setScale(1.25);
   const name = text(scene, 0, h / 2 - 42, VARIANT_INFO[variant].label + def.name, 17)
     .setWordWrapWidth(w - 10);
   const parts: Phaser.GameObjects.GameObject[] = [bg, glow, rarityText, icon, name];
@@ -75,7 +75,7 @@ export function itemCard(
   const c = scene.add.container(x, y, parts);
   c.setSize(w, h);
   if (variant === "rainbow" || def.rarity === "secret") {
-    c.setData("rainbow", { bg, rarityText });
+    c.setData("rainbow", { bg, rarityText, icon: variant === "rainbow" ? icon : null });
   }
   return c;
 }
@@ -88,6 +88,7 @@ export function updateRainbow(containers: Phaser.GameObjects.Container[], time: 
     const col = rainbowColor(time, c.x / 700);
     r.bg.setStrokeStyle(6, col);
     r.rarityText.setColor("#" + col.toString(16).padStart(6, "0"));
+    r.icon?.setTint(col);
   }
 }
 

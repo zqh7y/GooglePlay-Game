@@ -9,7 +9,6 @@ export interface DiceDef {
   name: string;
   cost: number;
   color: number;
-  pips: number;
   pool: DiceEntry[];
 }
 
@@ -23,17 +22,16 @@ export const DICE: DiceDef[] = [
     name: "Wooden Die",
     cost: 50,
     color: 0xc08552,
-    pips: 0x3b2414,
     pool: [
       { itemId: "pebble", weight: 3500 },
-      { itemId: "twig", weight: 3500 },
+      { itemId: "leaf", weight: 3500 },
       { itemId: "ember", weight: 1200 },
-      { itemId: "stoneNova", weight: 1200 },
+      { itemId: "bubble", weight: 1200 },
       { itemId: "spark", weight: 300 },
-      { itemId: "iceDarts", weight: 250 },
-      { itemId: "flameRing", weight: 40 },
-      { itemId: "thunderCrown", weight: 9 },
-      { itemId: "voidNova", weight: 1 },
+      { itemId: "frost", weight: 250 },
+      { itemId: "lava", weight: 40 },
+      { itemId: "thunderCat", weight: 9 },
+      { itemId: "voidSlime", weight: 1 },
     ],
   },
   {
@@ -41,16 +39,15 @@ export const DICE: DiceDef[] = [
     name: "Crystal Die",
     cost: 400,
     color: 0x7dd3fc,
-    pips: 0x1e3a8a,
     pool: [
       { itemId: "ember", weight: 3000 },
-      { itemId: "stoneNova", weight: 3000 },
+      { itemId: "bubble", weight: 3000 },
       { itemId: "spark", weight: 1800 },
-      { itemId: "iceDarts", weight: 1500 },
-      { itemId: "flameRing", weight: 500 },
-      { itemId: "thunderCrown", weight: 150 },
-      { itemId: "voidNova", weight: 45 },
-      { itemId: "catCannon", weight: 5 },
+      { itemId: "frost", weight: 1500 },
+      { itemId: "lava", weight: 500 },
+      { itemId: "thunderCat", weight: 150 },
+      { itemId: "voidSlime", weight: 45 },
+      { itemId: "goldenCat", weight: 5 },
     ],
   },
 ];

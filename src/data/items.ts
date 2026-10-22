@@ -1,79 +1,74 @@
 import type { Rarity } from "./rarity";
 
-/** How a weapon behaves during a run. */
-export type WeaponKind = "bolt" | "orbit" | "aura" | "nova" | "lightning";
+/**
+ * How a pet attacks:
+ * - shot:   fires at the closest enemy
+ * - pierce: a beam that hits every enemy in its lane
+ * - splash: lobs a blob that damages an area
+ * - zap:    lightning on random enemies
+ * - buff:   no attack, boosts all damage by `damage`%
+ */
+export type PetKind = "shot" | "pierce" | "splash" | "zap" | "buff";
 
 export interface ItemDef {
   id: string;
   name: string;
   rarity: Rarity;
-  kind: WeaponKind;
+  kind: PetKind;
+  sprite: "pet_slime" | "pet_cat";
   color: number;
   damage: number;
-  /** milliseconds between attacks (aura: between damage ticks) */
+  /** milliseconds between attacks */
   cooldown: number;
-  /** projectiles / blades / strikes per attack */
+  /** targets per attack */
   count: number;
-  /** projectile speed, orbit radius or aura radius depending on kind */
-  range: number;
-  pierce?: number;
   description: string;
 }
 
 /**
- * All weapons that can come out of dice.
- * To add a new weapon: add an entry here, then add it to a die in dice.ts.
+ * Every pet that can be rolled.
+ * To add a new pet: add an entry here, then add it to a die in dice.ts.
  */
 export const ITEMS: Record<string, ItemDef> = {
   pebble: {
-    id: "pebble", name: "Pebble Shooter", rarity: "common", kind: "bolt", color: 0xd6d3d1,
-    damage: 20, cooldown: 600, count: 1, range: 560, pierce: 1,
-    description: "Shoots a pebble at the nearest enemy.",
+    id: "pebble", name: "Pebble Slime", rarity: "common", kind: "shot", sprite: "pet_slime", color: 0xa8a29e,
+    damage: 6, cooldown: 1200, count: 1, description: "Spits little rocks.",
   },
-  twig: {
-    id: "twig", name: "Twig Spinner", rarity: "common", kind: "orbit", color: 0xa16207,
-    damage: 8, cooldown: 0, count: 2, range: 90,
-    description: "Sticks spin around you.",
+  leaf: {
+    id: "leaf", name: "Leaf Slime", rarity: "common", kind: "shot", sprite: "pet_slime", color: 0x84cc16,
+    damage: 4, cooldown: 700, count: 1, description: "Fast leaf shots.",
   },
   ember: {
-    id: "ember", name: "Ember Aura", rarity: "uncommon", kind: "aura", color: 0xfb923c,
-    damage: 6, cooldown: 500, count: 1, range: 110,
-    description: "Burns enemies close to you.",
+    id: "ember", name: "Ember Slime", rarity: "uncommon", kind: "splash", sprite: "pet_slime", color: 0xfb923c,
+    damage: 10, cooldown: 1800, count: 1, description: "Lobs fireballs that hit an area.",
   },
-  stoneNova: {
-    id: "stoneNova", name: "Stone Nova", rarity: "uncommon", kind: "nova", color: 0x94a3b8,
-    damage: 14, cooldown: 2200, count: 8, range: 380, pierce: 2,
-    description: "Bursts rocks in every direction.",
+  bubble: {
+    id: "bubble", name: "Bubble Cat", rarity: "uncommon", kind: "buff", sprite: "pet_cat", color: 0x7dd3fc,
+    damage: 20, cooldown: 0, count: 0, description: "Cheers the team on.",
   },
   spark: {
-    id: "spark", name: "Spark Rod", rarity: "rare", kind: "lightning", color: 0x93c5fd,
-    damage: 30, cooldown: 1500, count: 2, range: 450,
-    description: "Zaps random nearby enemies.",
+    id: "spark", name: "Spark Slime", rarity: "rare", kind: "zap", sprite: "pet_slime", color: 0xfacc15,
+    damage: 25, cooldown: 1600, count: 2, description: "Zaps random enemies.",
   },
-  iceDarts: {
-    id: "iceDarts", name: "Ice Darts", rarity: "rare", kind: "bolt", color: 0x67e8f9,
-    damage: 14, cooldown: 450, count: 2, range: 700, pierce: 2,
-    description: "Fast piercing darts.",
+  frost: {
+    id: "frost", name: "Frost Slime", rarity: "rare", kind: "pierce", sprite: "pet_slime", color: 0x67e8f9,
+    damage: 18, cooldown: 1500, count: 1, description: "Ice beam through a whole lane.",
   },
-  flameRing: {
-    id: "flameRing", name: "Flame Ring", rarity: "epic", kind: "orbit", color: 0xef4444,
-    damage: 22, cooldown: 0, count: 4, range: 120,
-    description: "A ring of fire orbits you.",
+  lava: {
+    id: "lava", name: "Lava Slime", rarity: "epic", kind: "splash", sprite: "pet_slime", color: 0xef4444,
+    damage: 45, cooldown: 1500, count: 2, description: "Rains lava on the horde.",
   },
-  thunderCrown: {
-    id: "thunderCrown", name: "Thunder Crown", rarity: "legendary", kind: "lightning", color: 0xfde047,
-    damage: 60, cooldown: 1100, count: 5, range: 600,
-    description: "Calls down a storm of lightning.",
+  thunderCat: {
+    id: "thunderCat", name: "Thunder Cat", rarity: "legendary", kind: "zap", sprite: "pet_cat", color: 0xfde047,
+    damage: 90, cooldown: 1200, count: 4, description: "Calls down a lightning storm.",
   },
-  voidNova: {
-    id: "voidNova", name: "Void Nova", rarity: "mythical", kind: "nova", color: 0xa855f7,
-    damage: 55, cooldown: 1300, count: 20, range: 600, pierce: 6,
-    description: "Tears space apart around you.",
+  voidSlime: {
+    id: "voidSlime", name: "Void Slime", rarity: "mythical", kind: "pierce", sprite: "pet_slime", color: 0xa855f7,
+    damage: 220, cooldown: 1000, count: 2, description: "Tears holes in reality.",
   },
-  catCannon: {
-    id: "catCannon", name: "Golden Cat Cannon", rarity: "secret", kind: "bolt", color: 0xffd700,
-    damage: 250, cooldown: 350, count: 3, range: 900, pierce: 99,
-    description: "Meow. Deletes everything.",
+  goldenCat: {
+    id: "goldenCat", name: "Golden Cat", rarity: "secret", kind: "shot", sprite: "pet_cat", color: 0xffd700,
+    damage: 800, cooldown: 400, count: 2, description: "Meow. Deletes everything.",
   },
 };
 
