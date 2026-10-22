@@ -1,9 +1,7 @@
 import Phaser from "phaser";
 import { BootScene } from "./scenes/Boot";
-import { HubScene } from "./scenes/Hub";
-import { DiceScene } from "./scenes/Dice";
-import { InventoryScene } from "./scenes/Inventory";
-import { GameScene } from "./scenes/Game";
+import { BattleScene } from "./scenes/Battle";
+import { UIScene } from "./scenes/UI";
 
 export const WIDTH = 720;
 export const HEIGHT = 1280;
@@ -15,7 +13,6 @@ new Phaser.Game({
   width: WIDTH,
   height: HEIGHT,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  physics: { default: "arcade", arcade: { debug: false } },
   input: { activePointers: 2 },
-  scene: [BootScene, HubScene, DiceScene, InventoryScene, GameScene],
+  scene: [BootScene, BattleScene, UIScene],
 });
