@@ -15,7 +15,7 @@ export interface ItemDef {
   name: string;
   rarity: Rarity;
   kind: PetKind;
-  sprite: "pet_slime" | "pet_cat";
+  /** colour of its attacks */
   color: number;
   damage: number;
   /** milliseconds between attacks */
@@ -31,43 +31,43 @@ export interface ItemDef {
  */
 export const ITEMS: Record<string, ItemDef> = {
   pebble: {
-    id: "pebble", name: "Pebble Slime", rarity: "common", kind: "shot", sprite: "pet_slime", color: 0xa8a29e,
+    id: "pebble", name: "Pebble Slime", rarity: "common", kind: "shot", color: 0xa8a29e,
     damage: 6, cooldown: 1200, count: 1, description: "Spits little rocks.",
   },
   leaf: {
-    id: "leaf", name: "Leaf Slime", rarity: "common", kind: "shot", sprite: "pet_slime", color: 0x84cc16,
+    id: "leaf", name: "Leaf Slime", rarity: "common", kind: "shot", color: 0x84cc16,
     damage: 4, cooldown: 700, count: 1, description: "Fast leaf shots.",
   },
   ember: {
-    id: "ember", name: "Ember Slime", rarity: "uncommon", kind: "splash", sprite: "pet_slime", color: 0xfb923c,
+    id: "ember", name: "Ember Slime", rarity: "uncommon", kind: "splash", color: 0xfb923c,
     damage: 10, cooldown: 1800, count: 1, description: "Lobs fireballs that hit an area.",
   },
   bubble: {
-    id: "bubble", name: "Bubble Cat", rarity: "uncommon", kind: "buff", sprite: "pet_cat", color: 0x7dd3fc,
+    id: "bubble", name: "Bubble Cat", rarity: "uncommon", kind: "buff", color: 0x7dd3fc,
     damage: 20, cooldown: 0, count: 0, description: "Cheers the team on.",
   },
   spark: {
-    id: "spark", name: "Spark Slime", rarity: "rare", kind: "zap", sprite: "pet_slime", color: 0xfacc15,
+    id: "spark", name: "Spark Slime", rarity: "rare", kind: "zap", color: 0xfacc15,
     damage: 25, cooldown: 1600, count: 2, description: "Zaps random enemies.",
   },
   frost: {
-    id: "frost", name: "Frost Slime", rarity: "rare", kind: "pierce", sprite: "pet_slime", color: 0x67e8f9,
+    id: "frost", name: "Frost Slime", rarity: "rare", kind: "pierce", color: 0x67e8f9,
     damage: 18, cooldown: 1500, count: 1, description: "Ice beam through a whole lane.",
   },
   lava: {
-    id: "lava", name: "Lava Slime", rarity: "epic", kind: "splash", sprite: "pet_slime", color: 0xef4444,
+    id: "lava", name: "Lava Slime", rarity: "epic", kind: "splash", color: 0xef4444,
     damage: 45, cooldown: 1500, count: 2, description: "Rains lava on the horde.",
   },
   thunderCat: {
-    id: "thunderCat", name: "Thunder Cat", rarity: "legendary", kind: "zap", sprite: "pet_cat", color: 0xfde047,
+    id: "thunderCat", name: "Thunder Cat", rarity: "legendary", kind: "zap", color: 0xfde047,
     damage: 90, cooldown: 1200, count: 4, description: "Calls down a lightning storm.",
   },
   voidSlime: {
-    id: "voidSlime", name: "Void Slime", rarity: "mythical", kind: "pierce", sprite: "pet_slime", color: 0xa855f7,
+    id: "voidSlime", name: "Void Slime", rarity: "mythical", kind: "pierce", color: 0xa855f7,
     damage: 220, cooldown: 1000, count: 2, description: "Tears holes in reality.",
   },
   goldenCat: {
-    id: "goldenCat", name: "Golden Cat", rarity: "secret", kind: "shot", sprite: "pet_cat", color: 0xffd700,
+    id: "goldenCat", name: "Golden Cat", rarity: "secret", kind: "shot", color: 0xffd700,
     damage: 800, cooldown: 400, count: 2, description: "Meow. Deletes everything.",
   },
 };
