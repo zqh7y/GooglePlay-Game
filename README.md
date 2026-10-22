@@ -26,4 +26,12 @@ npm run build    # production build into dist/
 | `src/systems/save.ts` | Save game, inventory, equipping, fusing |
 | `src/scenes/Battle.ts` | Top half: the auto battle, waves, stages, bosses |
 | `src/scenes/UI.ts` | Bottom half: Roll / Pets / Upgrade tabs, offline earnings |
-| `src/scenes/Boot.ts` | Placeholder art drawn in code — replace with real sprites |
+| `src/scenes/Boot.ts` | Builds all textures at startup |
+| `src/art/characters.ts` | Pets (each one's look, plus Golden/Rainbow versions), the cat hero, enemies, effects |
+| `src/art/ui.ts` | Buttons, panels, ribbons, rarity card frames, dice, icons |
+| `src/art/background.ts` | The battle landscape and clouds |
+| `src/ui/widgets.ts` | Reusable UI pieces: text style, buttons, pet cards, bars, popups |
+| `src/fonts.ts` | Game fonts (Lilita One + Fredoka), bundled so they work offline |
+
+All art is drawn with code on a canvas, so there are no image files yet.
+To use real artwork later, load images under the same texture keys.

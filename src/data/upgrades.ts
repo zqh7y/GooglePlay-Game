@@ -5,34 +5,36 @@ export type UpgradeId = "power" | "fireRate" | "health" | "luck";
 export interface UpgradeDef {
   id: UpgradeId;
   name: string;
-  color: number;
+  /** what the value means, e.g. "all damage" */
+  desc: string;
+  icon: string;
   maxLevel: number;
   cost: (lvl: number) => number;
-  /** human readable value at a level, e.g. "+50%" */
+  /** short value at a level, e.g. "x1.50" */
   value: (lvl: number) => string;
 }
 
-/** Coin upgrades for the cat gunner (Upgrades tab). */
+/** Coin upgrades for the cat gunner (Upgrade tab). */
 export const UPGRADES: UpgradeDef[] = [
   {
-    id: "power", name: "Power", color: 0xef4444, maxLevel: 200,
+    id: "power", name: "Power", desc: "all damage", icon: "icon_sword", maxLevel: 200,
     cost: (l) => Math.floor(25 * 1.17 ** l),
-    value: (l) => `x${powerMult(l).toFixed(2)} all damage`,
+    value: (l) => `x${powerMult(l).toFixed(2)}`,
   },
   {
-    id: "fireRate", name: "Fire Rate", color: 0x38bdf8, maxLevel: 30,
+    id: "fireRate", name: "Fire Rate", desc: "shots / sec", icon: "icon_bolt", maxLevel: 30,
     cost: (l) => Math.floor(40 * 1.28 ** l),
-    value: (l) => `${(1000 / heroInterval(l)).toFixed(1)} shots/s`,
+    value: (l) => (1000 / heroInterval(l)).toFixed(1),
   },
   {
-    id: "health", name: "Health", color: 0x4ade80, maxLevel: 200,
+    id: "health", name: "Health", desc: "HP", icon: "icon_heart", maxLevel: 200,
     cost: (l) => Math.floor(30 * 1.19 ** l),
-    value: (l) => `${heroMaxHp(l)} HP`,
+    value: (l) => String(heroMaxHp(l)),
   },
   {
-    id: "luck", name: "Luck", color: 0xfbbf24, maxLevel: 50,
+    id: "luck", name: "Luck", desc: "roll luck", icon: "icon_clover", maxLevel: 50,
     cost: (l) => Math.floor(200 * 1.35 ** l),
-    value: (l) => `x${luckMult(l).toFixed(1)} luck`,
+    value: (l) => `x${luckMult(l).toFixed(1)}`,
   },
 ];
 
