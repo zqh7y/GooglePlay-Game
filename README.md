@@ -20,8 +20,8 @@ frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, 
 `/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
-plays the game run by run with the real numbers and prints how many hours (and failed runs) a steady
-player needs per stage.
+plays the game run by run (and tries the Boss Rush after each run) with the real numbers and prints how many
+hours (and failed runs) a steady player needs per stage.
 
 ## How the game works
 
@@ -137,13 +137,16 @@ player needs per stage.
   | Misty Forest | Spore Mother (41-45), Shadow Wolf (46-50), Moss Troll (51-55), Old Treant (56-60) |
   | Sunset Dunes | Mummy Pharaoh (61-65), Sand Worm (66-70), Cactus Colossus (71-75), Sand Scorpion (76-80) |
   | Frost Peak | Penguin Emperor (81-85), Ice Golem (86-90), Frost Yeti (91-95), Frost Dragon (96-100) |
-- **Boss Rush** (the purple button next to BATTLE):
-  - You fight 100 bosses in a row, the same 20 in order. You have **15 seconds** to beat each one.
+- **Boss Rush** (the purple button next to BATTLE): the fast way through the stages.
+  - Boss n guards stage n. The rush starts at the boss of your stage, and you have **15 seconds** to beat it.
   - There is no crystal, no monsters, no skills and no airdrops: just you, your gadget and your pets.
-  - Beat a boss in time and the next one drops right in (you heal a little).
-  - Run out of time (the boss flies away) or fall, and the run ends. You keep your place: if you beat 60
-    bosses in time but not boss 61, you start at boss 61 next time.
-  - Every boss pays money; every 5th also gives gems and dice. The button shows the next boss.
+  - Beat a boss in time and **that stage is cleared**: your stage goes up and the next boss drops right in
+    (you heal a little).
+  - Run out of time (the boss flies away) or fall, and the rush ends on that stage. If you beat 60 bosses
+    in time but not boss 61, you are on stage 61, in normal runs and in the next rush.
+  - Every boss pays money; every 5th also gives gems and dice. The button shows the boss of your stage.
+  - Rush bosses are tuned with the simulator so the rush and normal runs each clear about half the stages:
+    a team that got strong catches up fast, without landing on stages it cannot survive.
 - **Pets** (a team of up to 3: one at the start, two Pet Slot upgrades) run around the field after monsters
   near you: shooters throw orbs, bombers lob bombs, pouncers leap and bite, star throwers throw spinning
   stars; support pets stay by your side. Monsters that bump into a pet hurt it; at zero health it is knocked

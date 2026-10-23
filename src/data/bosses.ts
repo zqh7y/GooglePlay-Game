@@ -42,8 +42,21 @@ export const bossForStage = (stage: number) => BOSSES[Math.min(BOSSES.length - 1
 
 /** Seconds you get to beat each boss in the Boss Rush. */
 export const RUSH_MS = 15000;
-/** Boss Rush bosses: one per stage, 1 to 100. */
-export const RUSH_BOSSES = MAX_STAGE;
-/** Rush bosses are much smaller than the stage bosses: no skills or airdrops to help you. */
-export const RUSH_HP_MULT = 0.045;
-export const rushBossHp = (n: number) => Math.round(monsterHp(BOSS.hp, Math.min(n, MAX_STAGE), 0) * RUSH_HP_MULT);
+
+/**
+ * Boss Rush boss n guards stage n: beating it moves you on to stage n + 1, so it has to be about as hard
+ * as clearing the stage. Its health is a share of the stage boss's health (stage -> share, in between it
+ * slides), tuned with the simulator (dev/sim.ts): the rush and normal runs each clear about half the stages.
+ * A team that got strong catches up fast, but the rush does not push you far past what you can survive
+ * in a normal run. A starter team can beat boss 1; past stage 40 normal runs send twice the monsters, so
+ * the rush bosses get about twice as tough there too.
+ */
+const RUSH_HP_MULT: [number, number][] = [[1, 0.8], [3, 1.65], [6, 0.85], [9, 0.3], [38, 0.3], [44, 0.68], [MAX_STAGE, 0.68]];
+const rushHpMult = (n: number) => {
+  const i = RUSH_HP_MULT.findIndex(([s]) => s >= n);
+  if (i <= 0) return RUSH_HP_MULT[0][1];
+  const [s0, m0] = RUSH_HP_MULT[i - 1];
+  const [s1, m1] = RUSH_HP_MULT[i];
+  return m0 * (m1 / m0) ** ((n - s0) / (s1 - s0));
+};
+export const rushBossHp = (n: number) => Math.round(monsterHp(BOSS.hp, Math.min(n, MAX_STAGE), 0) * rushHpMult(n));

@@ -20,7 +20,7 @@ import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
-import { BOSS_EVERY, RUSH_BOSSES, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
+import { BOSS_EVERY, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -390,7 +390,7 @@ export class BattleScene extends Phaser.Scene {
     makeMutationTextures(this);
     makeBossTextures(this);
     this.rush = !!data?.rush;
-    this.land = regionForStage(this.rush ? Math.min(MAX_STAGE, save.bossRush) : save.stage);
+    this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
@@ -408,7 +408,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, combo: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.bossRush, rushLeft: RUSH_MS,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS,
     });
     this.cameras.main.fadeIn(500, 74, 47, 29);
     this.drawArena();
@@ -476,10 +476,6 @@ export class BattleScene extends Phaser.Scene {
   /** From the lobby (or the results screen): restart the scene as a Boss Rush. */
   private startRush(): void {
     if (this.fighting || this.state === "intro" || this.state === "cutscene") return;
-    if (save.bossRush > RUSH_BOSSES) {
-      this.toast("You beat every boss!", "#ffe066");
-      return;
-    }
     this.cameras.main.fadeOut(300, 40, 20, 40);
     this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ rush: true }));
   }
@@ -499,9 +495,9 @@ export class BattleScene extends Phaser.Scene {
     this.time.delayedCall(1500, () => this.nextRushBoss());
   }
 
-  /** The next boss drops in; its clock starts when it lands. */
+  /** The boss of your stage drops in; its clock starts when it lands. */
   private nextRushBoss(): void {
-    const n = save.bossRush;
+    const n = save.stage;
     const def = bossForStage(n);
     battle.rushBoss = n;
     this.rushLeft = RUSH_MS;
@@ -535,12 +531,13 @@ export class BattleScene extends Phaser.Scene {
     if (this.rushLeft <= 0) this.rushOver("time");
   }
 
-  /** A boss beaten in time: rewards, a little heal, and on to the next one. */
+  /** A boss beaten in time clears its stage: rewards, a little heal, and on to the next one. */
   private rushBossDown(): void {
-    const n = save.bossRush;
+    const n = save.stage;
     const secs = (RUSH_MS - this.rushLeft) / 1000;
     this.rushBeaten++;
-    save.bossRush = n + 1;
+    save.stage = Math.min(MAX_STAGE, n + 1);
+    save.bestStage = Math.max(save.bestStage, save.stage);
     save.bossRushBest = Math.max(save.bossRushBest, n);
     if (n % BOSS_EVERY === 0) {
       save.gems += 3;
@@ -552,7 +549,9 @@ export class BattleScene extends Phaser.Scene {
     this.heal(0.25);
     sfx.fanfare();
     this.banner(`BOSS ${n} DOWN!  ${secs.toFixed(1)}s`, "green", 900);
-    if (save.bossRush > RUSH_BOSSES) {
+    const land = regionForStage(n + 1);
+    if (n < MAX_STAGE && land !== regionForStage(n)) this.time.delayedCall(700, () => this.toast(`${land.name} unlocked!`, "#ffe066"));
+    if (n >= MAX_STAGE) {
       this.time.delayedCall(1200, () => this.rushOver("done"));
       return;
     }
@@ -582,7 +581,7 @@ export class BattleScene extends Phaser.Scene {
     if (reason !== "quit") this.banner(reason === "time" ? "TIME'S UP!" : reason === "hero" ? "YOU FELL!" : "ALL BOSSES BEATEN!", reason === "done" ? "gold" : "red", 1100);
     sfx[reason === "done" ? "fanfare" : "error"]();
     this.time.delayedCall(reason === "quit" ? 300 : 1400, () => {
-      const result: RushResult = { reason, next: save.bossRush, beaten: this.rushBeaten, earned: this.stats.earned, gems: this.rushGems, dice: this.stats.dice };
+      const result: RushResult = { reason, next: save.stage, beaten: this.rushBeaten, earned: this.stats.earned, gems: this.rushGems, dice: this.stats.dice };
       this.game.events.emit("rush-over", result);
     });
   }

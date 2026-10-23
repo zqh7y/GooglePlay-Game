@@ -10,6 +10,8 @@
  * - every roll costs one die; dice come from the map, elites, chests and the boss, in tiers that
  *   depend on the stage (a rarer die multiplies the roll's luck)
  * - the best pets are equipped and levelled up; the cheapest open tree hexagon is bought whenever affordable
+ * - after every run the Boss Rush is tried: each boss your team (one target, ~80% of its damage, no skills)
+ *   kills inside 15 s clears its stage
  */
 import {
   AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, FLYER, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
@@ -19,6 +21,7 @@ import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, diceTierChances, gadgetTierWeights
 import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode } from "../src/data/tree";
+import { RUSH_MS, rushBossHp } from "../src/data/bosses";
 
 const owned = new Set<string>(["start"]);
 const sum = (e: TreeNode["effect"]) => TREE.reduce((s, t) => (t.effect === e && owned.has(t.id) ? s + t.per : s), 0);
@@ -137,6 +140,14 @@ const report: string[] = [];
 const marks = new Set([2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]);
 let dice = 10;
 let fails = 0;
+let rushed = 0;
+const cleared = (how: string) => {
+  if (marks.has(stage)) {
+    const { best } = teamDps();
+    report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   ${how}`);
+  }
+  stage++;
+};
 const LIMIT = 300 * 3600;
 while (stage <= MAX_STAGE && t < LIMIT) {
   const r = run(stage, teamDps().dps);
@@ -174,11 +185,7 @@ while (stage <= MAX_STAGE && t < LIMIT) {
   }
   if (r.won) {
     gems += 2 + sum("gems");
-    if (marks.has(stage)) {
-      const { best } = teamDps();
-      report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}`);
-    }
-    stage++;
+    cleared("run");
   } else {
     fails++;
   }
@@ -189,8 +196,15 @@ while (stage <= MAX_STAGE && t < LIMIT) {
     cash -= open.cost;
     owned.add(open.id);
   }
+  // Boss Rush: on through the stage bosses while each one dies in time
+  while (stage <= MAX_STAGE && teamDps().dps * 0.8 * (RUSH_MS / 1000) >= rushBossHp(stage)) {
+    if (stage % 5 === 0) gems += 3;
+    t += 8;
+    rushed++;
+    cleared("rush");
+  }
 }
 console.log(report.join("\n"));
 const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monsterHp(avgBase, stage, MINUTES - 1) * 0.7;
-console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
+console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, ${rushed} stages cleared in the Boss Rush, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
 console.log(`best gadget by minute (x shuriken): ${gadgetAt.map((g) => g.toFixed(1)).join(" ")}`);

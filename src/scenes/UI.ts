@@ -8,7 +8,7 @@ import { BOOSTS, BoostDef } from "../data/boosts";
 import { GADGETS, GADGET_SLOTS, STARTER_GADGET, gadgetKey, gadgetName } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
-import { RUSH_BOSSES, RUSH_MS, bossForStage } from "../data/bosses";
+import { RUSH_MS, bossForStage } from "../data/bosses";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -251,10 +251,9 @@ export class UIScene extends Phaser.Scene implements Host {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
       this.lobbyLand.setText(regionForStage(save.stage).name);
       this.lobbyBest.setText(`Best: stage ${save.bestStage} / ${MAX_STAGE}`);
-      const next = Math.min(RUSH_BOSSES, save.bossRush);
-      this.rushFace.setTexture(bossForStage(next).tex);
+      this.rushFace.setTexture(bossForStage(save.stage).tex);
       this.rushFace.setScale(96 / Math.max(this.rushFace.width, this.rushFace.height));
-      this.rushNum.setText(save.bossRush > RUSH_BOSSES ? "ALL BEATEN!" : `Boss ${next}`);
+      this.rushNum.setText(`Boss ${save.stage}`);
       const muts = mutationsAt(save.stage);
       fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
     }
@@ -1251,7 +1250,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Boss Rush top bar: the boss number and name over its health. */
   private rushHud(_time: number): void {
     const g = this.hudBars;
-    const def = bossForStage(Math.min(RUSH_BOSSES, battle.rushBoss));
+    const def = bossForStage(battle.rushBoss);
     drawBar(g, 24, 74, this.W - 48, 34, Math.max(0, battle.bossFrac), def.color);
     fitText(this.progressText.setText(`BOSS ${battle.rushBoss}  •  ${def.name}${battle.bossFrac >= 0 ? `  ${Math.ceil(battle.bossFrac * 100)}%` : ""}`), this.W - 80);
   }
@@ -1267,13 +1266,13 @@ export class UIScene extends Phaser.Scene implements Host {
     }));
     const b = m.body;
     const top = -h / 2;
-    const next = Math.min(RUSH_BOSSES, r.next);
+    const next = r.next;
     const def = bossForStage(next);
     b.add(text(this, 0, top + 140, r.beaten ? `${r.beaten} boss${r.beaten > 1 ? "es" : ""} beaten!` : "No bosses beaten this time", 52, "#c9663a"));
     const face = this.add.image(0, top + 330, def.tex);
     face.setScale(200 / Math.max(face.width, face.height));
     b.add([this.add.image(0, top + 330, "glow").setTint(def.color).setScale(1.1).setAlpha(0.6), face]);
-    b.add(label(this, 0, top + 470, r.reason === "done" ? "You beat all 100 bosses!" : `Next time you start at BOSS ${next}: ${def.name}`, 32, "#7a5236", 760));
+    b.add(label(this, 0, top + 470, r.reason === "done" ? "You beat all 100 bosses!" : `You're on stage ${next} now. Next up: BOSS ${next}, ${def.name}`, 32, "#7a5236", 760));
     b.add(label(this, 0, top + 540, `Best: boss ${save.bossRushBest}`, 28, "#9a7a5a"));
     const dice = DICE_TIERS.reduce((s2, t) => s2 + r.dice[t], 0);
     const rows: [string, string][] = [["icon_cash", fmt(r.earned)], ["icon_gem", `+${r.gems}`], ["icon_dice", `+${dice}`]];
@@ -1282,13 +1281,13 @@ export class UIScene extends Phaser.Scene implements Host {
       b.add([this.add.image(x - 60, top + 640, icon).setScale(0.6), text(this, x + 30, top + 640, v, 40, "#ffffff").setOrigin(0, 0.5).setStroke("#4a2f1d", 7)]);
     });
     b.add(label(this, 0, top + 730, "Get stronger pets and upgrades to beat bosses faster!", 28, "#9a7a5a", 760));
-    if (r.next <= RUSH_BOSSES) {
+    if (r.reason !== "done") {
       b.add(button(this, -165, h / 2 - 120, 300, 120, "purple", "AGAIN", () => {
         again = true;
         m.close();
       }, { size: 40 }));
     }
-    b.add(button(this, r.next <= RUSH_BOSSES ? 165 : 0, h / 2 - 120, 300, 120, "peach", "LOBBY", () => m.close(), { size: 40 }));
+    b.add(button(this, r.reason !== "done" ? 165 : 0, h / 2 - 120, 300, 120, "peach", "LOBBY", () => m.close(), { size: 40 }));
   }
 
   /** Your hero up close: walking on a lit stage, total damage per second and where it comes from. */

@@ -1,4 +1,5 @@
-import { MAX_STAGE } from "../data/balance";
+import { BOSS, MAX_STAGE, monsterHp } from "../data/balance";
+import { rushBossHp } from "../data/bosses";
 import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor } from "../data/items";
 import { DICE_TIERS, Tier } from "../data/tiers";
 
@@ -67,13 +68,13 @@ export interface SaveData {
   newPets: string[];
   /** monster mutations already announced */
   mutSeen: string[];
-  /** the next Boss Rush boss to fight (you keep your place) */
-  bossRush: number;
-  /** highest Boss Rush boss beaten */
+  /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
+/** Boss Rush boss health share before the rush moved your stage (for older saves). */
+const OLD_RUSH_HP = 0.045;
 const STARTER = PET_LIST[0].id;
 
 function fresh(): SaveData {
@@ -114,7 +115,6 @@ function fresh(): SaveData {
     giftCount: 0,
     newPets: [],
     mutSeen: [],
-    bossRush: 1,
     bossRushBest: 0,
   };
 }
@@ -127,7 +127,7 @@ function load(): SaveData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const data = { ...fresh(), ...JSON.parse(raw) } as SaveData;
+      const data = { ...fresh(), ...JSON.parse(raw) } as SaveData & { bossRush?: number };
       // older saves had one plain dice count
       const dice = data.dice as unknown;
       data.dice = noDice(typeof dice === "number" ? { A: dice } : (dice as Partial<Record<Tier, number>>));
@@ -137,7 +137,17 @@ function load(): SaveData {
       data.equipped = data.equipped.filter((id) => data.pets[id]);
       data.discovered = data.discovered.filter((id) => ITEMS[id]);
       data.newPets = data.newPets.filter((id) => data.pets[id]);
+      // the first Boss Rush kept its own place and had weaker bosses. Now its bosses are the stages:
+      // move on to the first stage whose boss is tougher than the last one you beat back then
+      if (data.bossRush && data.bossRush > 1) {
+        const beaten = OLD_RUSH_HP * monsterHp(BOSS.hp, Math.min(MAX_STAGE, data.bossRush - 1), 0);
+        let stage = 1;
+        while (stage < MAX_STAGE && rushBossHp(stage) <= beaten) stage++;
+        data.stage = Math.max(data.stage, stage);
+      }
+      delete data.bossRush;
       data.stage = Math.min(data.stage, MAX_STAGE);
+      data.bestStage = Math.max(data.bestStage, data.stage);
       return data;
     }
   } catch {
