@@ -466,7 +466,7 @@ export class RollScreen extends Screen {
     // as big as they fit, preferring wide rows
     const areaTop = this.host.L.headerBottom + 170;
     const areaBottom = H - 300;
-    const pitchW = CARD_W + 16;
+    const pitchW = CARD_W + 30;
     const pitchH = CARD_H + 64;
     const fit = (c: number) => Math.min(1.5, 1000 / (c * pitchW), (areaBottom - areaTop) / (Math.ceil(n / c) * pitchH));
     let most = 0;
@@ -631,7 +631,7 @@ export class RollScreen extends Screen {
           s.tweens.add({ targets: stamp, scale: 1, alpha: 1, duration: 260, delay: 120, ease: "Back.out" });
         }
         if (res.isNew) {
-          const tag = text(s, CARD_W / 2 - 16, -CARD_H / 2 - 2, "NEW!", 34, "#ff6a8a").setAngle(14).setScale(2.5);
+          const tag = text(s, CARD_W / 2 - 40, -CARD_H / 2 - 4, "NEW!", 34, "#ff6a8a").setAngle(14).setScale(2.5);
           card.add(tag);
           s.tweens.add({ targets: tag, scale: 1, duration: 200, ease: "Back.out" });
         } else if (save.pets[res.item.id]) {
