@@ -977,7 +977,7 @@ export class UIScene extends Phaser.Scene implements Host {
   // ───────────────────────── rolling ─────────────────────────
 
   roll(auto = false): void {
-    if (this.celebrating || this.rollScreen.revealing || this.time.now < this.rollReadyAt) return;
+    if (this.celebrating || this.rollScreen.busy || this.time.now < this.rollReadyAt) return;
     // one die per roll, up to the batch size (x1, x3 or x10): the chosen dice tier first,
     // and when it runs out, the next tier that has dice
     const dice: Tier[] = [];

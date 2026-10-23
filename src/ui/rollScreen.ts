@@ -81,6 +81,8 @@ function flameTexture(scene: Phaser.Scene): string {
  */
 export class RollScreen extends Screen {
   revealing = false;
+  /** the roll gift's show runs until then */
+  private giftUntil = 0;
   private rollBtn: Button;
   private rollGlow: Phaser.GameObjects.Image;
   private autoBtn: Button;
@@ -246,6 +248,11 @@ export class RollScreen extends Screen {
     r.add(this.burst);
   }
 
+  /** Revealing a roll or showing the roll gift: the next roll waits. */
+  get busy(): boolean {
+    return this.revealing || this.scene.time.now < this.giftUntil;
+  }
+
   setReadyAt(t: number): void {
     this.readyAt = t;
   }
@@ -344,7 +351,7 @@ export class RollScreen extends Screen {
       c.ring.setVisible(c.tier === tier && !none);
       c.box.setAlpha(n ? 1 : 0.4).setScale(c.tier === tier && !none ? 1.1 : 1);
     }
-    const busy = left > 0 || this.revealing;
+    const busy = left > 0 || this.busy;
     const times = batch > 1 ? ` x${batch}` : "";
     this.rollBtn.setLabel(none ? "NO DICE" : left > 0 ? `${(left / 1000).toFixed(1)}s` : superNext ? `SUPER${times}!` : `ROLL${times}`);
     this.rollBtn.setSub(none ? "Find dice in battle!" : superNext ? `x${SUPER_MULT} luck roll!` : luckyNext ? (batch > 1 ? "With a LUCKY roll!" : `LUCKY ${tier} ROLL!`) : `Lucky in ${luckyIn}  •  ${tier} die`);
@@ -704,6 +711,7 @@ export class RollScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     sfx.gift();
+    this.giftUntil = s.time.now + 2500;
     const m = this.giftIcon.getWorldTransformMatrix();
     const box = s.add.image(m.tx, m.ty, "icon_gift").setScale(0.62).setDepth(5000);
     const cy = this.dieY;
