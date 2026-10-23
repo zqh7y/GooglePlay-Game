@@ -22,6 +22,7 @@ import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode } from "../src/data/tree";
 import { RUSH_MS, rushBossHp } from "../src/data/bosses";
+import { petChances } from "../src/data/luck";
 
 const owned = new Set<string>(["start"]);
 const sum = (e: TreeNode["effect"]) => TREE.reduce((s, t) => (t.effect === e && owned.has(t.id) ? s + t.per : s), 0);
@@ -122,20 +123,6 @@ const luck = () => {
   return prod("luck") * prod("die") * index * potion * lucky;
 };
 
-/** Expected copies of each pet per roll at this luck (rarest-first rule). */
-function rollChances(L: number): number[] {
-  const out = PET_LIST.map(() => 0);
-  let remaining = 1;
-  for (let i = PET_LIST.length - 1; i >= 1; i--) {
-    const c = Math.min(1, L / PET_LIST[i].oneIn);
-    out[i] = remaining * c;
-    remaining *= 1 - c;
-    if (remaining <= 0) break;
-  }
-  out[0] = remaining;
-  return out;
-}
-
 const report: string[] = [];
 const marks = new Set([2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]);
 let dice = 10;
@@ -165,7 +152,7 @@ while (stage <= MAX_STAGE && t < LIMIT) {
   dice -= Math.floor(dice);
   const tiers = diceTierChances(stage);
   const ch = PET_LIST.map(() => 0);
-  DICE_TIERS.forEach((t, k) => rollChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k])));
+  DICE_TIERS.forEach((t, k) => petChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k])));
   for (let i = 0; i < ch.length; i++) {
     if (!ch[i]) continue;
     const got = ch[i] * rolls;

@@ -19,7 +19,8 @@ import {
   DAILY, INDEX_STEP, checkIndexMilestones, claimDaily, claimQuest, dailyCash, dailyDay, ensureQuests, indexBonus, questDone, questEvent,
   questGoal, questReward, questText,
 } from "../systems/goals";
-import { RollResult, classChances, luckFloor, rollMany } from "../systems/roll";
+import { RollResult, rollMany } from "../systems/roll";
+import { classChances, topLuck } from "../data/luck";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
@@ -977,10 +978,17 @@ export class UIScene extends Phaser.Scene implements Host {
 
   roll(auto = false): void {
     if (this.celebrating || this.rollScreen.revealing || this.time.now < this.rollReadyAt) return;
-    // rolls use the chosen dice tier; when it runs out, the next tier that has dice
+    // one die per roll, up to the batch size (x1, x3 or x10): the chosen dice tier first,
+    // and when it runs out, the next tier that has dice
+    const dice: Tier[] = [];
     let tier = save.diceTier;
-    if (save.dice[tier] <= 0) tier = DICE_TIERS.find((t) => save.dice[t] > 0) ?? tier;
-    if (save.dice[tier] <= 0) {
+    while (dice.length < save.rollBatch) {
+      if (save.dice[tier] <= 0) tier = DICE_TIERS.find((t) => save.dice[t] > 0) ?? tier;
+      if (save.dice[tier] <= 0) break;
+      save.dice[tier]--;
+      dice.push(tier);
+    }
+    if (!dice.length) {
       if (save.autoRoll) save.autoRoll = false;
       if (!auto) {
         sfx.error();
@@ -988,30 +996,38 @@ export class UIScene extends Phaser.Scene implements Host {
       }
       return;
     }
-    save.dice[tier]--;
-    save.diceTier = tier;
-    const lucky = save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1;
-    if (save.luckyBoost > 0) save.luckyBoost--;
-    else save.luckyCount = lucky ? 0 : save.luckyCount + 1;
-    // every 50th roll is a SUPER ROLL; rolling again soon builds a hot streak
-    const superRoll = save.superCount >= SUPER_EVERY - 1;
-    save.superCount = superRoll ? 0 : save.superCount + 1;
+    save.diceTier = dice[0];
+    // rolling again soon builds a hot streak
     const streak = this.rollScreen.bumpStreak(this.time.now);
     const prevBest = save.bestRoll;
-    const results = rollMany(dicePerRoll(), luck() * DICE_LUCK[tier] * (lucky ? luckyMult() : 1) * (superRoll ? SUPER_MULT : 1) * streak);
+    const results: RollResult[] = [];
+    const gifts: { tier: Tier; dice: number; gems: number }[] = [];
+    let lucky = false;
+    let superRoll = false;
+    for (const t of dice) {
+      // every die is one roll: it can be the lucky roll, the SUPER ROLL (every 50th) or bring the gift (every 25th)
+      const isLucky = save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1;
+      if (save.luckyBoost > 0) save.luckyBoost--;
+      else save.luckyCount = isLucky ? 0 : save.luckyCount + 1;
+      const isSuper = save.superCount >= SUPER_EVERY - 1;
+      save.superCount = isSuper ? 0 : save.superCount + 1;
+      lucky ||= isLucky;
+      superRoll ||= isSuper;
+      results.push(...rollMany(dicePerRoll(), luck() * DICE_LUCK[t] * (isLucky ? luckyMult() : 1) * (isSuper ? SUPER_MULT : 1) * streak));
+      save.totalRolls++;
+      if (++save.giftCount >= GIFT_EVERY) {
+        save.giftCount = 0;
+        const gift = { tier: rollDiceTier(save.stage + 10), dice: 3, gems: 2 };
+        save.dice[gift.tier] += gift.dice;
+        save.gems += gift.gems;
+        gifts.push(gift);
+      }
+    }
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const record = best.item.oneIn > prevBest && rarityRank(best.item.rarity) >= 1;
-    // every 25 rolls: a little gift of dice and gems
-    let gift: { tier: Tier; dice: number; gems: number } | null = null;
-    if (++save.giftCount >= GIFT_EVERY) {
-      save.giftCount = 0;
-      gift = { tier: rollDiceTier(save.stage + 10), dice: 3, gems: 2 };
-      save.dice[gift.tier] += gift.dice;
-      save.gems += gift.gems;
-    }
     persist();
     this.rollReadyAt = this.time.now + rollTime();
-    questEvent("roll", results.length);
+    questEvent("roll", dice.length);
     questEvent("rare", Math.max(...results.map((r) => rarityRank(r.item.rarity))));
     if (results.some((r) => r.isNew)) this.time.delayedCall(2400, () => this.indexMilestone());
     this.autoEquip(results);
@@ -1019,12 +1035,12 @@ export class UIScene extends Phaser.Scene implements Host {
     if (this.tab === "roll" && !this.mapOpen) {
       this.rollScreen.reveal(results, { lucky, superRoll, record }, () => {
         this.afterReveal(results, 3, record);
-        if (gift) this.rollScreen.giftPop(gift.tier, gift.dice, gift.gems);
+        gifts.forEach((g, i) => this.time.delayedCall(i * 2200, () => this.rollScreen.giftPop(g.tier, g.dice, g.gems)));
       });
     } else {
       this.miniReveal(results);
       this.afterReveal(results, 5, record);
-      if (gift) this.toast(`Roll gift: +${gift.dice} ${gift.tier} dice, +${gift.gems} gems!`, "#ffe066");
+      for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice, +${g.gems} gems!`, "#ffe066");
     }
   }
 
@@ -1054,7 +1070,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private miniReveal(results: RollResult[]): void {
     const { x } = this.tabPos("roll");
     const baseY = this.L.navTop - 70;
-    results.slice(0, 3).forEach((r, i) => {
+    [...results].sort((a, b) => b.item.oneIn - a.item.oneIn).slice(0, 3).forEach((r, i) => {
       const cls = r.item.cls;
       const c = this.add.container(Math.min(x, this.W - 200), baseY - i * 90, [
         this.add.image(0, 0, panelTexture(this, "glass", 340, 80)),
@@ -1351,7 +1367,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const h = 360 + DICE_TIERS.length * 92;
     const m = this.showModal(modal(this, 940, h, "YOUR ODDS", "green", () => (this.openModal = null)));
     m.body.add(text(this, 0, -h / 2 + 110, `Luck ${luckText(L)}`, 46, "#b6f59a"));
-    m.body.add(label(this, 0, -h / 2 + 162, `Worst possible roll: ${luckFloor(L).name}`, 28));
+    m.body.add(label(this, 0, -h / 2 + 162, `Every roll draws its own luck: x1 to ${luckText(topLuck(L))}, ${luckText(L)} on average`, 26, "#7a5236", 820));
     // chance per roll of each pet class
     DICE_TIERS.forEach((c, i) => {
       const y = -h / 2 + 240 + i * 92;

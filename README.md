@@ -28,9 +28,17 @@ hours (and failed runs) a steady player needs per stage.
 - **Rolling costs one die.** Dice are found in battle (on the map, in chests, on elites and from the boss)
   or bought with gems in the Shop. Dice come in tiers **A, B, C, D, E, S, SSS, uSSS**; which tiers drop
   depends on the stage (a D die is a dream at stage 10 and normal at stage 100; uSSS stays very rare), and a
-  rarer die multiplies the roll's luck. Each roll checks pets from rarest to most common with a chance of
-  `luck / N` ("1 in N"). Reels spin at the bottom of the screen; rare pulls get a slower, suspenseful reel.
-  Every 10th roll is a Lucky Roll (x2 luck).
+  rarer die multiplies the roll's luck. Reels spin at the bottom of the screen; rare pulls get a slower,
+  suspenseful reel. Every 10th roll is a Lucky Roll (x2 luck).
+- **Luck raises your chances, it never guarantees a pet.** With luck x1B, a pet much rarer than 1 in 1B is
+  1B times more likely than with no luck, but every roll is still a mix: each roll draws its own luck,
+  anywhere from x1 up to a top luck (evenly on a log scale, averaging your luck), then checks the pets from
+  rarest to most common with a chance of `(that roll's luck) / N` ("1 in N"). So with x1B luck about 1 roll
+  in 8 is still a common A-class pet, while about 1 in 5 lands a pet at least as rare as 1 in 1B. The ODDS
+  button shows your chance per roll of each class.
+- **Roll x1, x3 or x10** with the buttons over ROLL. Every die is one roll: a x10 uses 10 dice and counts as
+  10 rolls for the lucky ring, the SUPER ROLL and gift meters, quests and stats (so a x10 can hold the lucky
+  roll or the SUPER ROLL). Big batches land in a grid over the die.
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
 - **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the honeycomb
@@ -205,7 +213,8 @@ hours (and failed runs) a steady player needs per stage.
 | `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
 | `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
 | `src/data/rarity.ts` | The 10 rarity tiers and their colours |
-| `src/systems/roll.ts` | The RNG roll and odds per tier |
+| `src/data/luck.ts` | How luck turns into pets: the roll and the chance of each pet and class (shared with the simulator) |
+| `src/systems/roll.ts` | Rolling pets into your collection |
 | `src/systems/stats.ts` | Luck, roll speed, money and damage from the tree and potions |
 | `src/systems/save.ts` | Save game, pets and levels, equipping |
 | `src/systems/goals.ts` | Quests, daily rewards and Index milestones |

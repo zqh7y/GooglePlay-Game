@@ -68,11 +68,15 @@ export interface SaveData {
   newPets: string[];
   /** monster mutations already announced */
   mutSeen: string[];
+  /** how many dice one press of ROLL uses (each die is one roll) */
+  rollBatch: number;
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
+/** Roll 1, 3 or 10 dice at once. */
+export const ROLL_BATCHES = [1, 3, 10];
 /** Boss Rush boss health share before the rush moved your stage (for older saves). */
 const OLD_RUSH_HP = 0.045;
 const STARTER = PET_LIST[0].id;
@@ -115,6 +119,7 @@ function fresh(): SaveData {
     giftCount: 0,
     newPets: [],
     mutSeen: [],
+    rollBatch: 1,
     bossRushBest: 0,
   };
 }
@@ -132,6 +137,7 @@ function load(): SaveData {
       const dice = data.dice as unknown;
       data.dice = noDice(typeof dice === "number" ? { A: dice } : (dice as Partial<Record<Tier, number>>));
       if (!DICE_TIERS.includes(data.diceTier)) data.diceTier = "A";
+      if (!ROLL_BATCHES.includes(data.rollBatch)) data.rollBatch = 1;
       // drop anything that no longer exists
       for (const id of Object.keys(data.pets)) if (!ITEMS[id]) delete data.pets[id];
       data.equipped = data.equipped.filter((id) => data.pets[id]);

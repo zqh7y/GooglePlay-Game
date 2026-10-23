@@ -4,12 +4,13 @@ import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, btnTexture, dieTexture, panelTexture, pillTexture } from "../art/ui";
 import { ItemDef, PET_LIST } from "../data/items";
+import { petChances } from "../data/luck";
 import { RARITY_INFO, RARITY_ORDER, rainbowColor, rarityRank } from "../data/rarity";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { Branch, TREE, TreeNode, effectText } from "../data/tree";
 import { TOP_ROW, TOP_Y } from "../layout";
 import { RollResult } from "../systems/roll";
-import { persist, save, totalDice } from "../systems/save";
+import { ROLL_BATCHES, persist, save, totalDice } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import {
   autoUnlocked, buyNode, cashMult, dieSkin, luck, luckParts, luckyEvery, luckyMult, nodeOwned, nodeUnlocked, potionActive, rollTime, speedActive,
@@ -117,6 +118,8 @@ export class RollScreen extends Screen {
   private readyAt = 0;
   private reelY: number;
   private tierChips: { tier: Tier; box: Phaser.GameObjects.Container; count: Phaser.GameObjects.Text; ring: Phaser.GameObjects.Arc }[] = [];
+  private batchBtns: { n: number; btn: Button }[] = [];
+  private batchY: number;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "roll");
@@ -202,7 +205,8 @@ export class RollScreen extends Screen {
 
     // buttons
     const btnY = bottom - 446;
-    this.reelY = (chipY + 65 + btnY - 80) / 2;
+    this.batchY = btnY - 116;
+    this.reelY = (chipY + 65 + this.batchY - 40) / 2;
     // the pets you have not found yet (hidden while the reels spin in the same spot)
     this.chase = s.add.container(W / 2, this.reelY);
     r.add(this.chase);
@@ -221,6 +225,18 @@ export class RollScreen extends Screen {
     this.fastBtn = button(s, W - 175, btnY, 220, 122, "grey", "FAST", () => host.setFast(!host.isFast()), { icon: "icon_bolt", iconSize: 50, stack: true, size: 30 });
     this.rollBar = s.add.graphics();
     r.add([this.autoBtn, this.rollGlow, this.rollBtn, this.fastBtn, this.rollBar]);
+
+    // how many dice one press rolls: x1, x3 or x10 (each die is one roll)
+    ROLL_BATCHES.forEach((n, i) => {
+      const btn = button(s, W / 2 + (i - 1) * 140, this.batchY, 124, 66, "mint", `x${n}`, () => {
+        save.rollBatch = n;
+        persist();
+        sfx.click();
+        host.toast(n === 1 ? "Rolling 1 die at a time" : `Rolling ${n} dice at once`, "#ffe680");
+      }, { size: 32 });
+      r.add(btn);
+      this.batchBtns.push({ n, btn });
+    });
 
     // recent pulls
     const histY = bottom - 316;
@@ -339,13 +355,15 @@ export class RollScreen extends Screen {
       this.buildChase();
     }
 
-    // meters
-    const superNext = save.superCount >= SUPER_EVERY - 1;
+    // meters (a batch of dice can hold the lucky roll or the SUPER ROLL)
+    const batch = Math.max(1, Math.min(save.rollBatch, totalDice()));
+    const superIn = SUPER_EVERY - 1 - save.superCount;
+    const superNext = superIn < batch;
     const giftLeft = GIFT_EVERY - save.giftCount;
     const g = this.meterG.clear();
     drawBar(g, 136, this.meterY + 4, 360, 26, superNext ? 1 : save.superCount / (SUPER_EVERY - 1), superNext ? rainbowColor(time) : 0xb06cff);
     drawBar(g, 640, this.meterY + 4, 340, 26, save.giftCount / GIFT_EVERY, 0xffb22e);
-    this.superCount.setText(superNext ? "NEXT ROLL!" : `${SUPER_EVERY - 1 - save.superCount} rolls`);
+    this.superCount.setText(superIn === 0 ? "NEXT ROLL!" : superNext ? `IN THIS x${batch}!` : `${superIn} rolls`);
     this.superLabel.setColor(superNext ? "#fff27a" : "#e6d4ff");
     this.giftCount.setText(`${giftLeft} roll${giftLeft === 1 ? "" : "s"}`);
     this.superIcon.setScale(superNext ? 0.7 + Math.sin(time / 120) * 0.08 : 0.62);
@@ -354,8 +372,10 @@ export class RollScreen extends Screen {
     // the lucky ring around the die: one light per roll, gold when the next roll is lucky
     const every = luckyEvery();
     const segs = Math.max(1, every - 1);
-    const luckyNext = save.luckyBoost > 0 || save.luckyCount >= segs;
-    const lit = luckyNext ? segs : save.luckyCount;
+    const luckyNow = save.luckyBoost > 0 || save.luckyCount >= segs;
+    const lit = luckyNow ? segs : save.luckyCount;
+    const luckyIn = luckyNow ? 0 : segs - lit;
+    const luckyNext = luckyIn < batch;
     const rg = this.ring.clear();
     const cx = W / 2;
     const cy = this.dieY;
@@ -365,7 +385,7 @@ export class RollScreen extends Screen {
       const a1 = -Math.PI / 2 + ((i + 1) / segs) * Math.PI * 2 - gap;
       rg.lineStyle(26, INK_N, 1).beginPath().arc(cx, cy, RING_R, a0, a1).strokePath();
       const on = i < lit;
-      const color = luckyNext ? (Math.sin(time / 110 + i) > 0 ? 0xffe066 : 0xffb22e) : on ? 0x7ad651 : 0x3a2f5a;
+      const color = luckyNow ? (Math.sin(time / 110 + i) > 0 ? 0xffe066 : 0xffb22e) : on ? 0x7ad651 : 0x3a2f5a;
       rg.lineStyle(16, color, 1).beginPath().arc(cx, cy, RING_R, a0, a1).strokePath();
     }
 
@@ -380,8 +400,9 @@ export class RollScreen extends Screen {
       c.box.setAlpha(n ? 1 : 0.4).setScale(c.tier === tier && !none ? 1.1 : 1);
     }
     const busy = left > 0 || this.revealing;
-    this.rollBtn.setLabel(none ? "NO DICE" : left > 0 ? `${(left / 1000).toFixed(1)}s` : superNext ? "SUPER!" : "ROLL");
-    this.rollBtn.setSub(none ? "Find dice in battle!" : superNext ? `x${SUPER_MULT} luck roll!` : luckyNext ? `LUCKY ${tier} ROLL!` : `Lucky in ${segs - lit}  •  ${tier} die`);
+    const times = batch > 1 ? ` x${batch}` : "";
+    this.rollBtn.setLabel(none ? "NO DICE" : left > 0 ? `${(left / 1000).toFixed(1)}s` : superNext ? `SUPER${times}!` : `ROLL${times}`);
+    this.rollBtn.setSub(none ? "Find dice in battle!" : superNext ? `x${SUPER_MULT} luck roll!` : luckyNext ? (batch > 1 ? "With a LUCKY roll!" : `LUCKY ${tier} ROLL!`) : `Lucky in ${luckyIn}  •  ${tier} die`);
     this.rollBtn.subText?.setColor((luckyNext || superNext) && !none ? "#fff27a" : "#ffffff");
     this.rollBtn.setColor(none ? "grey" : busy ? "peach" : superNext ? "purple" : luckyNext ? "gold" : "orange");
     this.rollGlow.setVisible(!none && !busy).setTint(superNext ? rainbowColor(time) : luckyNext ? 0xffe066 : 0xffb03a);
@@ -391,6 +412,7 @@ export class RollScreen extends Screen {
     this.autoBtn.setColor(unlocked && save.autoRoll ? "green" : unlocked ? "mint" : "grey");
     this.autoBtn.setLabel(unlocked ? (save.autoRoll ? "AUTO ON" : "AUTO") : "LOCKED");
     this.fastBtn.setColor(this.host.isFast() ? "green" : "mint");
+    for (const b of this.batchBtns) b.btn.setColor(b.n === save.rollBatch ? "gold" : "mint").setScale(b.n === save.rollBatch ? 1.08 : 1);
 
     BRANCHES.forEach((b, i) => {
       const card = this.cards[i];
@@ -423,7 +445,7 @@ export class RollScreen extends Screen {
     }
     c.add(text(s, -470, -100, `NEXT TO FIND  •  ${save.discovered.length}/${PET_LIST.length} found`, 26, "#ffe066").setOrigin(0, 0.5));
     const tier = save.dice[save.diceTier] > 0 ? save.diceTier : DICE_TIERS.find((t) => save.dice[t] > 0) ?? save.diceTier;
-    const mine = luck() * DICE_LUCK[tier];
+    const mine = petChances(luck() * DICE_LUCK[tier]);
     missing.forEach((def, i) => {
       const x = (i - 1) * 330;
       const card = lockedCard(s, x - 88, 18, def.id).setScale(0.6);
@@ -433,7 +455,7 @@ export class RollScreen extends Screen {
         glow, card,
         classBadge(s, x + 40 + (def.cls.length === 1 ? 23 : def.cls.length === 3 ? 35 : 41), -40, def.cls, 40),
         classText(s, x + 40, 6, oneIn(def.oneIn), 30, def.cls).setOrigin(0, 0.5),
-        label(s, x + 40, 50, `for you:\n${oneIn(Math.max(1, def.oneIn / mine))}`, 22, "#d9ccff").setOrigin(0, 0.5),
+        label(s, x + 40, 50, `for you:\n${oneIn(1 / mine[def.index])}`, 22, "#d9ccff").setOrigin(0, 0.5),
       ]);
     });
   }
@@ -496,9 +518,27 @@ export class RollScreen extends Screen {
     this.revealing = true;
     this.chase.setVisible(false);
     const n = results.length;
-    const y = this.reelY;
-    const scale = n <= 1 ? 1 : n <= 3 ? 0.86 : 0.66;
-    const spacing = Math.min(CARD_W * scale + 14, 980 / n);
+    // up to 3 cards in a row on the reel; bigger batches in a grid over the die
+    const grid = n > 3;
+    const cols = n <= 3 ? n : n <= 10 ? 5 : n <= 24 ? 6 : 10;
+    const rows = Math.ceil(n / cols);
+    const pitchW = CARD_W + 16;
+    const pitchH = CARD_H + 64;
+    const areaTop = this.meterY + 70;
+    const areaBottom = this.batchY - 60;
+    const scale = !grid ? (n <= 1 ? 1 : 0.86) : Math.min(0.66, 1000 / (cols * pitchW), (areaBottom - areaTop) / (rows * pitchH));
+    const midY = grid ? (areaTop + areaBottom) / 2 : this.reelY;
+    const spot = (i: number): [number, number] => {
+      const row = Math.floor(i / cols);
+      const inRow = Math.min(cols, n - row * cols);
+      const col = i - row * cols;
+      return [W / 2 + (col - (inRow - 1) / 2) * pitchW * scale, midY + (row - (rows - 1) / 2) * pitchH * scale];
+    };
+    const backdrop = grid ? s.add.image(W / 2, midY, panelTexture(s, "glass", 1040, Math.round(rows * pitchH * scale + 40))).setAlpha(0) : null;
+    if (backdrop) {
+      this.root.add(backdrop);
+      s.tweens.add({ targets: backdrop, alpha: 1, duration: 200 });
+    }
     const bestRank = Math.max(...results.map((r) => rarityRank(r.item.rarity)));
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const fast = this.host.isFast();
@@ -548,7 +588,9 @@ export class RollScreen extends Screen {
     }
     let finished = 0;
     results.forEach((res, i) => {
-      const x = W / 2 + (i - (n - 1) / 2) * spacing;
+      const [x, y] = spot(i);
+      // in a big batch only the best card makes the big noises and flashes
+      const loud = !grid || res === best;
       const rank = rarityRank(res.item.rarity);
       const color = RARITY_INFO[res.item.rarity].color;
       const glow = s.add.image(x, y, "glow").setAlpha(0.35).setScale(scale * 1.8);
@@ -574,12 +616,13 @@ export class RollScreen extends Screen {
         else pet.setTexture("icon_dice").setScale(1.3).setAngle(Phaser.Math.Between(-20, 20));
         glow.setTint(RARITY_INFO[def.rarity].color);
       };
-      s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * 60, ease: "Back.out" });
+      s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * (grid ? 30 : 60), ease: "Back.out" });
       let t = 0;
       let k = 0;
       const tick = () => {
         show(this.fakePet(rank), false);
-        sfx.tick(k++);
+        if (i === 0) sfx.tick(k);
+        k++;
         const p = t / spin;
         s.tweens.add({ targets: card, y: y - 10, duration: 30, yoyo: true });
         if (suspense && p > 0.55) {
@@ -594,13 +637,13 @@ export class RollScreen extends Screen {
         show(res.item, true);
         card.setAngle(0);
         pet.setAngle(0);
-        sfx.reveal(rank);
+        if (loud || rank >= 2) sfx.reveal(rank);
         glow.setAlpha(0.95);
         if (rank >= 3) {
           rays.setTint(color);
           s.tweens.add({ targets: rays, alpha: 0.85, scale: scale * (0.75 + rank * 0.05), duration: 250 });
           s.tweens.add({ targets: rays, angle: 120, duration: hold + rank * 60 + 300 });
-          s.cameras.main.flash(180, (color >> 16) & 255, (color >> 8) & 255, color & 255);
+          if (loud) s.cameras.main.flash(180, (color >> 16) & 255, (color >> 8) & 255, color & 255);
           if (res === best) this.confetti([color, 0xffffff, 0xffe066, 0xff7ab8, 0x5ac8ff], 30 + rank * 12);
         }
         s.tweens.add({ targets: card, scaleX: scale * 1.22, scaleY: scale * 0.84, duration: 80, yoyo: true, ease: "Quad.out" });
@@ -610,14 +653,14 @@ export class RollScreen extends Screen {
           this.burst.explode(8 + rank * 9, x, y);
         }
         const crank = tierIndex(res.item.cls);
-        if (crank >= 1) {
+        if (crank >= (grid ? 3 : 1)) {
           // the class shouts out in its own animated colours
-          const call = classText(s, x, y - (CARD_H * scale) / 2 - 56, `${res.item.cls} CLASS!`, 36 + crank * 5, res.item.cls).setScale(0);
+          const call = classText(s, x, y - (CARD_H * scale) / 2 - (grid ? 24 : 56), `${res.item.cls} CLASS!`, (36 + crank * 5) * (grid ? 0.7 : 1), res.item.cls).setScale(0);
           this.root.add(call);
           s.tweens.add({ targets: call, scale: 1, duration: 200, ease: "Back.out" });
           s.tweens.add({ targets: call, alpha: 0, y: call.y - 30, delay: hold + 150, duration: 300, onComplete: () => call.destroy() });
         }
-        if (rank >= 4) {
+        if (rank >= 4 && loud) {
           s.cameras.main.shake(180 + rank * 30, 0.004 + rank * 0.001);
           buzz(40 + rank * 15);
         }
@@ -645,6 +688,7 @@ export class RollScreen extends Screen {
               card.destroy();
               if (++finished === n) {
                 this.revealing = false;
+                if (backdrop) s.tweens.add({ targets: backdrop, alpha: 0, duration: 200, onComplete: () => backdrop.destroy() });
                 this.chase.setVisible(true);
                 s.tweens.add({ targets: this.aura, alpha: 0, duration: 300 });
                 this.dieRays.setTint(0xffe066).setAlpha(0.25);
@@ -654,7 +698,7 @@ export class RollScreen extends Screen {
           });
         });
       };
-      s.time.delayedCall(i * 60 + 140 + (info.superRoll && !fast ? 300 : 0), tick);
+      s.time.delayedCall(i * (grid ? 30 : 60) + 140 + (info.superRoll && !fast ? 300 : 0), tick);
     });
   }
 
