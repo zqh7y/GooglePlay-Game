@@ -525,6 +525,47 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     starPath(ctx, 48, 50, 42, 0.48);
     fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#fff3a0"], [1, "#ffb300"]]), 6);
   },
+  shop: (ctx) => {
+    rr(ctx, 16, 44, 64, 44, 6);
+    fillOutline(ctx, "#fff3dc", 5);
+    rr(ctx, 38, 58, 20, 30, 4);
+    fillOutline(ctx, "#9a5a34", 4);
+    ctx.beginPath();
+    ctx.moveTo(8, 46);
+    ctx.lineTo(16, 16);
+    ctx.lineTo(80, 16);
+    ctx.lineTo(88, 46);
+    ctx.closePath();
+    fillOutline(ctx, "#ffffff", 5);
+    for (const x of [16, 40, 64]) {
+      ctx.beginPath();
+      ctx.moveTo(x + 2, 18);
+      ctx.lineTo(x + 14, 18);
+      ctx.lineTo(x + 16, 44);
+      ctx.lineTo(x - 2, 44);
+      ctx.closePath();
+      fill(ctx, "#ff5a5a");
+    }
+    ctx.beginPath();
+    ctx.moveTo(8, 46);
+    ctx.lineTo(16, 16);
+    ctx.lineTo(80, 16);
+    ctx.lineTo(88, 46);
+    ctx.closePath();
+    outline(ctx, 5);
+  },
+  back: (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(14, 48);
+    ctx.lineTo(48, 14);
+    ctx.lineTo(48, 32);
+    ctx.lineTo(84, 32);
+    ctx.lineTo(84, 64);
+    ctx.lineTo(48, 64);
+    ctx.lineTo(48, 82);
+    ctx.closePath();
+    fillOutline(ctx, "#ffffff", 6);
+  },
   shield: (ctx) => {
     ctx.beginPath();
     ctx.moveTo(48, 8);

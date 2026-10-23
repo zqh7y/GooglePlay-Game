@@ -12,173 +12,151 @@ const EYE = "#24161e";
 export const HERO_W = 180;
 export const HERO_H = 240;
 /** Where the blaster is held, relative to the hero's feet (origin 0.5, 0.95). */
-export const HERO_HAND = { x: 30, y: -70 };
+export const HERO_HAND = { x: 56, y: -84 };
 
-const SKIN = 0xffcfa2;
-const HAIR = 0x4a2f22;
+const BOX = 0xff9a3c;
 const OLIVE = 0x6f7f3e;
 const KHAKI = 0xc9a86a;
-const PANTS = 0x4b5568;
 const BOOT = 0x5a3a28;
 const RED = 0xe0453f;
 const STEEL = 0x8a96b0;
 
 /**
- * A chunky 2:3 survivor in full gear: helmet with goggles, bandana, tactical vest with pouches
- * and a radio, belt with grenades, big backpack with a bedroll and antenna, gloves, knee pads, boots.
+ * The hero is a box: a chunky orange 2:3 crate with a face, kitted out like a survivor
+ * (helmet with goggles, scarf, bandolier, belt with pouches and a grenade, backpack with
+ * a bedroll and antenna, shoulder plate, stubby arms and big boots).
  * step 0 = standing, 1 and 2 = walking.
  */
 function drawHero(ctx: Ctx, step: number): void {
   const t = toon(ctx, "#2a1c1c", 5);
   const { E, C, poly, rect, part, tube, paint, gloss } = t;
-  const bob = step ? -3 : 0;
-  paint("rgba(42,26,30,0.22)", () => E(90, 228, 50, 8));
+  const b = step ? -3 : 0;
+  paint("rgba(42,26,30,0.22)", () => E(90, 228, 54, 8));
 
-  // bandana tails flutter behind
-  part(() => {
-    poly([[70, 150 + bob], [36, 140 + bob], [44, 154 + bob], [34, 166 + bob], [70, 160 + bob]], 4);
-  }, RED);
-
+  // scarf tails flutter behind
+  part(() => poly([[46, 112 + b], [14, 100 + b], [22, 114 + b], [10, 128 + b], [46, 124 + b]], 4), RED);
   // antenna and bedroll on the backpack
   tube(() => {
-    ctx.moveTo(44, 120 + bob);
-    ctx.lineTo(30, 62 + bob);
+    ctx.moveTo(30, 96 + b);
+    ctx.lineTo(18, 40 + b);
   }, 3, 0x3a3a44);
-  part(() => C(30, 60 + bob, 5), RED, undefined, 3);
-  // backpack
-  part(() => rect(52, 160 + bob, 44, 66, 12), OLIVE, () => {
-    paint(rgba(darken(OLIVE, 0.2)), () => rect(52, 140 + bob, 44, 14, 6));
-    paint(rgba(KHAKI), () => rect(40, 176 + bob, 10, 16, 3));
-  });
-  part(() => E(54, 124 + bob, 28, 12), 0xb07a4a, () => {
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = rgba(darken(0xb07a4a, 0.3));
-    for (const x of [42, 66]) {
-      ctx.beginPath();
-      ctx.moveTo(x, 113 + bob);
-      ctx.lineTo(x, 135 + bob);
-      ctx.stroke();
-    }
-  });
+  part(() => C(18, 38 + b, 5), RED, undefined, 3);
+  part(() => rect(32, 146 + b, 36, 86, 12), OLIVE, () => paint(rgba(darken(OLIVE, 0.2)), () => rect(32, 120 + b, 36, 16, 6)));
+  part(() => E(34, 100 + b, 22, 12, -0.2), 0xb07a4a);
 
-  // legs (walk cycle): back leg, front leg
+  // stubby legs with big boots (walk cycle)
   const lift = [0, -8, 8][step];
-  for (const [x, dy, shade] of [[76, lift, 0.12], [106, -lift, 0]] as [number, number, number][]) {
-    const y = 196 + Math.min(0, dy);
-    part(() => rect(x, y, 24, 30 + Math.abs(dy) * 0.3, 8), darken(PANTS, shade));
-    part(() => rect(x, y + 4, 20, 12, 5), darken(KHAKI, shade), undefined, 3);
-    part(() => {
-      poly([[x - 14, y + 16], [x + 10, y + 16], [x + 18, y + 24], [x + 18, y + 31], [x - 14, y + 31]], 5);
-    }, darken(BOOT, shade), () => paint(rgba(0x2a1c18), () => ctx.rect(x - 16, y + 27, 36, 6)));
+  for (const [x, dy, shade] of [[72, lift, 0.15], [112, -lift, 0]] as [number, number, number][]) {
+    const y = 206 + Math.min(0, dy);
+    part(() => rect(x, y - 2, 22, 22, 6), darken(0x4b5568, shade));
+    part(() => poly([[x - 16, y + 6], [x + 12, y + 6], [x + 20, y + 14], [x + 20, y + 22], [x - 16, y + 22]], 5), darken(BOOT, shade), () =>
+      paint(rgba(0x2a1c18), () => ctx.rect(x - 18, y + 18, 40, 6)));
   }
 
   // back arm
-  part(() => rect(60, 168 + bob, 20, 34, 9), darken(OLIVE, 0.15));
+  part(() => rect(38, 150 + b, 18, 36, 7), darken(BOX, 0.2));
 
-  // torso: shirt, vest, pouches, radio, belt
-  part(() => rect(92, 166 + bob, 66, 62, 16), OLIVE, () => {
-    paint(rgba(KHAKI), () => poly([[64, 142 + bob], [120, 142 + bob], [124, 194 + bob], [60, 194 + bob]], 10));
-    paint(rgba(darken(KHAKI, 0.12)), () => {
-      ctx.rect(90, 140 + bob, 5, 56);
-    });
-  });
-  for (const [x, y] of [[74, 178], [110, 178], [92, 180]] as [number, number][]) {
-    part(() => rect(x, y + bob, 15, 15, 4), darken(KHAKI, 0.25), () => paint(rgba(darken(KHAKI, 0.4)), () => ctx.rect(x - 8, y - 8 + bob, 16, 5)), 3);
-  }
-  part(() => rect(112, 154 + bob, 13, 20, 4), 0x3a3a44, () => paint("#7cf07a", () => ctx.rect(108, 148 + bob, 8, 5)), 3);
-  tube(() => {
-    ctx.moveTo(112, 144 + bob);
-    ctx.lineTo(116, 132 + bob);
-  }, 2.5, 0x3a3a44);
-  part(() => rect(92, 198 + bob, 72, 11, 4), 0x6a4430, () => paint("#ffd23f", () => ctx.rect(87, 194 + bob, 10, 9)), 3);
-  part(() => {
-    C(70, 208 + bob, 6.5);
-    C(82, 210 + bob, 6.5);
-  }, 0x5f7f3a, undefined, 3);
-
-  // head: hair tufts, face, helmet with goggles, bandana
-  part(() => {
-    poly([[48, 92], [36, 104], [50, 108]], 4);
-    poly([[50, 112], [40, 126], [56, 122]], 4);
-    poly([[132, 98], [144, 110], [130, 112]], 4);
-  }, HAIR);
-  part(() => rect(92, 108 + bob, 88, 74, 26), SKIN, () => {
-    paint(rgba(HAIR), () => poly([[46, 72 + bob], [138, 72 + bob], [136, 90 + bob], [120, 84 + bob], [104, 92 + bob], [86, 84 + bob], [66, 92 + bob], [48, 86 + bob]], 6));
-  });
-  // ear
-  part(() => E(52, 112 + bob, 8, 11), SKIN, undefined, 4);
-  // face (looking right a little)
-  for (const x of [86, 116]) {
-    paint(EYE, () => E(x, 112 + bob, 6.5, 8.5));
-    paint("#ffffff", () => C(x - 2, 109 + bob, 2.6));
-  }
-  ctx.lineWidth = 5;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = rgba(HAIR);
-  for (const [x1, y1, x2, y2] of [[76, 98, 94, 102], [108, 102, 126, 98]]) {
+  // the box: front face, lighter top, darker side
+  part(() => poly([[40, 46 + b], [62, 30 + b], [160, 30 + b], [140, 46 + b]], 5), lighten(BOX, 0.3));
+  part(() => poly([[140, 46 + b], [160, 30 + b], [160, 182 + b], [140, 198 + b]], 5), darken(BOX, 0.18));
+  part(() => rect(90, 122 + b, 100, 152, 10), BOX, () => {
+    // box tape and dents
+    paint(rgba(lighten(BOX, 0.2)), () => ctx.rect(84, 46 + b, 12, 34));
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = rgba(darken(BOX, 0.25));
     ctx.beginPath();
-    ctx.moveTo(x1, y1 + bob);
-    ctx.lineTo(x2, y2 + bob);
+    ctx.moveTo(48, 170 + b);
+    ctx.lineTo(58, 176 + b);
+    ctx.moveTo(126, 60 + b);
+    ctx.lineTo(132, 68 + b);
+    ctx.stroke();
+  });
+  gloss(56, 66 + b, 9, 5);
+
+  // face
+  for (const x of [72, 108]) {
+    paint(EYE, () => E(x, 96 + b, 8, 10.5));
+    paint("#ffffff", () => C(x - 2.5, 92 + b, 3.2));
+    paint("rgba(255,255,255,0.8)", () => C(x + 3, 100 + b, 1.4));
+  }
+  ctx.lineWidth = 5.5;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = EYE;
+  for (const [x1, y1, x2, y2] of [[60, 78, 82, 84], [98, 84, 120, 78]]) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1 + b);
+    ctx.lineTo(x2, y2 + b);
     ctx.stroke();
   }
-  paint("rgba(255,110,120,0.45)", () => {
-    E(74, 126 + bob, 8, 4.5);
-    E(128, 124 + bob, 7, 4.5);
+  paint("rgba(255,90,110,0.45)", () => {
+    E(58, 112 + b, 8, 4.5);
+    E(122, 112 + b, 8, 4.5);
   });
-  // band-aid on the cheek
-  part(() => poly([[120, 116 + bob], [134, 112 + bob], [136, 120 + bob], [122, 124 + bob]], 2), 0xffe0b0, undefined, 2.5);
-  ctx.lineWidth = 3.5;
-  ctx.strokeStyle = EYE;
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(96, 128 + bob);
-  ctx.quadraticCurveTo(103, 132 + bob, 110, 127 + bob);
+  ctx.moveTo(82, 114 + b);
+  ctx.quadraticCurveTo(90, 121 + b, 99, 113 + b);
   ctx.stroke();
-  // bandana around the neck
-  part(() => poly([[58, 136 + bob], [128, 136 + bob], [120, 152 + bob], [92, 158 + bob], [64, 150 + bob]], 8), RED, () => {
+  part(() => poly([[116, 56 + b], [134, 50 + b], [136, 59 + b], [118, 65 + b]], 2), 0xffe0b0, undefined, 2.5);
+
+  // scarf wrapped around the box
+  part(() => poly([[38, 124 + b], [142, 124 + b], [142, 140 + b], [38, 140 + b]], 5), RED, () =>
     paint("rgba(255,255,255,0.8)", () => {
-      C(78, 144 + bob, 2.5);
-      C(96, 148 + bob, 2.5);
-      C(112, 143 + bob, 2.5);
-    });
-  });
-  // helmet
+      C(60, 132 + b, 2.5);
+      C(90, 132 + b, 2.5);
+      C(120, 132 + b, 2.5);
+    }));
+  part(() => C(46, 132 + b, 9), darken(RED, 0.1), undefined, 4);
+
+  // bandolier with bullets
+  part(() => poly([[124, 140 + b], [138, 146 + b], [62, 196 + b], [48, 190 + b]], 3), 0x6a4430, undefined, 4);
+  for (let i = 0; i < 4; i++) {
+    const x = 112 - i * 16;
+    const y = 152 + b + i * 10;
+    part(() => rect(x, y, 7, 12, 3), 0xffcf3a, undefined, 2.5);
+  }
+  // belt, buckle, pouches and a grenade
+  part(() => rect(90, 186 + b, 104, 12, 4), 0x6a4430, () => paint("#ffd23f", () => ctx.rect(84, 181 + b, 12, 10)), 4);
+  part(() => rect(120, 198 + b, 18, 16, 4), KHAKI, undefined, 3.5);
+  part(() => rect(60, 198 + b, 16, 14, 4), KHAKI, undefined, 3.5);
+  part(() => C(102, 202 + b, 7), 0x5f7f3a, undefined, 3);
+
+  // helmet with goggles on top of the box
   part(() => {
-    ctx.moveTo(40, 86 + bob);
-    ctx.bezierCurveTo(38, 36 + bob, 146, 32 + bob, 144, 86 + bob);
+    ctx.moveTo(34, 52 + b);
+    ctx.bezierCurveTo(32, 2 + b, 168, -6 + b, 166, 40 + b);
+    ctx.lineTo(160, 46 + b);
+    ctx.lineTo(38, 60 + b);
     ctx.closePath();
   }, OLIVE, () => {
     ctx.lineWidth = 3;
     ctx.strokeStyle = rgba(darken(OLIVE, 0.22));
     ctx.beginPath();
-    ctx.moveTo(60, 52 + bob);
-    ctx.lineTo(70, 82 + bob);
-    ctx.moveTo(92, 44 + bob);
-    ctx.lineTo(92, 82 + bob);
-    ctx.moveTo(124, 52 + bob);
-    ctx.lineTo(114, 82 + bob);
+    ctx.moveTo(70, 16 + b);
+    ctx.lineTo(74, 50 + b);
+    ctx.moveTo(110, 10 + b);
+    ctx.lineTo(110, 46 + b);
     ctx.stroke();
   });
-  gloss(66, 54 + bob, 14, 6);
-  part(() => rect(92, 86 + bob, 112, 12, 6), darken(OLIVE, 0.12), undefined, 4);
-  // goggles on the helmet
+  gloss(64, 22 + b, 14, 6);
   tube(() => {
-    ctx.moveTo(44, 70 + bob);
-    ctx.lineTo(140, 70 + bob);
+    ctx.moveTo(38, 42 + b);
+    ctx.lineTo(164, 32 + b);
   }, 6, 0x3a3a44);
-  for (const x of [80, 110]) {
-    part(() => C(x, 68 + bob, 13), 0x4a4a58, () => {
-      paint(linear(ctx, 0, 58 + bob, 0, 80 + bob, [[0, "#c8fbff"], [1, "#38a8d8"]]), () => C(x, 68 + bob, 9));
-      paint("rgba(255,255,255,0.85)", () => E(x - 3, 64 + bob, 4, 2.5, -0.5));
+  for (const x of [80, 112]) {
+    part(() => C(x, 37 + b - (x - 80) * 0.08, 13), 0x4a4a58, () => {
+      paint(linear(ctx, 0, 26 + b, 0, 50 + b, [[0, "#c8fbff"], [1, "#38a8d8"]]), () => C(x, 37 + b - (x - 80) * 0.08, 9));
+      paint("rgba(255,255,255,0.85)", () => E(x - 3, 33 + b, 4, 2.5, -0.5));
     }, 4);
   }
-  // star patch
   ctx.save();
-  starPath(ctx, 124, 48 + bob, 7, 0.5);
+  starPath(ctx, 146, 22 + b, 7, 0.5);
   fillOutline(ctx, "#ffd23f", 2.5);
   ctx.restore();
-  // front shoulder pad and arm (the gloved hand is part of the blaster sprite)
-  part(() => rect(122, 166 + bob, 20, 26, 9), OLIVE);
-  part(() => poly([[110, 156 + bob], [132, 154 + bob], [136, 166 + bob], [112, 168 + bob]], 6), STEEL, () => gloss(118, 157 + bob, 7, 2.5, 0), 4);
+
+  // shoulder plate and front arm (the gloved hand is part of the blaster)
+  part(() => rect(146, 150 + b, 18, 32, 7), BOX);
+  part(() => poly([[132, 132 + b], [160, 128 + b], [164, 142 + b], [134, 146 + b]], 5), STEEL, () => gloss(144, 133 + b, 7, 2.5, 0), 4);
 }
 
 /** The blaster: a separate sprite so it can aim. Points right; the grip (with a gloved hand) is at x=34. */

@@ -1,11 +1,11 @@
 import Phaser from "phaser";
 import { canvasTexture, darken, lighten, linear, mix, rgba } from "../art/draw";
 import { BRANCH_INFO, Branch, TREE, TREE_BY_ID, TreeNode, effectText, hexPos } from "../data/tree";
-import { save } from "../systems/save";
 import { buyNode, canBuy, nodeOwned, nodeUnlocked } from "../systems/stats";
 import { sfx } from "../systems/sound";
+import { Layout } from "../layout";
 import { fmt } from "./format";
-import { Pill, button, fitText, iconButton, label, text } from "./widgets";
+import { button, fitText, label, text } from "./widgets";
 
 const SIZE = 74;
 type State = "owned" | "ready" | "open" | "locked";
@@ -100,48 +100,55 @@ export class TreeScreen {
   private lines: Phaser.GameObjects.Graphics;
   private views = new Map<string, NodeView>();
   private tip: Phaser.GameObjects.Container | null = null;
-  private cash: Pill;
-  private timer: Phaser.Time.TimerEvent;
-  private top = 190;
+  private top: number;
+  private bottom: number;
+  private refreshTimer = 0;
   private drag = { on: false, x: 0, y: 0, mx: 0, my: 0, moved: false, pinch: 0, scale: 1 };
   private pointers = new Map<number, { x: number; y: number }>();
 
-  constructor(private scene: Phaser.Scene, private onBuy: () => void, private toast: (s: string, c?: string) => void, private onClose: () => void) {
-    const { width: W, height: H } = scene.scale;
-    this.root = scene.add.container(0, 0).setDepth(4500);
-    const bg = scene.add.tileSprite(0, 0, W, H, backgroundTexture(scene)).setOrigin(0).setInteractive();
-    const vignette = scene.add.graphics();
-    vignette.fillGradientStyle(0x0f3a40, 0x0f3a40, 0x0f3a40, 0x0f3a40, 0.85, 0.85, 0, 0).fillRect(0, 0, W, 260);
-    this.map = scene.add.container(W / 2, H * 0.55);
+  constructor(private scene: Phaser.Scene, L: Layout, private onBuy: () => void, private toast: (s: string, c?: string) => void) {
+    const W = scene.scale.width;
+    this.top = L.headerBottom + 110;
+    this.bottom = L.navTop;
+    this.root = scene.add.container(0, 0).setDepth(3000).setVisible(false);
+    const bg = scene.add.tileSprite(0, 0, W, L.navTop, backgroundTexture(scene)).setOrigin(0).setInteractive();
+    this.map = scene.add.container(W / 2, (this.top + this.bottom) / 2);
     this.lines = scene.add.graphics();
     this.map.add(this.lines);
     for (const node of TREE) this.makeNode(node);
-
-    const header = scene.add.container(0, 0, [
-      vignette,
-      text(scene, 40, 70, "UPGRADE TREE", 56).setOrigin(0, 0.5),
-    ]);
-    this.cash = new Pill(scene, W - 270, 70, 300, 80, "icon_cash", 40);
-    header.add(this.cash);
-    header.add(iconButton(scene, W - 60, 70, "icon_close", 90, () => this.close()));
-    // branch legend
+    // branch colour legend
+    const legend = scene.add.container(0, 0);
     const branches = (Object.keys(BRANCH_INFO) as Branch[]).filter((b) => b !== "start");
     branches.forEach((b, i) => {
-      const x = 40 + (i % 3) * 330;
-      const y = 140 + Math.floor(i / 3) * 44;
+      const x = 40 + (i % 3) * 340;
+      const y = L.headerBottom + 30 + Math.floor(i / 3) * 44;
       const dot = scene.add.graphics().fillStyle(BRANCH_INFO[b].color, 1).fillCircle(x + 12, y, 12).lineStyle(4, 0x0a1a20, 1).strokeCircle(x + 12, y, 12);
-      header.add([dot, text(scene, x + 34, y, BRANCH_INFO[b].label, 26).setOrigin(0, 0.5)]);
+      legend.add([dot, text(scene, x + 34, y, BRANCH_INFO[b].label, 26).setOrigin(0, 0.5)]);
     });
-    const hint = text(scene, W / 2, H - 50, "Drag to explore  •  Pinch to zoom  •  Tap a hexagon", 28, "#cfeff0");
-    this.root.add([bg, this.map, header, hint]);
-    this.top = 240;
-
-    this.refresh(false);
-    this.focus();
-    this.timer = scene.time.addEvent({ delay: 300, loop: true, callback: () => this.refresh(false) });
+    const hint = text(scene, W / 2, L.navTop - 40, "Drag to explore  •  Pinch to zoom  •  Tap a hexagon", 28, "#cfeff0");
+    this.root.add([bg, this.map, legend, hint]);
     this.setupInput(bg);
-    this.root.setAlpha(0);
-    scene.tweens.add({ targets: this.root, alpha: 1, duration: 180 });
+  }
+
+  show(): void {
+    this.root.setVisible(true).setAlpha(0);
+    this.scene.tweens.add({ targets: this.root, alpha: 1, duration: 160 });
+    this.refresh(true);
+    this.focus();
+  }
+
+  hide(): void {
+    this.closeTip();
+    this.root.setVisible(false);
+  }
+
+  update(delta: number): void {
+    if (!this.root.visible) return;
+    this.refreshTimer -= delta;
+    if (this.refreshTimer <= 0) {
+      this.refreshTimer = 300;
+      this.refresh(false);
+    }
   }
 
   private makeNode(node: TreeNode): void {
@@ -166,7 +173,6 @@ export class TreeScreen {
 
   /** Update hex colours and the connecting lines. */
   private refresh(force: boolean): void {
-    this.cash.setValue(fmt(save.cash));
     let changed = force;
     for (const v of this.views.values()) {
       const st = this.stateOf(v.node);
@@ -202,13 +208,14 @@ export class TreeScreen {
     const target = TREE.filter((n) => this.stateOf(n) === "ready").sort((a, b) => a.cost - b.cost)[0]
       ?? TREE.filter((n) => this.stateOf(n) === "open").sort((a, b) => a.cost - b.cost)[0] ?? TREE[0];
     const p = hexPos(target, SIZE + 4);
-    const { width: W, height: H } = this.scene.scale;
-    this.map.setPosition(W / 2 - p.x * this.map.scale, (this.top + H) / 2 - p.y * this.map.scale);
+    const W = this.scene.scale.width;
+    this.map.setPosition(W / 2 - p.x * this.map.scale, (this.top + this.bottom) / 2 - p.y * this.map.scale);
   }
 
   private setupInput(bg: Phaser.GameObjects.TileSprite): void {
     const s = this.scene;
     bg.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (p.y < this.top - 60) return;
       this.pointers.set(p.id, { x: p.x, y: p.y });
       if (this.pointers.size === 2) {
         const [a, b] = [...this.pointers.values()];
@@ -247,7 +254,9 @@ export class TreeScreen {
     s.input.on("pointermove", move);
     s.input.on("pointerup", up);
     s.input.on("pointerupoutside", up);
-    const wheel = (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => this.zoomTo(this.map.scale * (dy > 0 ? 0.9 : 1.1), s.input.x, s.input.y);
+    const wheel = (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      if (this.root.visible) this.zoomTo(this.map.scale * (dy > 0 ? 0.9 : 1.1), s.input.x, s.input.y);
+    };
     s.input.on("wheel", wheel);
     this.root.once("destroy", () => {
       s.input.off("pointermove", move);
@@ -266,7 +275,8 @@ export class TreeScreen {
   }
 
   private clampMap(): void {
-    const { width: W, height: H } = this.scene.scale;
+    const { width: W } = this.scene.scale;
+    const H = this.bottom;
     const xs = TREE.map((n) => hexPos(n, SIZE + 4).x * this.map.scale);
     const ys = TREE.map((n) => hexPos(n, SIZE + 4).y * this.map.scale);
     this.map.x = Phaser.Math.Clamp(this.map.x, W - 120 - Math.max(...xs), 120 - Math.min(...xs));
@@ -361,9 +371,4 @@ export class TreeScreen {
     }
   }
 
-  close(): void {
-    this.timer.remove();
-    this.scene.tweens.add({ targets: this.root, alpha: 0, duration: 140, onComplete: () => this.root.destroy() });
-    this.onClose();
-  }
 }

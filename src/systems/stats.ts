@@ -31,7 +31,9 @@ export const luckyEvery = () => 10 - sum("luckyEvery");
 export const luckyMult = () => 2 + sum("luckyPower");
 
 /** Milliseconds between rolls. */
-export const rollTime = () => Math.max(150, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && owned(t) ? m * (1 - t.per) : m), 1));
+export const speedActive = () => Date.now() < save.speedUntil;
+export const rollTime = () =>
+  Math.max(120, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && owned(t) ? m * (1 - t.per) : m), 1) * (speedActive() ? 0.5 : 1));
 export const dicePerRoll = () => 1 + sum("multi");
 export const autoUnlocked = () => sum("auto") > 0;
 export const cashMult = () => product("cash");

@@ -3,14 +3,14 @@ import { HERO_HAND } from "../art/characters";
 import { INK_N } from "../art/draw";
 import { GROUND_SCALE, makeGround } from "../art/ground";
 import { petTexture } from "../art/pets";
-import { makeWorldTextures } from "../art/world";
+import { crystalKey, makeWorldTextures } from "../art/world";
 import {
   BOSS, FLYER, HERO_BASE_DMG, HERO_FIRE_MS, HERO_TEAM_SHARE, MAX_STAGE, MonsterStats, SPAWN_MAX, SPAWN_MIN, VILLAGE_HP,
   WALKER_A, WALKER_B, WAVES_PER_STAGE, monsterCash, monsterHp, waveSize,
 } from "../data/balance";
 import { ITEMS, ItemDef, levelMult } from "../data/items";
-import { REGIONS, Region, RegionId, regionForStage, regionUnlocked } from "../data/regions";
-import { Flow, WORLD, World, flowDir, flowField, getWorld, pushOut, regionAt } from "../game/world";
+import { REGIONS, Region, regionForStage } from "../data/regions";
+import { ARENA, Arena, Flow, flowDir, flowField, getArena, pushOut } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
 import { persist, save } from "../systems/save";
@@ -30,10 +30,7 @@ const PET_RANGE = 650;
 export const CASH_TARGET = { x: GAME_W - 300, y: 150 };
 
 /** Live numbers the HUD (UI scene) reads. */
-export const battle = {
-  progress: 0, bossFrac: -1, village: 1, dps: 0, combo: 0,
-  heroX: 0, heroY: 0, here: "village" as RegionId, cutscene: false,
-};
+export const battle = { progress: 0, bossFrac: -1, village: 1, dps: 0, combo: 0, heroX: 0, heroY: 0 };
 
 interface EnemyType {
   tex: string;
@@ -84,28 +81,28 @@ interface Strike {
   beam: boolean;
 }
 
-interface ChestView {
-  id: string;
+interface Chest {
   img: Phaser.GameObjects.Image;
   arrow: Phaser.GameObjects.Image;
   x: number;
   y: number;
+  until: number;
 }
 
 const PET_SPOTS = [[-150, 30], [150, 30], [-95, 125], [95, 125], [-245, 100], [245, 100]];
 const PET_SCALE = 0.7;
 const NO_JOY = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
 const BUCKET = 500;
-const CHEST_RESPAWN = 8 * 60 * 1000;
 
-/** The big world: walk anywhere you have unlocked, protect the heart of the land you are fighting for. */
+/** One land's arena: walk anywhere, protect the crystal in the middle from monsters coming from every side. */
 export class BattleScene extends Phaser.Scene {
   private L!: Layout;
-  private world!: World;
-  private fight!: Region;
+  private land!: Region;
+  private arena!: Arena;
   private flow!: Flow;
   private hero!: Phaser.GameObjects.Image;
   private gun!: Phaser.GameObjects.Image;
+  private crystal!: Phaser.GameObjects.Image;
   private heroTimer = 0;
   private walkTimer = 0;
   private walkFrame = 0;
@@ -130,11 +127,11 @@ export class BattleScene extends Phaser.Scene {
   private comboTimer = 0;
   private comboText!: Phaser.GameObjects.Text;
   private stageEarned = 0;
+  private changingLand = false;
 
   private fx!: Phaser.GameObjects.Graphics;
   private bars!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
-  private ambient!: Phaser.GameObjects.Particles.ParticleEmitter;
   private puff!: Phaser.GameObjects.Particles.ParticleEmitter;
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   private dmgTexts: Phaser.GameObjects.Text[] = [];
@@ -145,12 +142,8 @@ export class BattleScene extends Phaser.Scene {
   private buckets = new Map<number, Phaser.GameObjects.GameObject[]>();
   private shown = new Set<number>();
   private cullTimer = 0;
-  private fog = new Map<RegionId, Phaser.GameObjects.Image[]>();
-  private fogLabels = new Map<RegionId, Phaser.GameObjects.Container>();
-  private portalSwirls: { img: Phaser.GameObjects.Image; region: RegionId }[] = [];
-  private chests: ChestView[] = [];
-  private regionTimer = 0;
-  private miniFog!: Phaser.GameObjects.Image;
+  private chests: Chest[] = [];
+  private chestTimer = 0;
 
   private dmgWindow = 0;
   private dpsTimer = 0;
@@ -164,44 +157,41 @@ export class BattleScene extends Phaser.Scene {
 
   create(): void {
     this.L = layoutFor(this.scale.height);
-    makeWorldTextures(this);
-    this.world = getWorld();
+    makeWorldTextures(this, REGIONS);
+    this.land = regionForStage(save.stage);
+    this.arena = getArena(this.land.id);
+    this.flow = flowField(this.arena);
     Object.assign(this, {
-      pets: [], enemies: [], shots: [], strikes: [], spawnQueue: [], dmgTexts: [], cashTexts: [], chests: [], portalSwirls: [],
-      waveDelay: 0, flyingCash: 0, combo: 0, comboTimer: 0, lastManual: -99999, stageEarned: 0,
-      buckets: new Map(), shown: new Set(), fog: new Map(), fogLabels: new Map(),
+      pets: [], enemies: [], shots: [], strikes: [], spawnQueue: [], dmgTexts: [], cashTexts: [], chests: [],
+      waveDelay: 0, flyingCash: 0, combo: 0, comboTimer: 0, lastManual: -99999, stageEarned: 0, changingLand: false,
+      buckets: new Map(), shown: new Set(), chestTimer: 40000 + Math.random() * 30000,
     });
     this.joy = { ...NO_JOY };
     battle.dps = 0;
     battle.combo = 0;
-    battle.cutscene = false;
-    this.cameras.main.fadeIn(400, 74, 47, 29);
-    this.drawWorld();
+    this.cameras.main.fadeIn(500, 74, 47, 29);
+    this.drawArena();
 
-    this.fight = regionForStage(save.stage);
-    const [hx, hy] = this.fight.heart;
-    this.hero = this.add.image(hx, hy + 220, "hero").setOrigin(0.5, 0.95);
+    const [cx, cy] = this.arena.center;
+    this.hero = this.add.image(cx, cy + 260, "hero").setOrigin(0.5, 0.95);
     this.gun = this.add.image(0, 0, "gun").setOrigin(34 / 152, 46 / 68);
-    // keep the hero in the middle of the open play area (between the HUD and the bottom panel)
-    const playCenter = (this.L.hudBottom + this.L.slotsY - 120) / 2;
-    this.cameras.main.setBounds(0, 0, WORLD, WORLD);
+    // keep the hero in the middle of the open play area (between the HUD and the bottom bar)
+    const playCenter = (this.L.hudBottom + this.L.navTop) / 2;
+    this.cameras.main.setBounds(0, 0, ARENA, ARENA);
     this.cameras.main.startFollow(this.hero, true, 0.12, 0.12, 0, playCenter - this.scale.height / 2);
 
     this.fx = this.add.graphics().setDepth(9000);
     this.bars = this.add.graphics().setDepth(9100);
     this.overlay = this.add.graphics().setScrollFactor(0).setDepth(9500);
     this.joyG = this.add.graphics().setScrollFactor(0).setDepth(9600);
-    this.add.image(22, this.L.hudBottom + 24, "world_mini").setOrigin(0).setScrollFactor(0).setDepth(9490).setDisplaySize(200, 200)
-      .setInteractive().on("pointerup", () => this.game.events.emit("open-map"));
-    this.miniFog = this.add.image(22, this.L.hudBottom + 24, "__DEFAULT").setOrigin(0).setScrollFactor(0).setDepth(9491);
-    this.drawMiniFog();
+    this.add.image(22, this.L.hudBottom + 24, `mini_${this.land.id}`).setOrigin(0).setScrollFactor(0).setDepth(9490).setDisplaySize(180, 180);
     this.puff = this.add.particles(0, 0, "puff", { speed: { min: 80, max: 340 }, lifespan: 500, scale: { start: 1.2, end: 0 }, emitting: false }).setDepth(8900);
     this.sparks = this.add.particles(0, 0, "spark", {
       speed: { min: 120, max: 360 }, lifespan: 320, scale: { start: 0.7, end: 0 }, rotate: { min: 0, max: 90 }, emitting: false,
     }).setDepth(8950);
-    this.ambient = this.add.particles(0, 0, "petal", {
+    this.add.particles(0, 0, "petal", {
       x: { min: -100, max: GAME_W }, y: { min: 0, max: 300 }, lifespan: 9000, speedX: { min: 20, max: 60 }, speedY: { min: 40, max: 90 },
-      rotate: { start: 0, end: 360 }, alpha: { start: 0.9, end: 0 }, frequency: 420,
+      rotate: { start: 0, end: 360 }, alpha: { start: 0.9, end: 0 }, frequency: 420, tint: this.land.ambient,
     }).setScrollFactor(0).setDepth(9200);
     for (let i = 0; i < 60; i++) this.dmgTexts.push(text(this, 0, 0, "", 42).setDepth(9300).setVisible(false));
     for (let i = 0; i < 24; i++) {
@@ -214,20 +204,32 @@ export class BattleScene extends Phaser.Scene {
 
     this.buildPets();
     this.setupControls();
-    this.useFight();
     this.game.events.on("pets-changed", this.buildPets, this);
     this.events.once("shutdown", () => this.game.events.off("pets-changed", this.buildPets, this));
     this.cull(true);
-    this.startWave();
+    // first time in a land: celebrate it
+    const idx = REGIONS.indexOf(this.land);
+    if (idx > save.regionShown) {
+      save.regionShown = idx;
+      persist();
+      this.time.delayedCall(600, () => {
+        sfx.fanfare();
+        buzz(120);
+        this.game.events.emit("land-unlocked", this.land.name);
+      });
+      this.waveDelay = 3200;
+    } else {
+      this.startWave();
+    }
   }
 
-  // ───────────────────────── world ─────────────────────────
+  // ───────────────────────── arena ─────────────────────────
 
   private bucketOf(x: number, y: number): number {
     return Math.floor(x / BUCKET) * 100 + Math.floor(y / BUCKET);
   }
 
-  /** Static scenery is hidden when far from the camera, so a huge map stays fast. */
+  /** Scenery far from the camera is hidden, so big arenas stay fast. */
   private addStatic(obj: Phaser.GameObjects.Image, x: number, y: number): void {
     const k = this.bucketOf(x, y);
     if (!this.buckets.has(k)) this.buckets.set(k, []);
@@ -241,165 +243,85 @@ export class BattleScene extends Phaser.Scene {
     for (let bx = Math.floor((v.x - 300) / BUCKET); bx <= Math.floor((v.right + 300) / BUCKET); bx++) {
       for (let by = Math.floor((v.y - 200) / BUCKET); by <= Math.floor((v.bottom + 500) / BUCKET); by++) want.add(bx * 100 + by);
     }
-    const show = (o: Phaser.GameObjects.GameObject, on: boolean) => {
-      (o as Phaser.GameObjects.Image).setVisible(on);
-      if (o instanceof Phaser.GameObjects.Particles.ParticleEmitter) {
-        if (on) o.resume();
-        else o.pause();
-      }
-    };
-    for (const k of this.shown) if (!want.has(k)) this.buckets.get(k)?.forEach((o) => show(o, false));
-    for (const k of want) if (force || !this.shown.has(k)) this.buckets.get(k)?.forEach((o) => show(o, true));
+    for (const k of this.shown) if (!want.has(k)) this.buckets.get(k)?.forEach((o) => (o as Phaser.GameObjects.Image).setVisible(false));
+    for (const k of want) if (force || !this.shown.has(k)) this.buckets.get(k)?.forEach((o) => (o as Phaser.GameObjects.Image).setVisible(true));
     this.shown = want;
   }
 
-  private drawWorld(): void {
-    const w = this.world;
-    const keys = makeGround(this, w);
+  private drawArena(): void {
+    const a = this.arena;
+    const keys = makeGround(this, a);
     this.add.image(0, 0, keys.ground).setOrigin(0).setScale(1 / GROUND_SCALE).setDepth(-1000);
-    for (const o of w.objects) {
-      const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.depth ?? o.y);
-      if (o.flip && !o.tex.startsWith("house") && o.tex !== "barn") img.setFlipX(true);
+    for (const o of a.objects) {
+      const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
       if (o.scale) img.setScale(o.scale);
-      if (o.angle !== undefined) img.setOrigin(0.5).setPosition(o.x, o.y - img.height / 2).setAngle(o.angle);
-      if (o.tex === "portal") {
-        const swirl = this.add.image(o.x, o.y - 96, "portal_swirl").setDepth(-399).setTint(0xe0b0ff).setScale(0.9, 0.65);
-        this.portalSwirls.push({ img: swirl, region: regionAt(o.x, o.y - 100).id });
-        this.addStatic(swirl, o.x, o.y);
-      }
       this.addStatic(img, o.x, o.y);
-    }
-    const [mx, my] = w.windmill;
-    const blades = this.add.image(mx, my, "windmill_blades").setDepth(my + 245);
-    this.tweens.add({ targets: blades, angle: 360, duration: 7000, repeat: -1 });
-    this.addStatic(blades, mx, my + 240);
-    for (const [cx, cy] of w.chimneys) {
-      const smoke = this.add.particles(cx, cy, "puff", {
-        speedY: { min: -60, max: -30 }, speedX: { min: 5, max: 25 }, lifespan: 2600, scale: { start: 0.6, end: 1.6 },
-        alpha: { start: 0.5, end: 0 }, tint: 0xd8d8e0, frequency: 700,
-      }).setDepth(cy + 200);
-      this.buckets.get(this.bucketOf(cx, cy + 200))?.push(smoke) ?? this.buckets.set(this.bucketOf(cx, cy + 200), [smoke]);
-      smoke.setVisible(false);
-    }
-    // treasure chests
-    for (const c of w.chests) {
-      const img = this.add.image(c.x, c.y, "chest").setOrigin(0.5, 1).setDepth(c.y);
-      const arrow = this.add.image(c.x, c.y - 130, "icon_gift").setScale(0.5).setDepth(c.y + 1);
-      this.tweens.add({ targets: arrow, y: c.y - 150, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      this.addStatic(img, c.x, c.y);
-      this.addStatic(arrow, c.x, c.y);
-      this.chests.push({ id: c.id, img, arrow, x: c.x, y: c.y });
-    }
-    this.refreshChests();
-    // clouds over lands you have not reached yet
-    for (let y = 100; y < WORLD; y += 230) {
-      for (let x = 80; x < WORLD; x += 260) {
-        const jx = x + ((x * 7 + y * 3) % 90) - 45;
-        const jy = y + ((x * 3 + y * 11) % 70) - 35;
-        const r = regionAt(jx, jy);
-        if (regionUnlocked(r, save.bestStage)) continue;
-        const cloud = this.add.image(jx, jy, "cloud").setDepth(7000 + jy).setScale(1.5 + ((x + y) % 5) * 0.08).setFlipX((x + y) % 2 === 0);
-        this.tweens.add({ targets: cloud, x: jx + 30, duration: 4000 + ((x * y) % 3000), yoyo: true, repeat: -1, ease: "Sine.inOut" });
-        if (!this.fog.has(r.id)) this.fog.set(r.id, []);
-        this.fog.get(r.id)!.push(cloud);
-        this.addStatic(cloud, jx, jy);
+      // trees sway a little in the wind
+      if (o.tex.startsWith("tree") || o.tex === "palm") {
+        this.tweens.add({ targets: img, angle: { from: -1.5, to: 1.5 }, duration: 2200 + (o.x % 900), yoyo: true, repeat: -1, ease: "Sine.inOut" });
       }
     }
-    for (const r of REGIONS) {
-      if (regionUnlocked(r, save.bestStage)) continue;
-      const [x, y] = r.heart;
-      const label = this.add.container(x, y, [
-        this.add.image(0, -70, "icon_lock").setScale(1.4),
-        text(this, 0, 30, r.name, 64),
-        text(this, 0, 96, `Reach stage ${r.from}`, 44, "#ffe680"),
-      ]).setDepth(8800);
-      this.fogLabels.set(r.id, label);
+    // the crystal you protect: bobbing, glowing and sparkling
+    const [cx, cy] = a.center;
+    const glow = this.add.image(cx, cy - 110, "glow").setTint(this.land.crystal).setScale(2.4).setAlpha(0.5).setDepth(cy - 1);
+    this.tweens.add({ targets: glow, alpha: 0.85, scale: 2.8, duration: 1300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.crystal = this.add.image(cx, cy + 70, crystalKey(this.land.id)).setOrigin(0.5, 1).setDepth(cy + 70);
+    this.tweens.add({ targets: this.crystal, y: cy + 60, duration: 1500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.add.particles(cx, cy - 120, "spark", {
+      x: { min: -90, max: 90 }, y: { min: -120, max: 80 }, lifespan: 1400, speedY: { min: -40, max: -10 },
+      scale: { start: 0.5, end: 0 }, tint: [this.land.crystal, 0xffffff], frequency: 160,
+    }).setDepth(cy + 71);
+  }
+
+  // ───────────────────────── treasure chests ─────────────────────────
+
+  /** Every minute or two a chest pops up somewhere; grab it before it vanishes. */
+  private spawnChest(): void {
+    const [cx, cy] = this.arena.center;
+    for (let tries = 0; tries < 40; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 380 + Math.random() * 560;
+      const x = cx + Math.cos(a) * d;
+      const y = cy + Math.sin(a) * d;
+      const [px, py] = pushOut(x, y, 50, this.arena.colliders);
+      if (Math.hypot(px - x, py - y) > 1) continue;
+      const img = this.add.image(x, y, "chest").setOrigin(0.5, 1).setDepth(y).setScale(0);
+      const arrow = this.add.image(x, y - 130, "icon_gift").setScale(0.5).setDepth(y + 1);
+      this.tweens.add({ targets: img, scale: 1, duration: 400, ease: "Back.out" });
+      this.tweens.add({ targets: arrow, y: y - 150, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      this.chests.push({ img, arrow, x, y, until: this.time.now + 45000 });
+      this.game.events.emit("toast", "A treasure chest appeared!", "#ffe066");
+      sfx.lucky();
+      return;
     }
   }
 
-  /** Clouds on the minimap, drawn once (and again when a land opens). */
-  private drawMiniFog(): void {
-    const key = `minifog_${REGIONS.filter((r) => regionUnlocked(r, save.bestStage)).length}`;
-    if (!this.textures.exists(key)) {
-      const tex = this.textures.createCanvas(key, 200, 200)!;
-      const ctx = tex.getContext();
-      ctx.fillStyle = "rgba(232,236,246,0.9)";
-      for (let y = 0; y < 200; y += 5) {
-        for (let x = 0; x < 200; x += 5) {
-          if (this.isLocked(((x + 2.5) / 200) * WORLD, ((y + 2.5) / 200) * WORLD)) ctx.fillRect(x, y, 5, 5);
-        }
-      }
-      tex.refresh();
+  private updateChests(delta: number): void {
+    this.chestTimer -= delta;
+    if (this.chestTimer <= 0) {
+      this.chestTimer = 60000 + Math.random() * 60000;
+      if (this.chests.length < 2) this.spawnChest();
     }
-    this.miniFog.setTexture(key);
+    this.chests = this.chests.filter((c) => {
+      const near = Math.abs(c.x - this.hero.x) < 90 && Math.abs(c.y - this.hero.y) < 70;
+      if (near) this.openChest(c);
+      else if (this.time.now > c.until) this.tweens.add({ targets: [c.img, c.arrow], alpha: 0, duration: 400, onComplete: () => (c.img.destroy(), c.arrow.destroy()) });
+      return !near && this.time.now <= c.until;
+    });
   }
 
-  /** Remove the clouds over a land (when you first reach it). */
-  private clearFog(id: RegionId, animate: boolean): void {
-    const clouds = this.fog.get(id) ?? [];
-    const [hx, hy] = REGIONS.find((r) => r.id === id)!.heart;
-    for (const c of clouds) {
-      this.tweens.killTweensOf(c);
-      for (const list of this.buckets.values()) {
-        const i = list.indexOf(c);
-        if (i >= 0) list.splice(i, 1);
-      }
-      if (!animate) {
-        c.destroy();
-        continue;
-      }
-      c.setVisible(true);
-      const d = Phaser.Math.Distance.Between(c.x, c.y, hx, hy);
-      this.tweens.add({
-        targets: c, scale: c.scale * 1.8, alpha: 0, x: c.x + (c.x - hx) * 0.4, y: c.y + (c.y - hy) * 0.4,
-        delay: d * 0.5, duration: 900, ease: "Quad.out", onComplete: () => c.destroy(),
-      });
-    }
-    this.fog.delete(id);
-    const label = this.fogLabels.get(id);
-    if (label) {
-      this.tweens.add({ targets: label, scale: 1.4, alpha: 0, duration: 500, onComplete: () => label.destroy() });
-      this.fogLabels.delete(id);
-    }
-  }
-
-  private isLocked(x: number, y: number): boolean {
-    return !regionUnlocked(regionAt(x, y), save.bestStage);
-  }
-
-  /** The land whose heart we defend follows the stage number. */
-  private useFight(): void {
-    this.fight = regionForStage(save.stage);
-    const open = REGIONS.filter((r) => regionUnlocked(r, save.bestStage)).map((r) => r.id);
-    this.flow = flowField(this.world, this.fight.id, open);
-    for (const p of this.portalSwirls) {
-      const active = p.region === this.fight.id;
-      this.tweens.killTweensOf(p.img);
-      p.img.setAlpha(active ? 1 : 0.25);
-      if (active) this.tweens.add({ targets: p.img, angle: 360, duration: 2400, repeat: -1 });
-    }
-  }
-
-  private refreshChests(): void {
-    const now = Date.now();
-    for (const c of this.chests) {
-      const ready = (save.chests[c.id] ?? 0) <= now && !this.isLocked(c.x, c.y);
-      c.img.setTexture(ready ? "chest" : "chest_open").setAlpha(ready ? 1 : 0.7);
-      c.arrow.setAlpha(ready ? 1 : 0);
-    }
-  }
-
-  private openChest(c: ChestView): void {
-    save.chests[c.id] = Date.now() + CHEST_RESPAWN;
+  private openChest(c: Chest): void {
     const cash = Math.max(300, save.cashPerSec * 45) * chestMult();
-    const gems = Math.random() < 0.3 ? 2 + Math.floor(Math.random() * 4) : 0;
+    const gems = Math.random() < 0.35 ? 2 + Math.floor(Math.random() * 4) : 0;
     save.cash += cash;
     save.gems += gems;
     persist();
     sfx.fanfare();
     buzz(80);
-    this.refreshChests();
+    c.arrow.destroy();
+    c.img.setTexture("chest_open");
     this.tweens.add({ targets: c.img, scaleX: 1.25, scaleY: 0.8, duration: 90, yoyo: true });
+    this.tweens.add({ targets: c.img, alpha: 0, delay: 1200, duration: 400, onComplete: () => c.img.destroy() });
     this.sparks.setParticleTint(0xffe066);
     this.sparks.explode(30, c.x, c.y - 50);
     this.flyCash(c.x, c.y - 60, 12);
@@ -412,8 +334,8 @@ export class BattleScene extends Phaser.Scene {
   private setupControls(): void {
     this.keys = this.input.keyboard!.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT") as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (this.joy.active || battle.cutscene || p.y < this.L.hudBottom + 10 || p.y > this.L.slotsY - 80) return;
-      if (p.x < 240 && p.y < this.L.hudBottom + 240) return;
+      if (this.joy.active || this.changingLand || !this.cameras.main.visible || p.y < this.L.hudBottom + 10 || p.y > this.L.navTop - 20) return;
+      if (p.x < 220 && p.y < this.L.hudBottom + 220) return;
       this.joy = { active: true, id: p.id, bx: p.x, by: p.y, dx: 0, dy: 0 };
     });
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -430,15 +352,8 @@ export class BattleScene extends Phaser.Scene {
     this.input.on("pointerupoutside", release);
   }
 
-  /** Move a walker, sliding along walls and never into a land that is still clouded over. */
   private walk(x: number, y: number, vx: number, vy: number, r: number): [number, number] {
-    let [nx, ny] = pushOut(x + vx, y + vy, r, this.world.colliders);
-    if (this.isLocked(nx, ny)) {
-      [nx, ny] = pushOut(x + vx, y, r, this.world.colliders);
-      if (this.isLocked(nx, ny)) [nx, ny] = pushOut(x, y + vy, r, this.world.colliders);
-      if (this.isLocked(nx, ny)) return [x, y];
-    }
-    return [nx, ny];
+    return pushOut(x + vx, y + vy, r, this.arena.colliders);
   }
 
   private moveHero(time: number, delta: number): void {
@@ -449,21 +364,24 @@ export class BattleScene extends Phaser.Scene {
       vx = this.joy.dx / 90;
       vy = this.joy.dy / 90;
     }
-    if (battle.cutscene) {
+    if (this.changingLand) {
       vx = 0;
       vy = 0;
     } else if (vx || vy) {
       this.lastManual = time;
     } else if (save.autoHunt && time - this.lastManual > 1500) {
-      // auto-hunt: chase the closest monster, or walk back to guard the heart
-      const [hx, hy] = this.fight.heart;
-      const target = this.nearestEnemy(this.hero.x, this.hero.y, 1500, true) ?? this.nearestEnemy(hx, hy, 1600, true);
-      const [tx, ty, stop] = target ? [target.img.x, target.img.y, HERO_RANGE * rangeMult() * 0.55] : [hx, hy + 220, 50];
+      // auto-hunt: chase the closest monster or chest, or walk back to guard the crystal
+      const [cx, cy] = this.arena.center;
+      const target = this.nearestEnemy(this.hero.x, this.hero.y, 1500, true) ?? this.nearestEnemy(cx, cy, 1600, true);
+      const chest = this.chests[0];
+      const [tx, ty, stop] = target
+        ? [target.img.x, target.img.y, HERO_RANGE * rangeMult() * 0.55]
+        : chest ? [chest.x, chest.y, 10] : [cx, cy + 260, 50];
       const d = Math.hypot(tx - this.hero.x, ty - this.hero.y);
       if (d > stop) {
-        const dir = d > 500 ? flowDir(this.flow, this.hero.x, this.hero.y) : null;
-        vx = dir && !target ? dir[0] : (tx - this.hero.x) / d;
-        vy = dir && !target ? dir[1] : (ty - this.hero.y) / d;
+        const dir = !target && !chest && d > 400 ? flowDir(this.flow, this.hero.x, this.hero.y) : null;
+        vx = dir ? dir[0] : (tx - this.hero.x) / d;
+        vy = dir ? dir[1] : (ty - this.hero.y) / d;
       }
     }
     const len = Math.hypot(vx, vy);
@@ -499,10 +417,6 @@ export class BattleScene extends Phaser.Scene {
       this.joyG.lineStyle(5, 0xfff3dc, 0.6).strokeCircle(bx, by, 100);
       this.joyG.fillStyle(0xfff3dc, 0.85).fillCircle(bx + dx, by + dy, 44);
       this.joyG.lineStyle(5, INK_N, 0.8).strokeCircle(bx + dx, by + dy, 44);
-    }
-    // treasure chests open when you walk up to them
-    for (const c of this.chests) {
-      if (c.arrow.alpha > 0 && Math.abs(c.x - this.hero.x) < 90 && Math.abs(c.y - this.hero.y) < 70) this.openChest(c);
     }
   }
 
@@ -560,13 +474,13 @@ export class BattleScene extends Phaser.Scene {
     return (HERO_BASE_DMG + team * HERO_TEAM_SHARE) * this.damageMult() * heroDmgMult();
   }
 
+
   // ───────────────────────── waves and stages ─────────────────────────
 
   private startWave(): void {
-    this.useFight();
     const { stage, wave } = save;
     const boss = wave === WAVES_PER_STAGE;
-    const [a, b, f] = this.fight.enemies;
+    const [a, b, f] = this.land.enemies;
     const types: Record<string, EnemyType> = {
       a: { tex: a, stats: WALKER_A, fx: 0x9ad46a },
       b: { tex: b, stats: WALKER_B, fx: 0xef6a5a },
@@ -578,7 +492,7 @@ export class BattleScene extends Phaser.Scene {
       const r = Math.random();
       this.spawnQueue.push(wave >= 3 && r < 0.25 ? types.f : (wave >= 2 || stage > 1) && r < 0.55 ? types.b : types.a);
     }
-    if (boss) this.spawnQueue.splice(1, 0, { tex: this.fight.boss, stats: BOSS, fx: 0xffb03b, boss: true });
+    if (boss) this.spawnQueue.splice(1, 0, { tex: this.land.boss, stats: BOSS, fx: 0xffb03b, boss: true });
     this.waveSize = this.spawnQueue.length;
     this.kills = 0;
     this.villageMax = VILLAGE_HP * villageHpMult();
@@ -607,7 +521,6 @@ export class BattleScene extends Phaser.Scene {
     const gems = gemsPerBoss();
     save.gems += gems;
     const cleared = save.stage;
-    const beforeBest = save.bestStage;
     if (save.stage < MAX_STAGE) save.stage++;
     save.wave = 1;
     save.bestStage = Math.max(save.bestStage, save.stage);
@@ -623,38 +536,15 @@ export class BattleScene extends Phaser.Scene {
     this.game.events.emit("stage-clear", { stage: cleared, earned: this.stageEarned, gems, final: cleared === MAX_STAGE });
     this.game.events.emit("stage-up");
     this.waveDelay = 3600;
-    const newLand = REGIONS.find((r) => r.from > beforeBest && r.from <= save.bestStage);
-    if (newLand) this.time.delayedCall(3000, () => this.landCutscene(newLand));
-  }
-
-  /** Camera flies to the new land, the clouds blow away, then back to the hero. */
-  private landCutscene(r: Region): void {
-    battle.cutscene = true;
-    this.waveDelay = 999999;
-    const cam = this.cameras.main;
-    cam.stopFollow();
-    const [x, y] = r.heart;
-    cam.pan(x, y, 1300, "Sine.easeInOut");
-    this.time.delayedCall(1300, () => {
-      this.clearFog(r.id, true);
-      this.drawMiniFog();
-      sfx.fanfare();
-      buzz(150);
-      this.game.events.emit("land-unlocked", r.name);
-      save.regionShown = Math.max(save.regionShown, REGIONS.indexOf(r));
-      persist();
-      this.refreshChests();
-      this.useFight();
-    });
-    this.time.delayedCall(4300, () => {
-      cam.pan(this.hero.x, this.hero.y + (this.scale.height / 2 - (this.L.hudBottom + this.L.slotsY - 120) / 2), 1000, "Sine.easeInOut");
-    });
-    this.time.delayedCall(5400, () => {
-      const playCenter = (this.L.hudBottom + this.L.slotsY - 120) / 2;
-      cam.startFollow(this.hero, true, 0.12, 0.12, 0, playCenter - this.scale.height / 2);
-      battle.cutscene = false;
-      this.waveDelay = 600;
-    });
+    if (regionForStage(save.stage) !== this.land) {
+      // on to the next land: fade out and build its arena
+      this.waveDelay = 999999;
+      this.changingLand = true;
+      this.time.delayedCall(3000, () => {
+        this.cameras.main.fadeOut(600, 74, 47, 29);
+        this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart());
+      });
+    }
   }
 
   private villageFell(): void {
@@ -667,7 +557,7 @@ export class BattleScene extends Phaser.Scene {
     persist();
     sfx.error();
     this.cameras.main.shake(400, 0.01);
-    ribbonBanner(this, GAME_W / 2, this.L.hudBottom + 150, "HEART FELL!", "red", 1400);
+    ribbonBanner(this, GAME_W / 2, this.L.hudBottom + 150, "CRYSTAL BROKE!", "red", 1400);
     this.game.events.emit("toast", "Get stronger pets or upgrades and try again!", "#ffb3b3");
     this.waveDelay = 2200;
   }
@@ -678,6 +568,7 @@ export class BattleScene extends Phaser.Scene {
     this.trackStats(delta);
     this.moveHero(time, delta);
     this.movePets(time, delta);
+    this.updateChests(delta);
 
     if (this.waveDelay > 0) {
       this.waveDelay -= delta;
@@ -715,28 +606,19 @@ export class BattleScene extends Phaser.Scene {
       this.cullTimer = 200;
       this.cull();
     }
-    this.regionTimer -= delta;
-    if (this.regionTimer <= 0) {
-      this.regionTimer = 1000;
-      const here = regionAt(this.hero.x, this.hero.y);
-      if (here.id !== battle.here) {
-        battle.here = here.id;
-        this.ambient.setParticleTint(here.ambient);
-        this.game.events.emit("entered-land", here.name);
-      }
-      this.refreshChests();
-    }
   }
 
   private spawn(delta: number): void {
-    if (!this.spawnQueue.length || battle.cutscene) return;
+    if (!this.spawnQueue.length || this.changingLand) return;
     this.spawnTimer -= delta;
     if (this.spawnTimer > 0) return;
     this.spawnTimer = Phaser.Math.Between(SPAWN_MIN, SPAWN_MAX);
     const type = this.spawnQueue.shift()!;
     const { stage, wave } = save;
-    const portals = this.world.portals[this.fight.id];
-    const [gx, gy] = portals[Phaser.Math.Between(0, portals.length - 1)];
+    // come in from the side away from the hero, so monsters appear off screen
+    const spawns = this.arena.spawns;
+    const far = spawns.filter(([x, y]) => Math.hypot(x - this.hero.x, y - this.hero.y) > 800);
+    const [gx, gy] = Phaser.Utils.Array.GetRandom(far.length ? far : spawns);
     const x = gx + Phaser.Math.Between(-40, 40);
     const y = gy + Phaser.Math.Between(-20, 30);
     const img = this.add.image(x, y, type.tex).setOrigin(0.5, type.flying ? 0.5 : 0.94).setDepth(y).setAlpha(0).setScale(0.3);
@@ -756,10 +638,10 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Monsters follow the paths to the heart and chip away at its health. */
+  /** Monsters walk around trees and ponds to the crystal and chip away at it. */
   private moveEnemies(time: number, delta: number): void {
-    const [hx, hy] = this.fight.heart;
-    const ty = hy + 40;
+    const [hx, cy] = this.arena.center;
+    const ty = cy + 40;
     for (const e of this.enemies) {
       const dx = hx - e.img.x;
       const dy = ty - e.img.y;
@@ -770,7 +652,7 @@ export class BattleScene extends Phaser.Scene {
         if (!e.type.flying && d > 280) dir = flowDir(this.flow, e.img.x, e.img.y) ?? dir;
         let nx = e.img.x + dir[0] * step;
         let ny = e.img.y + dir[1] * step;
-        if (!e.type.flying) [nx, ny] = pushOut(nx, ny, 24, this.world.colliders);
+        if (!e.type.flying) [nx, ny] = pushOut(nx, ny, 24, this.arena.colliders);
         e.img.setPosition(nx, ny).setDepth(ny);
         if (Math.abs(dir[0]) > 0.2) e.img.setFlipX(dir[0] < 0);
       } else {
@@ -778,7 +660,7 @@ export class BattleScene extends Phaser.Scene {
           e.attacking = true;
           if (!this.warned) {
             this.warned = true;
-            this.game.events.emit("toast", `${this.fight.name} is under attack!`, "#ff9a9a");
+            this.game.events.emit("toast", "The crystal is under attack!", "#ff9a9a");
             sfx.alarm();
           }
         }
@@ -787,6 +669,8 @@ export class BattleScene extends Phaser.Scene {
           e.atkTimer = 1000;
           this.tweens.add({ targets: e.img, x: e.img.x + (dx / d) * 24, y: e.img.y + (dy / d) * 24, duration: 90, yoyo: true });
           this.villageHp -= e.type.stats.dmg;
+          this.crystal.setTintFill(0xff8a8a);
+          this.time.delayedCall(80, () => this.crystal.clearTint());
           if (this.villageHp <= 0) {
             this.villageFell();
             return;
@@ -824,7 +708,7 @@ export class BattleScene extends Phaser.Scene {
     this.gun.setRotation(Phaser.Math.Angle.RotateTo(this.gun.rotation, aim, target ? 0.3 : 0.15));
     this.gun.setFlipY(Math.abs(this.gun.rotation) > Math.PI / 2);
     this.heroTimer -= delta;
-    if (this.heroTimer > 0 || !target || battle.cutscene) return;
+    if (this.heroTimer > 0 || !target || this.changingLand) return;
     this.heroTimer = HERO_FIRE_MS;
     const mx = this.gun.x + Math.cos(this.gun.rotation) * 110;
     const my = this.gun.y + Math.sin(this.gun.rotation) * 110;
@@ -1061,24 +945,24 @@ export class BattleScene extends Phaser.Scene {
       const y = e.img.y - e.img.displayHeight * (e.type.flying ? 0.5 : 0.95) - 18;
       drawBar(this.bars, e.img.x - w / 2, y, w, e.type.boss ? 22 : 12, e.hp / e.maxHp, e.type.boss ? 0xf26464 : 0x7ad651);
     }
-    const [hx, hy] = this.fight.heart;
+    const [hx, hy] = this.arena.center;
     const f = this.villageHp / this.villageMax;
     drawBar(this.bars, hx - 120, hy - 300, 240, 24, f, f > 0.4 ? 0x67c3ff : 0xf26464);
   }
 
-  /** Minimap dots, plus arrows pointing at monsters attacking the heart off screen. */
+  /** Minimap dots, plus arrows pointing at monsters attacking the crystal off screen. */
   private drawOverlay(): void {
     const g = this.overlay;
     g.clear();
     const mx = 22;
     const my = this.L.hudBottom + 24;
-    const s = 200 / WORLD;
-    g.lineStyle(6, INK_N, 1).strokeRoundedRect(mx - 3, my - 3, 206, 206, 12);
-    const [hx, hy] = this.fight.heart;
-    g.fillStyle(0x67c3ff, 1).fillCircle(mx + hx * s, my + hy * s, 6);
-    g.lineStyle(2, 0xffffff, 1).strokeCircle(mx + hx * s, my + hy * s, 6);
+    const s = 180 / ARENA;
+    g.lineStyle(6, INK_N, 1).strokeRoundedRect(mx - 3, my - 3, 186, 186, 12);
+    const [hx, hy] = this.arena.center;
+    g.fillStyle(this.land.crystal, 1).fillCircle(mx + hx * s, my + hy * s, 7);
+    g.lineStyle(2, 0xffffff, 1).strokeCircle(mx + hx * s, my + hy * s, 7);
     g.fillStyle(0xffd23f, 1);
-    for (const c of this.chests) if (c.arrow.alpha > 0) g.fillRect(mx + c.x * s - 3, my + c.y * s - 3, 6, 6);
+    for (const c of this.chests) g.fillRect(mx + c.x * s - 4, my + c.y * s - 4, 8, 8);
     g.fillStyle(0xf26464, 1);
     for (const e of this.enemies) g.fillCircle(mx + e.img.x * s, my + e.img.y * s, e.type.boss ? 5 : 2.5);
     g.fillStyle(0xffffff, 1).fillCircle(mx + this.hero.x * s, my + this.hero.y * s, 5);
@@ -1087,12 +971,10 @@ export class BattleScene extends Phaser.Scene {
     g.lineStyle(2, 0xffffff, 0.7).strokeRect(mx + cam.scrollX * s, my + cam.scrollY * s, cam.width * s, cam.height * s);
 
     const top = this.L.hudBottom + 30;
-    const bottom = this.L.slotsY - 120;
+    const bottom = this.L.navTop - 40;
     const cxs = GAME_W / 2;
     const cys = (top + bottom) / 2;
-    const targets = this.enemies.filter((e) => e.attacking).slice(0, 5);
-    if (!targets.length && Math.hypot(this.hero.x - hx, this.hero.y - hy) > 900 && this.enemies.length) targets.push(this.enemies[0]);
-    for (const e of targets) {
+    for (const e of this.enemies.filter((o) => o.attacking).slice(0, 5)) {
       const sx = e.img.x - cam.scrollX;
       const sy = e.img.y - cam.scrollY;
       if (sx > 0 && sx < GAME_W && sy > top && sy < bottom) continue;
@@ -1101,7 +983,7 @@ export class BattleScene extends Phaser.Scene {
       const ay = Phaser.Math.Clamp(cys + Math.sin(a) * 2000, top + 20, bottom - 20);
       const pt = (o: number, r: number) => [ax + Math.cos(a + o) * r, ay + Math.sin(a + o) * r];
       const [p1, p2, p3] = [pt(0, 32), pt(2.4, 26), pt(-2.4, 26)];
-      g.fillStyle(e.attacking ? 0xf26464 : 0xffb347, 0.95).fillTriangle(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
+      g.fillStyle(0xf26464, 0.95).fillTriangle(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
       g.lineStyle(4, INK_N, 1).strokeTriangle(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
     }
   }

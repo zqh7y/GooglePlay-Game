@@ -45,6 +45,12 @@ export interface SaveData {
   /** treasure chest id -> time it can be opened again */
   chests: Record<string, number>;
   totalKills: number;
+  /** when the shop's free gift can be claimed again */
+  freeGiftAt: number;
+  /** speed potion: rolls are twice as fast until this time */
+  speedUntil: number;
+  /** lucky dice bought in the shop: this many upcoming rolls are lucky rolls */
+  luckyBoost: number;
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
@@ -78,6 +84,9 @@ function fresh(): SaveData {
     regionShown: 0,
     chests: {},
     totalKills: 0,
+    freeGiftAt: 0,
+    speedUntil: 0,
+    luckyBoost: 0,
   };
 }
 
