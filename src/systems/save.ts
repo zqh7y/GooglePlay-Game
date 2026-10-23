@@ -17,6 +17,8 @@ export interface SaveData {
   autoRoll: boolean;
   potionUntil: number;
   totalRolls: number;
+  /** rolls since the last lucky roll */
+  luckyCount: number;
   /** rarest "1 in N" ever rolled */
   bestRoll: number;
   lastSeen: number;
@@ -40,6 +42,7 @@ function fresh(): SaveData {
     autoRoll: false,
     potionUntil: 0,
     totalRolls: 0,
+    luckyCount: 0,
     bestRoll: 2,
     lastSeen: Date.now(),
     cashPerSec: 0,

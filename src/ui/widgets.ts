@@ -5,6 +5,7 @@ import { BtnColor, CARD_H, CARD_W, btnEdge, btnTexture, panelTexture, pillTextur
 import { ITEMS, ItemKey, parseKey } from "../data/items";
 import { RARITY_INFO } from "../data/rarity";
 import { oneIn } from "./format";
+import { sfx } from "../systems/sound";
 
 export const FONT = "'Jua', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif";
 export const INK_CSS = "#4a2f1d";
@@ -112,7 +113,10 @@ export class Button extends Phaser.GameObjects.Container {
     });
     this.on("pointerup", () => {
       scene.tweens.add({ targets: this, scale: 1, duration: 120, ease: "Back.out" });
-      if (pressed && this.enabled) onClick();
+      if (pressed && this.enabled) {
+        sfx.click();
+        onClick();
+      }
       pressed = false;
     });
   }
