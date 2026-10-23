@@ -423,3 +423,11 @@ export function makeVillageTextures(scene: Phaser.Scene, t: Theme): void {
 }
 
 export const houseKey = (roof: number, snow: boolean) => (snow ? `house_${roof.toString(16)}_snow` : `house_${roof.toString(16)}`);
+
+/** Small falling leaf / petal / snowflake; white so each area can tint it. */
+export function makePetalTexture(scene: Phaser.Scene): void {
+  canvasTexture(scene, "petal", 20, 14, (ctx) => {
+    ellipse(ctx, 10, 7, 8, 5, 0.3);
+    fill(ctx, "#ffffff");
+  });
+}
