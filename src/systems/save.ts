@@ -67,6 +67,10 @@ export interface SaveData {
   newPets: string[];
   /** monster mutations already announced */
   mutSeen: string[];
+  /** the next Boss Rush boss to fight (you keep your place) */
+  bossRush: number;
+  /** highest Boss Rush boss beaten */
+  bossRushBest: number;
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
@@ -110,6 +114,8 @@ function fresh(): SaveData {
     giftCount: 0,
     newPets: [],
     mutSeen: [],
+    bossRush: 1,
+    bossRushBest: 0,
   };
 }
 

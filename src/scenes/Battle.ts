@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
-import { INK_N, rgba } from "../art/draw";
+import { INK_N, lighten, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGadgetTextures } from "../art/gadgets";
 import { petTexture } from "../art/pets";
@@ -19,6 +19,8 @@ import { REGIONS, Region, regionForStage } from "../data/regions";
 import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
+import { makeBossTextures } from "../art/bosses";
+import { BOSS_EVERY, RUSH_BOSSES, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -85,7 +87,22 @@ export const battle = {
   stats: freshStats(),
   /** the boss has taken the crystal: it is just you, your pets and the boss */
   bossFight: false,
+  /** Boss Rush: one boss after another, 15 s each */
+  rush: false,
+  rushBoss: 0,
+  rushLeft: 0,
 };
+
+/** How a Boss Rush ended. */
+export interface RushResult {
+  reason: "time" | "hero" | "done" | "quit";
+  /** the boss you will fight next time */
+  next: number;
+  beaten: number;
+  earned: number;
+  gems: number;
+  dice: Record<Tier, number>;
+}
 
 export interface StageResult {
   stage: number;
@@ -298,6 +315,11 @@ export class BattleScene extends Phaser.Scene {
   private revived = false;
   /** a Second Chance boost: get back up once without gems */
   private freeRevive = false;
+  /** Boss Rush mode, the time left on the current boss, and this run's haul */
+  private rush = false;
+  private rushLeft = 0;
+  private rushBeaten = 0;
+  private rushGems = 0;
   private reviveState: "fight" | "boss" = "fight";
   private stats = freshStats();
   private frozenUntil = 0;
@@ -360,18 +382,20 @@ export class BattleScene extends Phaser.Scene {
     return this.land.id;
   }
 
-  create(data: { autostart?: boolean }): void {
+  create(data: { autostart?: boolean; rush?: boolean }): void {
     this.L = layoutFor(this.scale.height);
     makeWorldTextures(this, REGIONS);
     makePickupTextures(this);
     makeGadgetTextures(this);
     makeMutationTextures(this);
-    this.land = regionForStage(save.stage);
+    makeBossTextures(this);
+    this.rush = !!data?.rush;
+    this.land = regionForStage(this.rush ? Math.min(MAX_STAGE, save.bossRush) : save.stage);
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
-      revived: false, freeRevive: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
+      revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], saws: [], sawHits: new Map(), mines: [], drone: null, droneT: 0, rangs: [], balls: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(),
@@ -384,7 +408,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, combo: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false,
+      bossFight: false, rush: this.rush, rushBoss: save.bossRush, rushLeft: RUSH_MS,
     });
     this.cameras.main.fadeIn(500, 74, 47, 29);
     this.drawArena();
@@ -423,6 +447,7 @@ export class BattleScene extends Phaser.Scene {
       ["revive", this.revive],
       ["retry", this.retry],
       ["give-up", this.giveUp],
+      ["rush-start", this.startRush],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -433,7 +458,7 @@ export class BattleScene extends Phaser.Scene {
     music.play("calm");
     // first time in a land: celebrate it
     const idx = REGIONS.indexOf(this.land);
-    if (idx > save.regionShown) {
+    if (idx > save.regionShown && !this.rush) {
       save.regionShown = idx;
       persist();
       this.time.delayedCall(500, () => {
@@ -443,6 +468,123 @@ export class BattleScene extends Phaser.Scene {
       });
     }
     if (data?.autostart) this.time.delayedCall(350, () => this.begin());
+    if (this.rush) this.time.delayedCall(300, () => this.beginRush());
+  }
+
+  // ───────────────────────── Boss Rush ─────────────────────────
+
+  /** From the lobby (or the results screen): restart the scene as a Boss Rush. */
+  private startRush(): void {
+    if (this.fighting || this.state === "intro" || this.state === "cutscene") return;
+    if (save.bossRush > RUSH_BOSSES) {
+      this.toast("You beat every boss!", "#ffe066");
+      return;
+    }
+    this.cameras.main.fadeOut(300, 40, 20, 40);
+    this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ rush: true }));
+  }
+
+  /** Just you, your pets and the bosses: no crystal, no monsters, no skills. */
+  private beginRush(): void {
+    this.state = "intro";
+    battle.mode = "run";
+    battle.bossFight = true;
+    for (const o of [this.crystal, this.crystalGlow, this.shieldImg]) o.setVisible(false);
+    this.crystalSparkle.stop();
+    this.cameras.main.zoomTo(ZOOM, 700, "Sine.easeInOut");
+    sfx.alarm();
+    this.banner("BOSS RUSH!", "purple", 1000);
+    this.toast(`Beat each boss in ${RUSH_MS / 1000} seconds!`, "#e6b8ff");
+    this.game.events.emit("stage-start");
+    this.time.delayedCall(1500, () => this.nextRushBoss());
+  }
+
+  /** The next boss drops in; its clock starts when it lands. */
+  private nextRushBoss(): void {
+    const n = save.bossRush;
+    const def = bossForStage(n);
+    battle.rushBoss = n;
+    this.rushLeft = RUSH_MS;
+    battle.rushLeft = RUSH_MS;
+    const [x, y] = this.randomSpot(450, 600, [this.hero.x, this.hero.y]);
+    const faller = this.add.image(x, y - 1200, def.tex).setOrigin(0.5, 0.94).setScale(1.3).setDepth(y);
+    this.banner(`BOSS ${n}`, "red", 800);
+    this.tweens.add({
+      targets: faller, y, duration: 420, ease: "Quad.in",
+      onComplete: () => {
+        faller.destroy();
+        this.cameras.main.shake(400, 0.015);
+        buzz(150);
+        this.boom(x, y - 60, 2.2);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true }, x, y, false, false, 1, n);
+        boss.hp = boss.maxHp = rushBossHp(n);
+        // the clock is the real danger here: rush bosses hit softer
+        boss.dmg *= 0.5;
+        boss.huntHero = true;
+        boss.phaseT = 1500;
+        this.toast(def.name, rgba(lighten(def.color, 0.3)));
+        this.state = "boss";
+      },
+    });
+  }
+
+  private rushTick(delta: number): void {
+    if (this.state !== "boss") return;
+    this.rushLeft -= delta;
+    battle.rushLeft = Math.max(0, this.rushLeft);
+    if (this.rushLeft <= 0) this.rushOver("time");
+  }
+
+  /** A boss beaten in time: rewards, a little heal, and on to the next one. */
+  private rushBossDown(): void {
+    const n = save.bossRush;
+    const secs = (RUSH_MS - this.rushLeft) / 1000;
+    this.rushBeaten++;
+    save.bossRush = n + 1;
+    save.bossRushBest = Math.max(save.bossRushBest, n);
+    if (n % BOSS_EVERY === 0) {
+      save.gems += 3;
+      this.rushGems += 3;
+      this.addDice(rollDiceTier(n), 2);
+    }
+    persist();
+    this.state = "intro";
+    this.heal(0.25);
+    sfx.fanfare();
+    this.banner(`BOSS ${n} DOWN!  ${secs.toFixed(1)}s`, "green", 900);
+    if (save.bossRush > RUSH_BOSSES) {
+      this.time.delayedCall(1200, () => this.rushOver("done"));
+      return;
+    }
+    this.time.delayedCall(1500, () => this.nextRushBoss());
+  }
+
+  /** The run ends: the clock ran out, you fell, gave up, or beat them all. */
+  private rushOver(reason: RushResult["reason"]): void {
+    if (this.state === "lost" || this.state === "won") return;
+    const boss = this.enemies.find((e) => e.type.boss);
+    if (boss && reason === "time") {
+      // it got away: it flies off laughing
+      this.enemies = this.enemies.filter((e) => e !== boss);
+      boss.aura?.destroy();
+      boss.badge?.destroy();
+      this.tweens.killTweensOf(boss.img);
+      this.tweens.add({ targets: boss.img, y: boss.img.y - 900, alpha: 0, angle: 30, duration: 900, ease: "Quad.in", onComplete: () => boss.img.destroy() });
+    }
+    this.state = reason === "done" ? "won" : "lost";
+    battle.mode = "over";
+    this.joy = { ...NO_JOY };
+    music.play("calm");
+    if (reason === "hero") {
+      this.hero.setTint(0x8a8a8a);
+      this.tweens.add({ targets: this.hero, angle: this.hero.flipX ? -90 : 90, duration: 400, ease: "Bounce.out" });
+    }
+    if (reason !== "quit") this.banner(reason === "time" ? "TIME'S UP!" : reason === "hero" ? "YOU FELL!" : "ALL BOSSES BEATEN!", reason === "done" ? "gold" : "red", 1100);
+    sfx[reason === "done" ? "fanfare" : "error"]();
+    this.time.delayedCall(reason === "quit" ? 300 : 1400, () => {
+      const result: RushResult = { reason, next: save.bossRush, beaten: this.rushBeaten, earned: this.stats.earned, gems: this.rushGems, dice: this.stats.dice };
+      this.game.events.emit("rush-over", result);
+    });
   }
 
   /** Keep the hero in the middle of the open part of the screen at any zoom. */
@@ -1571,6 +1713,10 @@ export class BattleScene extends Phaser.Scene {
 
   private tick(delta: number): void {
     if (!this.fighting) return;
+    if (this.rush) {
+      this.rushTick(delta);
+      return;
+    }
     this.elapsed += delta;
     battle.time = this.elapsed;
     battle.shieldLeft = SHIELD_MS - (this.elapsed % SHIELD_MS);
@@ -1661,8 +1807,7 @@ export class BattleScene extends Phaser.Scene {
    * A new monster. Most can spawn mutated (faster, teleporting, an extra life... more and
    * harder mutations on later stages); `mutate: false` for the halves of a splitter.
    */
-  private addEnemy(type: EnemyType, x: number, y: number, elite = false, mutate = true, size = 1): Enemy {
-    const stage = save.stage;
+  private addEnemy(type: EnemyType, x: number, y: number, elite = false, mutate = true, size = 1, stage = save.stage): Enemy {
     const muts = mutate ? rollMutations(stage, elite, !!type.boss) : [];
     const has = (m: MutationId) => muts.includes(m);
     const scale = (type.boss ? 1.3 : elite ? 1.45 : 1) * (has("giant") ? 1.4 : 1) * size;
@@ -1783,7 +1928,8 @@ export class BattleScene extends Phaser.Scene {
   /** The boss falls out of the sky next to you: thud, dust, title card, boss music. */
   private dropBoss(): void {
     const [x, y] = this.randomSpot(550, 700, [this.hero.x, this.hero.y]);
-    const faller = this.add.image(x, y - 1400, this.land.boss).setOrigin(0.5, 0.94).setScale(1.3).setDepth(y);
+    const def = bossForStage(save.stage);
+    const faller = this.add.image(x, y - 1400, def.tex).setOrigin(0.5, 0.94).setScale(1.3).setDepth(y);
     const shadow = this.add.ellipse(x, y, 60, 22, 0x000000, 0.3).setDepth(y - 1);
     this.tweens.add({ targets: shadow, scaleX: 3.5, scaleY: 3.5, duration: 500, ease: "Quad.in" });
     this.tweens.add({
@@ -1796,12 +1942,12 @@ export class BattleScene extends Phaser.Scene {
         this.boom(x, y - 60, 3);
         this.puff.setParticleTint(0xd8c8a8);
         this.puff.explode(40, x, y);
-        const boss = this.addEnemy({ tex: this.land.boss, stats: BOSS, fx: 0xffb03b, boss: true }, x, y);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true }, x, y);
         boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES));
         boss.huntHero = true;
         boss.phaseT = 2500;
         music.play("boss");
-        this.game.events.emit("boss-intro", { name: this.land.bossName, tex: this.land.boss });
+        this.game.events.emit("boss-intro", { name: def.name, tex: def.tex });
         this.time.delayedCall(1800, () => {
           if (this.state !== "cutscene") return;
           this.state = "boss";
@@ -1854,6 +2000,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private stageLost(reason: "hero" | "crystal" | "quit"): void {
+    if (this.rush) {
+      this.rushOver(reason === "quit" ? "quit" : "hero");
+      return;
+    }
     if (!this.fighting && this.state !== "intro" && this.state !== "cutscene") return;
     if (this.state === "fight" || this.state === "boss") this.reviveState = this.state;
     this.state = "lost";
@@ -2447,7 +2597,8 @@ export class BattleScene extends Phaser.Scene {
       this.cameras.main.shake(500, 0.014);
       this.cameras.main.flash(200, 255, 240, 200);
       buzz(200);
-      this.stageWon();
+      if (this.rush) this.rushBossDown();
+      else this.stageWon();
     }
   }
 

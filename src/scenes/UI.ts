@@ -8,6 +8,7 @@ import { BOOSTS, BoostDef } from "../data/boosts";
 import { GADGETS, GADGET_SLOTS, STARTER_GADGET, gadgetKey, gadgetName } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
+import { RUSH_BOSSES, RUSH_MS, bossForStage } from "../data/bosses";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -35,7 +36,7 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
-import { BattleMode, BattleScene, GadgetFound, RunStats, StageResult, battle, mmss } from "./Battle";
+import { BattleMode, BattleScene, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -96,6 +97,9 @@ export class UIScene extends Phaser.Scene implements Host {
   private luckPill!: Pill;
   /** total damage per second of the hero and pets, above the BATTLE button */
   private dpsPill!: Pill;
+  /** the Boss Rush button shows the next boss */
+  private rushFace!: Phaser.GameObjects.Image;
+  private rushNum!: Phaser.GameObjects.Text;
   /** Battle Boosts waiting for the next fight */
   private boostRow!: Phaser.GameObjects.Container;
   private boostKey = "";
@@ -161,6 +165,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["battle-ready", this.onBattleReady],
       ["boss-warning", this.bossWarning],
       ["boss-intro", this.bossIntro],
+      ["rush-over", this.rushOver],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -227,7 +232,7 @@ export class UIScene extends Phaser.Scene implements Host {
     if (run && paused) this.scene.resume("Battle");
     else if (!run && !paused && this.scene.isActive("Battle")) this.scene.pause("Battle");
     const fight = this.tab === "battle" && !this.mapOpen && battle.mode === "run";
-    music.play(fight ? (battle.bossFight ? (battle.bossFrac >= 0 ? "boss" : "calm") : "battle") : "calm");
+    music.play(fight ? (battle.rush ? "boss" : battle.bossFight ? (battle.bossFrac >= 0 ? "boss" : "calm") : "battle") : "calm");
   }
 
   /** Lobby or fight: during a fight only the battle is on screen (no tab bar, no shops). */
@@ -246,6 +251,10 @@ export class UIScene extends Phaser.Scene implements Host {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
       this.lobbyLand.setText(regionForStage(save.stage).name);
       this.lobbyBest.setText(`Best: stage ${save.bestStage} / ${MAX_STAGE}`);
+      const next = Math.min(RUSH_BOSSES, save.bossRush);
+      this.rushFace.setTexture(bossForStage(next).tex);
+      this.rushFace.setScale(96 / Math.max(this.rushFace.width, this.rushFace.height));
+      this.rushNum.setText(save.bossRush > RUSH_BOSSES ? "ALL BEATEN!" : `Boss ${next}`);
       const muts = mutationsAt(save.stage);
       fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
     }
@@ -280,6 +289,7 @@ export class UIScene extends Phaser.Scene implements Host {
     }
     this.rollScreen.setReadyAt(this.rollReadyAt);
     for (const s of Object.values(this.screens)) s.update(time);
+    if (this.mapOpen) this.map.update();
     this.tree.update(delta);
     if (save.autoRoll && autoUnlocked()) this.roll(true);
   }
@@ -472,10 +482,28 @@ export class UIScene extends Phaser.Scene implements Host {
     this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
     this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
-    const go = button(this, W / 2, bottom - 170, 640, 190, "orange", "BATTLE", () => {
+    const go = button(this, W / 2 - 112, bottom - 170, 600, 190, "orange", "BATTLE", () => {
       unlockAudio();
       this.game.events.emit("battle-start");
-    }, { icon: "icon_sword", iconSize: 90, size: 80, sub: "Survive 5:00 and beat the boss" });
+    }, { icon: "icon_sword", iconSize: 84, size: 76, sub: "Survive 5:00 and beat the boss" });
+    // Boss Rush: the next boss's face and number
+    this.rushFace = this.add.image(0, -24, "e_golem");
+    this.rushNum = text(this, 0, 58, "", 26);
+    const rush = this.add.container(W - 128, bottom - 170, [
+      this.add.image(0, 0, btnTexture(this, "purple", 230, 190)),
+      this.add.image(0, -24, "glow").setTint(0xff5a8a).setScale(0.55).setAlpha(0.7),
+      this.rushFace, text(this, 0, 32, "BOSS RUSH", 28), this.rushNum,
+    ]).setSize(230, 190).setInteractive({ useHandCursor: true });
+    rush.on("pointerdown", () => this.tweens.add({ targets: rush, scale: 0.92, duration: 60 }));
+    rush.on("pointerout", () => rush.setScale(1));
+    rush.on("pointerup", () => {
+      rush.setScale(1);
+      unlockAudio();
+      sfx.click();
+      this.game.events.emit("rush-start");
+    });
+    this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.lobby.add(rush);
     this.tweens.add({ targets: go, scale: 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.boostRow = this.add.container(W / 2, bottom - 432);
     this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
@@ -599,8 +627,9 @@ export class UIScene extends Phaser.Scene implements Host {
     const W = this.W;
     const g = this.hudBars;
     g.clear();
-    // stage clock (or the boss's health)
-    if (battle.bossFrac >= 0) {
+    if (battle.rush) {
+      this.rushHud(time);
+    } else if (battle.bossFrac >= 0) {
       drawBar(g, 24, 74, W - 48, 34, battle.bossFrac, 0xf26464);
       this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%`);
     } else {
@@ -609,16 +638,24 @@ export class UIScene extends Phaser.Scene implements Host {
       for (let m = 1; m < MINUTES; m++) g.fillStyle(INK_N, 0.6).fillRect(24 + ((W - 48) * m) / MINUTES - 2, 74, 4, 34);
       this.progressText.setText(`${mmss(battle.time)} / ${mmss(STAGE_MS)}`);
     }
-    // level and XP
-    drawBar(g, 220, 130, 480, 24, battle.xp, 0x5ac8ff);
-    this.levelText.setText(`Lv ${battle.level}`);
-    this.stageText.setText(`Stage ${save.stage}  •  ${regionForStage(save.stage).name}`);
+    // level and XP (the Boss Rush clock instead, in a Boss Rush)
+    if (battle.rush) {
+      const f = battle.rushLeft / RUSH_MS;
+      drawBar(g, 220, 130, 480, 24, f, f > 0.5 ? 0x7ad651 : f > 0.25 ? 0xffb22e : 0xf26464);
+      this.levelText.setText(`${(battle.rushLeft / 1000).toFixed(1)}s`).setColor(f < 0.25 && time % 400 < 200 ? "#ff8a8a" : "#ffffff");
+      this.stageText.setText(`Boss Rush  •  best: boss ${save.bossRushBest}`);
+    } else {
+      drawBar(g, 220, 130, 480, 24, battle.xp, 0x5ac8ff);
+      this.levelText.setText(`Lv ${battle.level}`).setColor("#ffffff");
+      this.stageText.setText(`Stage ${save.stage}  •  ${regionForStage(save.stage).name}`);
+    }
     fitText(this.stageText, 480);
     // the crystal, and whether its shield is up
     const c = battle.crystal;
     drawBar(g, 274, 236, 366, 26, battle.bossFight ? 0 : c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
     const left = Math.ceil(battle.shieldLeft / 1000);
-    if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
+    if (battle.rush) this.shieldText.setText(`Beat it in ${RUSH_MS / 1000}s or it gets away!`).setColor("#e6d4ff");
+    else if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
     else this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
     fitText(this.shieldText, 340);
     this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
@@ -1209,6 +1246,49 @@ export class UIScene extends Phaser.Scene implements Host {
       this.toast(`Day ${day + 1} reward collected!`, "#ffe066");
       m.close();
     }, { size: 46 }).setEnabled(day >= 0));
+  }
+
+  /** Boss Rush top bar: the boss number and name over its health. */
+  private rushHud(_time: number): void {
+    const g = this.hudBars;
+    const def = bossForStage(Math.min(RUSH_BOSSES, battle.rushBoss));
+    drawBar(g, 24, 74, this.W - 48, 34, Math.max(0, battle.bossFrac), def.color);
+    fitText(this.progressText.setText(`BOSS ${battle.rushBoss}  •  ${def.name}${battle.bossFrac >= 0 ? `  ${Math.ceil(battle.bossFrac * 100)}%` : ""}`), this.W - 80);
+  }
+
+  /** End of a Boss Rush: how far you got and where you will start next time. */
+  private rushOver(r: RushResult): void {
+    const h = 1080;
+    let again = false;
+    const title = r.reason === "done" ? "ALL BOSSES BEATEN!" : r.reason === "time" ? "TIME'S UP!" : r.reason === "hero" ? "YOU FELL!" : "BOSS RUSH OVER";
+    const m = this.showModal(modal(this, 900, h, title, r.reason === "done" ? "gold" : "purple", () => {
+      this.openModal = null;
+      this.game.events.emit(again ? "rush-start" : "retry", false);
+    }));
+    const b = m.body;
+    const top = -h / 2;
+    const next = Math.min(RUSH_BOSSES, r.next);
+    const def = bossForStage(next);
+    b.add(text(this, 0, top + 140, r.beaten ? `${r.beaten} boss${r.beaten > 1 ? "es" : ""} beaten!` : "No bosses beaten this time", 52, "#c9663a"));
+    const face = this.add.image(0, top + 330, def.tex);
+    face.setScale(200 / Math.max(face.width, face.height));
+    b.add([this.add.image(0, top + 330, "glow").setTint(def.color).setScale(1.1).setAlpha(0.6), face]);
+    b.add(label(this, 0, top + 470, r.reason === "done" ? "You beat all 100 bosses!" : `Next time you start at BOSS ${next}: ${def.name}`, 32, "#7a5236", 760));
+    b.add(label(this, 0, top + 540, `Best: boss ${save.bossRushBest}`, 28, "#9a7a5a"));
+    const dice = DICE_TIERS.reduce((s2, t) => s2 + r.dice[t], 0);
+    const rows: [string, string][] = [["icon_cash", fmt(r.earned)], ["icon_gem", `+${r.gems}`], ["icon_dice", `+${dice}`]];
+    rows.forEach(([icon, v], i) => {
+      const x = (i - 1) * 260;
+      b.add([this.add.image(x - 60, top + 640, icon).setScale(0.6), text(this, x + 30, top + 640, v, 40, "#ffffff").setOrigin(0, 0.5).setStroke("#4a2f1d", 7)]);
+    });
+    b.add(label(this, 0, top + 730, "Get stronger pets and upgrades to beat bosses faster!", 28, "#9a7a5a", 760));
+    if (r.next <= RUSH_BOSSES) {
+      b.add(button(this, -165, h / 2 - 120, 300, 120, "purple", "AGAIN", () => {
+        again = true;
+        m.close();
+      }, { size: 40 }));
+    }
+    b.add(button(this, r.next <= RUSH_BOSSES ? 165 : 0, h / 2 - 120, 300, 120, "peach", "LOBBY", () => m.close(), { size: 40 }));
   }
 
   /** Your hero up close: walking on a lit stage, total damage per second and where it comes from. */

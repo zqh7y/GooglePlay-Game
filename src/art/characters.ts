@@ -14,19 +14,19 @@ export const HERO_H = 160;
 /** Where the hero holds its main gadget, relative to its feet (origin 0.5, 0.95). */
 export const HERO_HAND = { x: 44, y: -48 };
 
-const CARD_TOP = "#e6b97c";
-const CARD_BOTTOM = "#a8743a";
 const HERO_INK = "#2a1c1c";
 
 /**
- * The hero: something lives in a cardboard box. You only ever see its glowing eyes through
- * a dark slot, the flaps on top, and two little legs. step 0 = standing, 1 and 2 = walking.
+ * The hero: something lives in a cardboard box. Drawn as a 3D box seen from the front-right:
+ * a lit front face with the dark slot and glowing eyes, a shaded side face, an open top
+ * with flaps, and two little legs. step 0 = standing, 1 and 2 = walking.
  */
 function drawHero(ctx: Ctx, step: number): void {
   const b = step ? -3 : 0;
-  const shape = (path: () => void, paint: string | CanvasGradient, lw = 4.5) => {
+  const shape = (pts: [number, number][], paint: string | CanvasGradient, lw = 4) => {
     ctx.beginPath();
-    path();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y + b) : ctx.moveTo(x, y + b)));
+    ctx.closePath();
     ctx.fillStyle = paint;
     ctx.fill();
     ctx.lineWidth = lw;
@@ -34,21 +34,24 @@ function drawHero(ctx: Ctx, step: number): void {
     ctx.strokeStyle = HERO_INK;
     ctx.stroke();
   };
-  const card = () => {
-    const g = ctx.createLinearGradient(0, 40 + b, 0, 130 + b);
-    g.addColorStop(0, CARD_TOP);
-    g.addColorStop(1, CARD_BOTTOM);
+  const grad = (y0: number, y1: number, a: string, c: string) => {
+    const g = ctx.createLinearGradient(0, y0 + b, 0, y1 + b);
+    g.addColorStop(0, a);
+    g.addColorStop(1, c);
     return g;
   };
-  ellipse(ctx, 60, 152, 34, 6);
-  fill(ctx, "rgba(42,26,30,0.22)");
+  // the box: front face x 16..86, side face 20 deep, top 12 up
+  const F = { l: 16, r: 86, t: 54, bot: 126 };
+  const D = { x: 20, y: -12 };
+  ellipse(ctx, 64, 151, 40, 7);
+  fill(ctx, "rgba(42,26,30,0.25)");
   // legs: thin and dark, swinging when it walks
   const swing = [0, 7, -7][step];
   ctx.lineCap = "round";
-  for (const [x, dir] of [[46, 1], [74, -1]] as [number, number][]) {
+  for (const [x, dir] of [[40, 1], [70, -1]] as [number, number][]) {
     const fx = x + swing * dir;
     ctx.beginPath();
-    ctx.moveTo(x, 122 + b);
+    ctx.moveTo(x, 120 + b);
     ctx.lineTo(fx, 145);
     ctx.lineWidth = 10;
     ctx.strokeStyle = HERO_INK;
@@ -56,60 +59,85 @@ function drawHero(ctx: Ctx, step: number): void {
     ctx.lineWidth = 4.5;
     ctx.strokeStyle = "#4a3a44";
     ctx.stroke();
-    shape(() => ellipse(ctx, fx + 3, 148, 11, 6), "#4a3a44", 3.5);
+    ellipse(ctx, fx + 4, 148, 11, 6);
+    fill(ctx, "#4a3a44");
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = HERO_INK;
+    ctx.stroke();
   }
-  // the flaps, open on top
-  shape(() => {
-    ctx.moveTo(20, 52 + b);
-    ctx.lineTo(4, 28 + b);
-    ctx.lineTo(48, 24 + b);
-    ctx.lineTo(58, 52 + b);
-    ctx.closePath();
-  }, card());
-  shape(() => {
-    ctx.moveTo(100, 52 + b);
-    ctx.lineTo(116, 32 + b);
-    ctx.lineTo(74, 27 + b);
-    ctx.lineTo(62, 52 + b);
-    ctx.closePath();
-  }, card());
-  // the box
-  shape(() => ctx.roundRect(18, 48 + b, 84, 80, 6), card());
-  ctx.fillStyle = "rgba(90,50,20,0.28)";
-  ctx.fillRect(53, 50 + b, 14, 76);
-  ctx.fillStyle = "rgba(255,255,255,0.22)";
-  ctx.fillRect(22, 52 + b, 28, 5);
+  // back flap, standing up behind the opening
+  shape([[F.l + D.x, F.t + D.y], [F.l + D.x - 4, F.t + D.y - 26], [F.r + D.x + 2, F.t + D.y - 30], [F.r + D.x, F.t + D.y]], grad(10, 44, "#c8955a", "#a8743a"));
+  // the inside of the box (dark) seen through the open top
+  shape([[F.l, F.t], [F.l + D.x, F.t + D.y], [F.r + D.x, F.t + D.y], [F.r, F.t]], "#2a1608");
+  ctx.fillStyle = "rgba(255,200,120,0.12)";
+  ctx.beginPath();
+  ctx.moveTo(F.l + 6, F.t - 1 + b);
+  ctx.lineTo(F.l + D.x + 4, F.t + D.y + 2 + b);
+  ctx.lineTo(F.l + D.x + 18, F.t + D.y + 2 + b);
+  ctx.lineTo(F.l + 22, F.t - 1 + b);
+  ctx.fill();
+  // side face, in shadow
+  shape([[F.r, F.t], [F.r + D.x, F.t + D.y], [F.r + D.x, F.bot + D.y], [F.r, F.bot]], grad(F.t, F.bot, "#b8844a", "#7a5226"));
+  ctx.strokeStyle = "rgba(60,30,10,0.35)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(F.r + 10, F.t - 6 + b);
+  ctx.lineTo(F.r + 10, F.bot - 6 + b);
+  ctx.stroke();
+  // front face, in the light
+  shape([[F.l, F.t], [F.r, F.t], [F.r, F.bot], [F.l, F.bot]], grad(F.t, F.bot, "#f0c88c", "#b8803e"));
+  ctx.fillStyle = "rgba(255,255,255,0.28)";
+  ctx.fillRect(F.l + 3, F.t + 3 + b, F.r - F.l - 6, 5);
+  // packing tape over the front and across the top
+  ctx.fillStyle = "rgba(120,70,25,0.3)";
+  ctx.fillRect(44, F.t + b, 14, F.bot - F.t);
+  ctx.beginPath();
+  ctx.moveTo(44, F.t + b);
+  ctx.lineTo(44 + D.x * 0.9, F.t + D.y * 0.9 + b);
+  ctx.lineTo(58 + D.x * 0.9, F.t + D.y * 0.9 + b);
+  ctx.lineTo(58, F.t + b);
+  ctx.fill();
+  // side flaps, opened out
+  shape([[F.l, F.t], [F.l + D.x, F.t + D.y], [F.l + D.x - 14, F.t + D.y - 20], [F.l - 12, F.t - 14]], grad(20, 60, "#e6b97c", "#c08a4a"), 3.5);
+  shape([[F.r, F.t], [F.r + D.x, F.t + D.y], [F.r + D.x + 10, F.t + D.y - 22], [F.r + 8, F.t - 16]], grad(20, 60, "#c8955a", "#9a6a34"), 3.5);
   // "this side up" arrows
   ctx.strokeStyle = "rgba(70,36,12,0.5)";
   ctx.lineWidth = 3;
-  for (const x of [32, 88]) {
+  for (const x of [28, 74]) {
     ctx.beginPath();
     ctx.moveTo(x, 120 + b);
-    ctx.lineTo(x, 104 + b);
-    ctx.moveTo(x - 5, 109 + b);
-    ctx.lineTo(x, 103 + b);
-    ctx.lineTo(x + 5, 109 + b);
+    ctx.lineTo(x, 106 + b);
+    ctx.moveTo(x - 5, 111 + b);
+    ctx.lineTo(x, 105 + b);
+    ctx.lineTo(x + 5, 111 + b);
     ctx.stroke();
   }
-  // the dark slot and the eyes glowing inside
-  shape(() => ctx.roundRect(26, 62 + b, 68, 22, 7), "#0a0614", 3.5);
-  for (const x of [45, 75]) {
-    const g = radial(ctx, x, 73 + b, 11, [[0, "rgba(255,255,255,0.95)"], [0.4, "rgba(255,250,200,0.5)"], [1, "rgba(255,250,200,0)"]]);
+  // the dark slot, cut in with a little depth, and the eyes glowing inside
+  shape([[22, 68], [80, 68], [80, 88], [22, 88]], "#0a0614", 3.5);
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(24, 84 + b, 54, 3);
+  for (const x of [40, 64]) {
+    const g = radial(ctx, x, 78 + b, 11, [[0, "rgba(255,255,255,0.95)"], [0.4, "rgba(255,250,200,0.5)"], [1, "rgba(255,250,200,0)"]]);
     ctx.fillStyle = g;
-    ctx.fillRect(x - 11, 62 + b, 22, 22);
-    ellipse(ctx, x, 73 + b, 4, 5);
+    ctx.fillRect(x - 11, 68 + b, 22, 20);
+    ellipse(ctx, x, 78 + b, 4, 5);
     fill(ctx, "#ffffff");
   }
-  // a hand pokes out to hold the gadget
-  shape(() => circle(ctx, 101, 104 + b, 8), "#4a3a44", 3.5);
+  // a hand pokes out of the side to hold the gadget
+  ctx.beginPath();
+  circle(ctx, 104, 104 + b, 8);
+  fill(ctx, "#4a3a44");
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = HERO_INK;
+  ctx.stroke();
 }
 
 // ───────────────────────── monsters ─────────────────────────
 
-const olFor = (c: number) => rgba(mix(darken(c, 0.65), 0x1a0e18, 0.5));
+export const olFor = (c: number) => rgba(mix(darken(c, 0.65), 0x1a0e18, 0.5));
 
 /** Angry eyes with brows and a toothy grin. */
-function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, glow?: string): void {
+export function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, glow?: string): void {
   const { ctx, E, C, paint } = t;
   for (const d of [-1, 1]) {
     if (glow) {
@@ -139,7 +167,7 @@ function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, glow?: s
   });
 }
 
-function slime(color: number, extra = ""): (ctx: Ctx) => void {
+export function slime(color: number, extra = ""): (ctx: Ctx) => void {
   return (ctx) => {
     const t = toon(ctx, olFor(color), 5);
     t.paint("rgba(30,15,25,0.22)", () => t.E(70, 124, 50, 7));
@@ -183,7 +211,7 @@ function slime(color: number, extra = ""): (ctx: Ctx) => void {
   };
 }
 
-function mushroom(cap: number, stem: number, glow = false): (ctx: Ctx) => void {
+export function mushroom(cap: number, stem: number, glow = false): (ctx: Ctx) => void {
   return (ctx) => {
     const t = toon(ctx, olFor(cap), 5);
     t.paint("rgba(30,15,25,0.22)", () => t.E(65, 142, 40, 6));
@@ -208,7 +236,7 @@ function mushroom(cap: number, stem: number, glow = false): (ctx: Ctx) => void {
   };
 }
 
-function bat(color: number, beak = false): (ctx: Ctx) => void {
+export function bat(color: number, beak = false): (ctx: Ctx) => void {
   return (ctx) => {
     const t = toon(ctx, olFor(color), 5);
     const wing = (s: number) => {
@@ -237,7 +265,7 @@ function bat(color: number, beak = false): (ctx: Ctx) => void {
   };
 }
 
-function cactus(ctx: Ctx): void {
+export function cactus(ctx: Ctx): void {
   const c = 0x5fb84a;
   const t = toon(ctx, olFor(c), 5);
   t.paint("rgba(30,15,25,0.22)", () => t.E(65, 152, 40, 6));
@@ -277,8 +305,16 @@ function cactus(ctx: Ctx): void {
   angryFace(t, 65, 92, 13, 0.9);
 }
 
+/** A rock golem; the ice golem boss is the same body in ice. */
+export function golemOf(c: number, moss: number, eyes: string): (ctx: Ctx) => void {
+  return (ctx) => golemBody(ctx, c, moss, eyes);
+}
+
 function golem(ctx: Ctx): void {
-  const c = 0xa8adb8;
+  golemBody(ctx, 0xa8adb8, 0x6fbf4a, "rgba(255,210,60,0.95)");
+}
+
+function golemBody(ctx: Ctx, c: number, moss: number, eyes: string): void {
   const t = toon(ctx, "#2a2a36", 6);
   t.paint("rgba(30,15,25,0.25)", () => t.E(125, 238, 96, 12));
   t.part(() => {
@@ -290,7 +326,7 @@ function golem(ctx: Ctx): void {
     t.C(216, 150, 30);
   }, darken(c, 0.08));
   t.part(() => t.rect(125, 130, 170, 150, 44), c, () => {
-    t.paint(rgba(0x6fbf4a), () => {
+    t.paint(rgba(moss), () => {
       t.E(80, 66, 30, 12, -0.2);
       t.E(176, 70, 22, 9, 0.2);
     });
@@ -305,7 +341,7 @@ function golem(ctx: Ctx): void {
     ctx.stroke();
   });
   t.gloss(78, 80, 20, 8);
-  angryFace(t, 125, 118, 32, 1.6, "rgba(255,210,60,0.95)");
+  angryFace(t, 125, 118, 32, 1.6, eyes);
 }
 
 function pumpkinKing(ctx: Ctx): void {

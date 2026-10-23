@@ -17,7 +17,7 @@ npm run build    # production build into dist/
 
 Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets (`?frame=1` / `2` for the walk
 frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, plant, rock and crystal,
-`/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon.
+`/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run with the real numbers and prints how many hours (and failed runs) a steady
@@ -34,7 +34,11 @@ player needs per stage.
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
 - **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the honeycomb
-  tree), all described below. The **Map** (from Battle) shows the 100-stage journey.
+  tree), all described below. The **Map** (from Battle) shows the 100-stage journey:
+  - a road through the five lands, each with its own colours, trees, banner and sparkles, and clouds drifting by
+  - every 5th stage shows its boss (a dark shape until you get there), and cleared stages get a gold star
+  - lands you haven't reached are hidden in fog
+  - a panel up top shows your stage and the next boss, with a HERE button
 - **Top bar**: one slim row with settings, money, gems and dice. Tap money or gems to open the Shop, or
   dice to open Roll. During a fight only the money stays.
 - **The Roll screen**:
@@ -124,6 +128,22 @@ player needs per stage.
   crystal into the sky. The boss drops down next to you with a title card and its own music. It is just you
   and your pets against it (health of 100 normal monsters). It charges (red marks on the ground), stomps
   (a red circle) and throws rocks. Beat it and the crystal floats back down.
+- **20 bosses**, a new one every 5 stages (four per land):
+
+  | Land | Bosses (stages) |
+  |---|---|
+  | Sunny Meadow | Slime King (1-5), Mushroom Titan (6-10), Bat Queen (11-15), Stone Golem (16-20) |
+  | Golden Fields | Scarecrow (21-25), Thunder Crow (26-30), Haystack Brute (31-35), Pumpkin King (36-40) |
+  | Misty Forest | Spore Mother (41-45), Shadow Wolf (46-50), Moss Troll (51-55), Old Treant (56-60) |
+  | Sunset Dunes | Mummy Pharaoh (61-65), Sand Worm (66-70), Cactus Colossus (71-75), Sand Scorpion (76-80) |
+  | Frost Peak | Penguin Emperor (81-85), Ice Golem (86-90), Frost Yeti (91-95), Frost Dragon (96-100) |
+- **Boss Rush** (the purple button next to BATTLE):
+  - You fight 100 bosses in a row, the same 20 in order. You have **15 seconds** to beat each one.
+  - There is no crystal, no monsters, no skills and no airdrops: just you, your gadget and your pets.
+  - Beat a boss in time and the next one drops right in (you heal a little).
+  - Run out of time (the boss flies away) or fall, and the run ends. You keep your place: if you beat 60
+    bosses in time but not boss 61, you start at boss 61 next time.
+  - Every boss pays money; every 5th also gives gems and dice. The button shows the next boss.
 - **Pets** (a team of up to 3: one at the start, two Pet Slot upgrades) run around the field after monsters
   near you: shooters throw orbs, bombers lob bombs, pouncers leap and bite, star throwers throw spinning
   stars; support pets stay by your side. Monsters that bump into a pet hurt it; at zero health it is knocked
@@ -132,7 +152,7 @@ player needs per stage.
   monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
   shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
 - **The hero**: something living in a cardboard box. You only see its glowing eyes through a dark slot,
-  plus two little legs.
+  plus two little legs. It is drawn as a 3D box: a lit front, a shaded side and an open top with flaps.
 - **Gadgets** (the weapons): they all fire on their own, and you carry up to **3** at once (shown top right
   in a fight). Every stage starts with a Shuriken.
 
@@ -188,7 +208,7 @@ player needs per stage.
 | `src/systems/goals.ts` | Quests, daily rewards and Index milestones |
 | `src/systems/sound.ts` | Synthesized sound effects, the music sequencer and vibration |
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
-| `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose |
+| `src/scenes/Battle.ts` | A stage (lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose) and the Boss Rush |
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget panel), pause, stats, skill picker, defeat screen, rolling, popups |
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, charge-up and reel reveal, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |
@@ -197,7 +217,9 @@ player needs per stage.
 | `src/data/boosts.ts` | The four Battle Boosts |
 | `src/data/mutations.ts` | Monster mutations and how often they appear per stage |
 | `src/systems/power.ts` | Damage per second of the hero and team (lobby and My Hero) |
-| `src/ui/mapScreen.ts` | The 100-stage journey map |
+| `src/ui/mapScreen.ts` | The 100-stage journey map: lands, road, boss portraits, fog, clouds |
+| `src/data/bosses.ts` | The 20 bosses, which stages they guard, and the Boss Rush numbers |
+| `src/art/bosses.ts` | The 15 newer boss pictures (the other 5 are with the monsters) |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |
 | `src/art/characters.ts` | The Box Ghost hero, monsters and effects |
