@@ -1,18 +1,18 @@
 /**
- * Progression simulator: plays the game second by second using the real data files and
- * prints how long a steady player needs to reach each stage. Run with:
+ * Progression simulator: plays the game run by run using the real data files and prints
+ * how long a steady player needs to reach each stage. Run with:
  *   npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js
  *
  * Model (deliberately simple):
- * - rolls happen at the roll-speed rate with auto roll; luck from the tree, index bonus, potion and lucky rolls
- * - expected pet copies per second come from the same rarest-first roll rule as the game
- * - the best 6 pets are equipped and levelled up whenever copies allow
- * - a stage is cleared when effective damage per second beats what its monsters need
- * - money comes from kills at the current stage; the cheapest open tree hexagon is bought whenever affordable
+ * - a stage is a 5 minute run; skills picked during the run multiply your damage as it goes
+ * - each minute you survive if your damage keeps up with the monsters coming in (kiting covers some)
+ * - the boss at 5:00 has to die within ~40 s; a failed run still pays money and the dice you found
+ * - every roll costs one die; dice come from the map, elites, chests and the boss
+ * - the best pets are equipped and levelled up; the cheapest open tree hexagon is bought whenever affordable
  */
 import {
-  BOSS, FLYER, HERO_BASE_DMG, HERO_FIRE_MS, HERO_TEAM_SHARE, MAX_STAGE, SPAWN_MAX, SPAWN_MIN, WALKER_A, WALKER_B,
-  WAVES_PER_STAGE, monsterCash, monsterHp, waveSize,
+  BOSS, FLYER, HERO_BASE_DMG, HERO_FIRE_MS, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, minuteMult, monsterCash,
+  monsterHp, spawnGap,
 } from "../src/data/balance";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode } from "../src/data/tree";
@@ -30,7 +30,6 @@ let t = 0;
 let potionLeft = 0;
 let discovered = 1;
 
-const SPAWN = (SPAWN_MIN + SPAWN_MAX) / 2000;
 const kindTargets = { shot: 1, splash: 2.2, pierce: 1.8, zap: 1, buff: 0 };
 
 function teamDps(): { dps: number; best: number } {
@@ -59,32 +58,30 @@ function teamDps(): { dps: number; best: number } {
   return { dps: (petDps * mult + hero) * crit, best: Math.max(...team) };
 }
 
-/** Damage per second the player needs to hold a stage (normal waves and the boss). */
-function needed(s: number): number {
-  const avg = (WALKER_A.hp + WALKER_B.hp + FLYER.hp) / 3;
-  const wave = (monsterHp(avg, s, 3) * 1.3) / SPAWN;
-  const boss = monsterHp(BOSS.hp, s, WAVES_PER_STAGE) / 22 + monsterHp(avg, s, WAVES_PER_STAGE) / SPAWN;
-  // pets and the hero are not perfectly efficient (walking, overkill, misses)
-  return Math.max(wave, boss) / 0.55;
-}
+/** Skills picked during a run: roughly x1 at the start up to x4.5 by the boss. */
+const skillMult = (minute: number) => 1 + 0.7 * minute;
+const group = (minute: number, s: number) => 1 + Math.floor(minute / 3) + (s > 40 ? 1 : 0);
+const avgBase = (WALKER_A.hp + WALKER_B.hp + FLYER.hp) / 3;
 
-function stageSeconds(s: number): number {
-  let secs = 0;
-  for (let w = 1; w <= WAVES_PER_STAGE; w++) secs += waveSize(s, w) * SPAWN + (w === WAVES_PER_STAGE ? 12 : 1.5);
-  return secs + 3.6;
-}
-
-function cashPerSecond(s: number): number {
+/** One 5 minute run: how far you get, the money it pays and the dice you find. */
+function run(s: number, dps: number): { won: boolean; secs: number; cash: number; dice: number } {
   let kills = 0;
-  let money = 0;
-  for (let w = 1; w <= WAVES_PER_STAGE; w++) {
-    const n = waveSize(s, w);
-    kills += n;
-    money += n * monsterCash((WALKER_A.cash + WALKER_B.cash + FLYER.cash) / 3, s);
+  let minutesSurvived = 0;
+  for (let m = 0; m < MINUTES; m++) {
+    const perSec = (1000 / spawnGap(m)) * group(m, s);
+    const need = perSec * monsterHp(avgBase, s, m);
+    // kiting lets you get by with ~70% of what would be needed to kill everything
+    const ok = dps * skillMult(m) >= need * 0.7;
+    kills += Math.min(1, (dps * skillMult(m)) / need) * perSec * 60 + (m ? 10 + 4 * m : 0);
+    if (!ok) break;
+    minutesSurvived++;
   }
-  money += monsterCash(BOSS.cash, s);
-  // combo bonus ~ +20%, quests/chests/daily ~ +15%
-  return ((money * prod("cash")) / stageSeconds(s)) * 1.35;
+  const bossOk = minutesSurvived === MINUTES && dps * skillMult(MINUTES) * 40 >= monsterHp(BOSS.hp, s, MINUTES);
+  const cash = kills * monsterCash((WALKER_A.cash + WALKER_B.cash + FLYER.cash) / 3, s) * prod("cash") * 1.4 + (bossOk ? monsterCash(BOSS.cash, s) : 0);
+  // dice: ~60% of the 14 on the map, elites, chests, rare drops, boss
+  const frac = Math.max(0.2, minutesSurvived / MINUTES);
+  const dice = (8 + 9 + 6 + kills * 0.006) * frac + (bossOk ? 5 : 0);
+  return { won: bossOk, secs: Math.max(60, minutesSurvived * 60) + (bossOk ? 30 : 0) + 20, cash, dice };
 }
 
 const rollTime = () => Math.max(150, 2000 * TREE.reduce((m, n) => (n.effect === "speed" && owned.has(n.id) ? m * (1 - n.per) : m), 1));
@@ -111,14 +108,24 @@ function rollChances(L: number): number[] {
 }
 
 const report: string[] = [];
-const marks = new Set([5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]);
-let stageProgress = 0;
-const DT = 5;
-const LIMIT = 200 * 3600;
+const marks = new Set([2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]);
+let dice = 10;
+let fails = 0;
+const LIMIT = 300 * 3600;
 while (stage <= MAX_STAGE && t < LIMIT) {
-  t += DT;
-  // rolling
-  const rolls = ((1 + sum("multi")) * DT) / (rollTime() / 1000);
+  const r = run(stage, teamDps().dps);
+  t += r.secs;
+  cash += r.cash;
+  dice += r.dice;
+  // potion: drink whenever 10 gems are saved (lasts this run and the next couple)
+  potionLeft = Math.max(0, potionLeft - r.secs);
+  if (gems >= 10 && potionLeft <= 0) {
+    gems -= 10;
+    potionLeft = (5 + sum("potionTime")) * 60;
+  }
+  // rolling: spend every die
+  const rolls = Math.floor(dice) * (1 + sum("multi"));
+  dice -= Math.floor(dice);
   const ch = rollChances(luck());
   for (let i = 0; i < ch.length; i++) {
     if (!ch[i]) continue;
@@ -137,34 +144,25 @@ while (stage <= MAX_STAGE && t < LIMIT) {
       p.level++;
     }
   }
-  // potion: drink whenever 10 gems are saved
-  potionLeft = Math.max(0, potionLeft - DT);
-  if (gems >= 10 && potionLeft <= 0) {
-    gems -= 10;
-    potionLeft = (5 + sum("potionTime")) * 60;
-  }
-  // fighting and money
-  cash += cashPerSecond(stage) * DT;
-  const { dps } = teamDps();
-  if (dps >= needed(stage)) {
-    stageProgress += DT / stageSeconds(stage);
-    if (stageProgress >= 1) {
-      stageProgress = 0;
-      gems += 2 + sum("gems");
-      if (marks.has(stage)) {
-        const { best } = teamDps();
-        report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}`);
-      }
-      stage++;
+  if (r.won) {
+    gems += 2 + sum("gems");
+    if (marks.has(stage)) {
+      const { best } = teamDps();
+      report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}`);
     }
+    stage++;
+  } else {
+    fails++;
   }
   // shopping: cheapest open hexagon first
   for (;;) {
-    const open = TREE.filter((n) => !owned.has(n.id) && n.req.every((r) => owned.has(r))).sort((a, b) => a.cost - b.cost)[0];
+    const open = TREE.filter((n) => !owned.has(n.id) && n.req.every((q) => owned.has(q))).sort((a, b) => a.cost - b.cost)[0];
     if (!open || open.cost > cash) break;
     cash -= open.cost;
     owned.add(open.id);
   }
 }
 console.log(report.join("\n"));
-console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, needed ${needed(stage).toExponential(2)} vs dps ${teamDps().dps.toExponential(2)}`);
+const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monsterHp(avgBase, stage, MINUTES - 1) * 0.7;
+console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
+void minuteMult;

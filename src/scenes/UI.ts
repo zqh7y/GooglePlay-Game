@@ -2,10 +2,12 @@ import Phaser from "phaser";
 import { INK_N } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { btnTexture, panelTexture } from "../art/ui";
-import { MAX_STAGE } from "../data/balance";
+import { crystalKey } from "../art/world";
+import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
 import { PET_LIST } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
 import { regionForStage } from "../data/regions";
+import { MAX_SKILL, SKILL_BY_ID, SkillId } from "../data/skills";
 import { TREE } from "../data/tree";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import {
@@ -14,7 +16,7 @@ import {
 } from "../systems/goals";
 import { RollResult, luckFloor, rollMany, tierChances } from "../systems/roll";
 import { lastSeenAtLoad, persist, resetSave, save } from "../systems/save";
-import { buzz, isMuted, setMuted, sfx, unlockAudio } from "../systems/sound";
+import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import { autoUnlocked, canBuy, dicePerRoll, luck, luckyEvery, luckyMult, offlineRate, petSlots, potionActive, potionMult, rollTime } from "../systems/stats";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
@@ -24,7 +26,7 @@ import { Host, Screen, Tab } from "../ui/screens";
 import { ShopScreen, freeGiftReady } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, text } from "../ui/widgets";
-import { WAVES_PER_STAGE, battle } from "./Battle";
+import { StageResult, battle, mmss } from "./Battle";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -63,19 +65,18 @@ export class UIScene extends Phaser.Scene implements Host {
   private hud!: Phaser.GameObjects.Container;
   private hudBars!: Phaser.GameObjects.Graphics;
   private progressText!: Phaser.GameObjects.Text;
-  private pathG!: Phaser.GameObjects.Graphics;
-  private pathMarker!: Phaser.GameObjects.Image;
-  private bossIcon!: Phaser.GameObjects.Image;
+  private levelText!: Phaser.GameObjects.Text;
   private stageText!: Phaser.GameObjects.Text;
-  private landText!: Phaser.GameObjects.Text;
+  private crystalIcon!: Phaser.GameObjects.Image;
   private luckPill!: Pill;
+  private dicePill!: Pill;
   private potionPill!: Pill;
-  private lastWave = "";
+  private skillBar!: Phaser.GameObjects.Container;
+  private picker: Phaser.GameObjects.Container | null = null;
   private questG!: Phaser.GameObjects.Graphics;
   private questLabel!: Phaser.GameObjects.Text;
   private questCount!: Phaser.GameObjects.Text;
   private questGlow!: Phaser.GameObjects.Image;
-  private huntBtn!: Button;
   private badges: { obj: Phaser.GameObjects.Container; show: () => boolean }[] = [];
   private badgeTimer = 0;
   private nav: Record<Tab, NavTab> = {} as Record<Tab, NavTab>;
@@ -99,7 +100,7 @@ export class UIScene extends Phaser.Scene implements Host {
   create(): void {
     this.H = this.scale.height;
     this.L = layoutFor(this.H);
-    Object.assign(this, { openModal: null, celebrating: false, lastWave: "", badges: [], tab: "battle", mapOpen: false, nav: {} });
+    Object.assign(this, { openModal: null, celebrating: false, picker: null, badges: [], tab: "battle", mapOpen: false, nav: {} });
     ensureQuests();
     this.buildHud();
     this.rollScreen = new RollScreen(this, this);
@@ -114,7 +115,11 @@ export class UIScene extends Phaser.Scene implements Host {
       ["cash-arrived", this.onCash],
       ["stage-clear", this.stageClear],
       ["land-unlocked", this.landUnlocked],
-      ["wave-cleared", this.waveCleared],
+      ["skill-choice", this.showSkillChoice],
+      ["skills-changed", this.drawSkillBar],
+      ["stage-start", this.drawSkillBar],
+      ["stage-failed", this.stageFailed],
+      ["dice", this.onDice],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -130,6 +135,21 @@ export class UIScene extends Phaser.Scene implements Host {
     this.cashPill.bump();
   }
 
+  private onDice(): void {
+    this.dicePill.bump();
+    const t = text(this, this.dicePill.x, this.dicePill.y - 60, "+1", 44, "#ffe066").setDepth(7000);
+    this.tweens.add({ targets: t, y: t.y - 50, alpha: 0, duration: 700, onComplete: () => t.destroy() });
+  }
+
+  /** The fight only runs while you look at it and no popup is open. */
+  private syncBattle(): void {
+    const run = this.tab === "battle" && !this.mapOpen && !this.openModal && !battle.choosing && !this.celebrating && !this.picker;
+    const paused = this.scene.isPaused("Battle");
+    if (run && paused) this.scene.resume("Battle");
+    else if (!run && !paused && this.scene.isActive("Battle")) this.scene.pause("Battle");
+    music.play(this.tab === "battle" && !this.mapOpen && !battle.over ? (battle.bossFrac >= 0 ? "boss" : "battle") : "calm");
+  }
+
   update(time: number, delta: number): void {
     this.badgeTimer -= delta;
     if (this.badgeTimer <= 0) {
@@ -139,13 +159,14 @@ export class UIScene extends Phaser.Scene implements Host {
       const b = this.scene.get("Battle");
       b.cameras.main.setVisible(this.tab === "battle" && !this.mapOpen);
     }
+    this.syncBattle();
     this.cashPill.setValue(fmt(save.cash));
     this.gemPill.setValue(fmt(save.gems));
     if (this.tab === "battle") this.updateHud(time);
     this.rollScreen.setReadyAt(this.rollReadyAt);
     for (const s of Object.values(this.screens)) s.update(time);
     this.tree.update(delta);
-    if (save.autoRoll && autoUnlocked()) this.roll();
+    if (save.autoRoll && autoUnlocked()) this.roll(true);
   }
 
   // ───────────────────────── Host (used by the screens) ─────────────────────────
@@ -297,17 +318,19 @@ export class UIScene extends Phaser.Scene implements Host {
     band.fillStyle(0x5b3a24, 1).fillRect(0, 0, W, 58);
     band.fillStyle(INK_N, 1).fillRect(0, 56, W, 4);
     this.hudBars = this.add.graphics();
-    this.progressText = text(this, W / 2, 88, "", 26);
-    this.pathG = this.add.graphics();
-    this.bossIcon = this.add.image(0, 160, "icon_boss").setScale(0.5);
-    this.pathMarker = this.add.image(0, 118, "hero").setScale(0.34);
-    this.tweens.add({ targets: this.pathMarker, y: 110, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.stageText = text(this, 400, 216, "", 38);
-    this.landText = text(this, 400, 252, "", 24, "#ffe6b8");
-    this.luckPill = new Pill(this, 400, 300, 380, 70, "icon_clover", 36, "glass");
-    this.luckPill.setSize(380, 70).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
+    this.progressText = text(this, W / 2, 90, "", 30);
+    this.levelText = text(this, 415, 142, "", 26);
+    this.stageText = text(this, 130, 194, "", 34).setOrigin(0, 0.5);
+    this.crystalIcon = this.add.image(46, 246, crystalKey(regionForStage(save.stage).id)).setScale(0.28);
+    this.luckPill = new Pill(this, 196, 304, 340, 64, "icon_clover", 32, "glass");
+    this.luckPill.setSize(340, 64).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
+    this.dicePill = new Pill(this, 520, 304, 270, 64, "icon_dice", 32, "glass");
+    this.dicePill.setSize(270, 64).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
-    this.hud = this.add.container(0, 0, [band, this.hudBars, this.progressText, this.pathG, this.bossIcon, this.pathMarker, this.stageText, this.landText, this.luckPill, this.potionPill]).setDepth(10);
+    this.skillBar = this.add.container(0, this.L.navTop - 64);
+    this.hud = this.add.container(0, 0, [
+      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.luckPill, this.dicePill, this.potionPill, this.skillBar,
+    ]).setDepth(10);
 
     // quest tracker
     const qw = 400;
@@ -320,18 +343,12 @@ export class UIScene extends Phaser.Scene implements Host {
       this.questGlow, this.add.image(0, 0, panelTexture(this, "glass", qw, 104)), this.add.image(-qw / 2 + 54, 0, "icon_quest").setScale(0.74),
       this.questLabel, this.questG, this.questCount,
     ]).setSize(qw, 104).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showQuests());
-    this.huntBtn = button(this, W - 100, this.L.hudBottom + 222, 172, 92, save.autoHunt ? "green" : "grey", "Hunt", () => {
-      save.autoHunt = !save.autoHunt;
-      persist();
-      this.huntBtn.setColor(save.autoHunt ? "green" : "grey");
-      this.toast(save.autoHunt ? "Auto hunt ON: your hero chases monsters" : "Auto hunt OFF: drag to move", "#ffe680");
-    }, { icon: "icon_sword", iconSize: 46, size: 30 });
-    this.hud.add([tracker, this.huntBtn]);
+    this.hud.add(tracker);
 
     // small buttons under the minimap
     const side = (i: number, icon: string, str: string, fn: () => void, badge?: () => boolean) => {
       const x = 100;
-      const y = this.L.hudBottom + 300 + i * 150;
+      const y = this.L.hudBottom + 290 + i * 140;
       this.hud.add(button(this, x, y, 160, 128, "peach", str, fn, { icon, iconSize: 60, stack: true, size: 26 }));
       if (badge) this.addBadge(x + 60, y - 50, badge);
     };
@@ -347,40 +364,32 @@ export class UIScene extends Phaser.Scene implements Host {
     this.badges.push({ obj, show });
   }
 
-  private drawPath(): void {
-    const g = this.pathG;
-    g.clear();
-    const xs = [...Array(WAVES_PER_STAGE)].map((_, i) => 190 + i * 105);
-    g.lineStyle(14, INK_N, 1).lineBetween(xs[0], 160, xs[xs.length - 1], 160);
-    g.lineStyle(6, 0xfff3dc, 1).lineBetween(xs[0], 160, xs[xs.length - 1], 160);
-    xs.forEach((x, i) => {
-      const w = i + 1;
-      const r = w === WAVES_PER_STAGE ? 26 : 17;
-      g.fillStyle(INK_N, 1).fillCircle(x, 160, r + 5);
-      g.fillStyle(w < save.wave ? 0xfff3dc : w === save.wave ? 0xff9a4a : 0x9a7a5a, 1).fillCircle(x, 160, r);
-    });
-    this.bossIcon.setPosition(xs[xs.length - 1], 160);
-    this.tweens.add({ targets: this.pathMarker, x: xs[save.wave - 1], duration: 400, ease: "Back.out" });
-    this.stageText.setText(`Stage ${save.stage}-${save.wave}`);
-    this.landText.setText(`${regionForStage(save.stage).name}  •  max ${MAX_STAGE}`);
-  }
-
   private updateHud(time: number): void {
-    const key = `${save.stage}-${save.wave}`;
-    if (key !== this.lastWave) {
-      this.lastWave = key;
-      this.drawPath();
-    }
-    this.hudBars.clear();
+    const W = this.W;
+    const g = this.hudBars;
+    g.clear();
+    // stage clock (or the boss's health)
     if (battle.bossFrac >= 0) {
-      drawBar(this.hudBars, 24, 74, this.W - 48, 30, battle.bossFrac, 0xf26464);
+      drawBar(g, 24, 74, W - 48, 34, battle.bossFrac, 0xf26464);
       this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%`);
     } else {
-      drawBar(this.hudBars, 24, 74, this.W - 48, 30, battle.progress, 0xffe0a3);
-      this.progressText.setText(battle.village < 1 ? `Crystal ${Math.ceil(battle.village * 100)}%` : `${Math.floor(battle.progress * 100)}%`);
+      const f = battle.time / STAGE_MS;
+      drawBar(g, 24, 74, W - 48, 34, f, f > 0.8 ? 0xffa64d : 0xffe0a3);
+      for (let m = 1; m < MINUTES; m++) g.fillStyle(INK_N, 0.6).fillRect(24 + ((W - 48) * m) / MINUTES - 2, 74, 4, 34);
+      this.progressText.setText(`${mmss(battle.time)} / ${mmss(STAGE_MS)}`);
     }
-    this.progressText.setColor(battle.village < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
+    // level and XP
+    drawBar(g, 130, 130, 570, 24, battle.xp, 0x5ac8ff);
+    this.levelText.setText(`Lv ${battle.level}`);
+    this.stageText.setText(`Stage ${save.stage}  •  ${regionForStage(save.stage).name}`);
+    fitText(this.stageText, 570);
+    // the crystal
+    const c = battle.crystal;
+    drawBar(g, 86, 234, 420, 24, c, c > 0.4 ? 0x67c3ff : 0xf26464);
+    this.crystalIcon.setScale(c < 0.4 && time % 500 < 250 ? 0.34 : 0.28);
+    this.progressText.setColor(c < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
     this.luckPill.setValue(`Luck ${luckText(luck())}`);
+    this.dicePill.setValue(`${fmt(save.dice)} dice`);
     const active = potionActive();
     this.potionPill.setVisible(active);
     if (active) {
@@ -389,13 +398,107 @@ export class UIScene extends Phaser.Scene implements Host {
     }
   }
 
+  /** The skills you picked this stage, along the bottom of the field. */
+  private drawSkillBar(): void {
+    this.skillBar.removeAll(true);
+    this.crystalIcon.setTexture(crystalKey(regionForStage(save.stage).id));
+    Object.entries(battle.skills).forEach(([id, lv], i) => {
+      const def = SKILL_BY_ID[id as SkillId];
+      const x = 60 + i * 86;
+      this.skillBar.add([
+        this.add.circle(x, 0, 38, def.color).setStrokeStyle(5, INK_N),
+        this.add.image(x, -2, def.icon).setDisplaySize(52, 52),
+        text(this, x + 24, 26, `${lv}`, 26, lv === MAX_SKILL ? "#ffe066" : "#ffffff"),
+      ]);
+    });
+  }
+
+  /** Level up: the fight freezes and you pick one of three skills. */
+  private showSkillChoice(info: { choices: SkillId[]; levels: Partial<Record<SkillId, number>>; level: number }): void {
+    this.picker?.destroy();
+    const { W, H } = this;
+    const dim = this.add.rectangle(0, 0, W, H, 0x1a0e08, 0.78).setOrigin(0).setInteractive();
+    const rays = this.add.image(W / 2, H * 0.24, "rays").setTint(0xffe066).setAlpha(0.35).setScale(1.4);
+    const title = text(this, W / 2, H * 0.22, "LEVEL UP!", 104, "#ffe066");
+    const sub = text(this, W / 2, H * 0.22 + 90, `Level ${info.level}  •  choose a skill`, 40);
+    const root = this.add.container(0, 0, [dim, rays, title, sub]).setDepth(5600);
+    this.picker = root;
+    this.tweens.add({ targets: rays, angle: 360, duration: 12000, repeat: -1 });
+    title.setScale(0);
+    this.tweens.add({ targets: title, scale: 1, duration: 350, ease: "Back.out" });
+    let ready = false;
+    this.time.delayedCall(450, () => (ready = true));
+    info.choices.forEach((id, i) => {
+      const def = SKILL_BY_ID[id];
+      const lv = info.levels[id] ?? 0;
+      const y = H * 0.4 + i * 280;
+      const stars = [...Array(MAX_SKILL)].map((_, k) => this.add.image(-170 + k * 52, 66, "icon_star").setScale(0.4).setAlpha(k < lv ? 1 : k === lv ? 0.9 : 0.25).setTint(k === lv ? 0x8af06a : 0xffffff));
+      const card = this.add.container(W / 2, y, [
+        this.add.image(0, 0, panelTexture(this, "cream", 920, 250)),
+        this.add.circle(-330, 0, 88, def.color).setStrokeStyle(8, INK_N),
+        this.add.image(-330, -2, def.icon).setDisplaySize(120, 120),
+        label(this, -190, -58, def.name, 50, "#4a2f1d").setOrigin(0, 0.5),
+        text(this, 360, -58, lv === 0 ? "NEW!" : `Lv ${lv + 1}`, 38, lv === 0 ? "#ff8aa8" : "#8af06a"),
+        fitText(label(this, -190, 2, def.text(lv), 34, "#7a5236").setOrigin(0, 0.5), 600),
+        ...stars,
+      ]).setSize(920, 250).setScale(0.6).setAlpha(0).setInteractive({ useHandCursor: true });
+      this.tweens.add({ targets: card, scale: 1, alpha: 1, duration: 260, delay: 120 + i * 90, ease: "Back.out" });
+      card.on("pointerdown", () => ready && this.tweens.add({ targets: card, scale: 0.95, duration: 60 }));
+      card.on("pointerup", () => {
+        if (!ready) return;
+        ready = false;
+        sfx.buy();
+        this.tweens.add({ targets: card, scale: 1.08, duration: 120, yoyo: true });
+        this.tweens.add({ targets: root, alpha: 0, delay: 200, duration: 160, onComplete: () => {
+          root.destroy();
+          if (this.picker === root) this.picker = null;
+          this.game.events.emit("skill-picked", id);
+        } });
+      });
+      root.add(card);
+    });
+  }
+
+  /** You fell or the crystal broke: show how it went, revive once for gems, or try again. */
+  private stageFailed(r: StageResult): void {
+    const h = 1060;
+    let revived = false;
+    const m = this.showModal(modal(this, 900, h, r.reason === "hero" ? "YOU FELL!" : "CRYSTAL BROKE!", "red", () => {
+      this.openModal = null;
+      if (!revived) this.game.events.emit("retry");
+    }));
+    const row = (y: number, icon: string, str: string, color = "#4a2f1d") => m.body.add([
+      this.add.image(-300, y, icon).setScale(0.6),
+      label(this, -240, y, str, 40, color).setOrigin(0, 0.5),
+    ]);
+    m.body.add(text(this, 0, -h / 2 + 140, `Stage ${r.stage}`, 64, "#c9663a"));
+    row(-h / 2 + 260, "icon_clock", `Survived ${mmss(r.time)} / ${mmss(STAGE_MS)}`);
+    row(-h / 2 + 345, "icon_skull", `${fmt(r.kills)} monsters defeated`);
+    row(-h / 2 + 430, "icon_cash", `+${fmt(Math.floor(r.earned))} money`, "#3f9a4f");
+    row(-h / 2 + 515, "icon_dice", `+${r.dice} dice found`, "#c9663a");
+    m.body.add(label(this, 0, 90, "Roll new pets and buy upgrades to get stronger, then try again!", 30, "#9a7a5a", 760));
+    if (r.canRevive) {
+      m.body.add(button(this, 0, 230, 560, 130, save.gems >= r.reviveGems ? "purple" : "grey", `REVIVE  ${r.reviveGems}`, () => {
+        if (save.gems < r.reviveGems) {
+          sfx.error();
+          this.toast("Not enough gems!", "#ff9a9a");
+          return;
+        }
+        revived = true;
+        this.game.events.emit("revive");
+        m.close();
+      }, { icon: "icon_gem", iconSize: 60, size: 46 }));
+    }
+    m.body.add(button(this, 0, r.canRevive ? 390 : 300, 560, 130, "green", "TRY AGAIN", () => m.close(), { size: 48 }));
+  }
+
   private updateGoals(): void {
     for (const b of this.badges) b.obj.setVisible(b.show());
     const owned = Object.keys(save.pets);
     this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0);
     this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady());
     this.nav.upgrades.badge.setVisible(TREE.some((n) => canBuy(n)));
-    this.nav.roll.badge.setVisible(save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1);
+    this.nav.roll.badge.setVisible(save.dice > 0 && (save.dice >= 10 || save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1));
     const ready = save.quests.find(questDone);
     const q = ready ?? [...save.quests].sort((a, b) => b.progress / questGoal(b) - a.progress / questGoal(a))[0];
     if (!q) return;
@@ -408,8 +511,17 @@ export class UIScene extends Phaser.Scene implements Host {
 
   // ───────────────────────── rolling ─────────────────────────
 
-  roll(): void {
+  roll(auto = false): void {
     if (this.celebrating || this.rollScreen.revealing || this.time.now < this.rollReadyAt) return;
+    if (save.dice <= 0) {
+      if (save.autoRoll) save.autoRoll = false;
+      if (!auto) {
+        sfx.error();
+        this.toast("No dice left! Find dice on the battle map", "#ff9a9a");
+      }
+      return;
+    }
+    save.dice--;
     const lucky = save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1;
     if (save.luckyBoost > 0) save.luckyBoost--;
     else save.luckyCount = lucky ? 0 : save.luckyCount + 1;
@@ -511,15 +623,8 @@ export class UIScene extends Phaser.Scene implements Host {
 
   // ───────────────────────── stage and land moments ─────────────────────────
 
-  private waveCleared(): void {
-    if (this.tab !== "battle") return;
-    const t = text(this, this.W / 2, this.L.hudBottom + 160, "WAVE CLEAR!", 64, "#b6f59a").setDepth(6100).setScale(0);
-    this.tweens.add({ targets: t, scale: 1, duration: 220, ease: "Back.out" });
-    this.tweens.add({ targets: t, alpha: 0, y: t.y - 50, delay: 700, duration: 300, onComplete: () => t.destroy() });
-  }
-
   /** "STAGE 7 CLEAR!" with stars popping in and the money counting up. */
-  private stageClear(info: { stage: number; earned: number; gems: number; final: boolean }): void {
+  private stageClear(info: { stage: number; earned: number; gems: number; dice: number; final: boolean }): void {
     const { W } = this;
     const cy = this.tab === "battle" ? this.L.hudBottom + 360 : this.L.headerBottom + 260;
     const band = this.add.graphics();
@@ -528,10 +633,11 @@ export class UIScene extends Phaser.Scene implements Host {
     const rays = this.add.image(W / 2, -40, "rays").setTint(0xffd23f).setAlpha(0.45).setScale(1.1);
     const title = fitText(text(this, W / 2, -70, info.final ? "YOU CONQUERED EVERY LAND!" : `STAGE ${info.stage} CLEAR!`, info.final ? 62 : 90, "#ffe066"), W - 60);
     const stars = [0, 1, 2].map((i) => this.add.image(W / 2 + (i - 1) * 120, 30, "icon_star").setScale(0));
-    const earned = text(this, W / 2 - 100, 110, "+0", 52, "#8af06a").setOrigin(0, 0.5);
+    const earned = text(this, W / 2 - 280, 110, "+0", 52, "#8af06a").setOrigin(0, 0.5);
     const root = this.add.container(0, cy, [
-      band, rays, title, ...stars, this.add.image(W / 2 - 150, 112, "icon_cash").setScale(0.6), earned,
-      this.add.image(W / 2 + 170, 112, "icon_gem").setScale(0.55), text(this, W / 2 + 210, 110, `+${info.gems}`, 52, "#8fe3ff").setOrigin(0, 0.5),
+      band, rays, title, ...stars, this.add.image(W / 2 - 330, 112, "icon_cash").setScale(0.6), earned,
+      this.add.image(W / 2 + 70, 112, "icon_gem").setScale(0.55), text(this, W / 2 + 110, 110, `+${info.gems}`, 52, "#8fe3ff").setOrigin(0, 0.5),
+      this.add.image(W / 2 + 270, 112, "icon_dice").setScale(0.55), text(this, W / 2 + 310, 110, `+${info.dice}`, 52, "#ffe066").setOrigin(0, 0.5),
     ]).setDepth(6200).setAlpha(0);
     this.tweens.add({ targets: root, alpha: 1, duration: 200 });
     this.tweens.add({ targets: rays, angle: 180, duration: 3000 });
@@ -546,7 +652,7 @@ export class UIScene extends Phaser.Scene implements Host {
     }));
     const counter = { v: 0 };
     this.tweens.add({ targets: counter, v: info.earned, duration: 1300, delay: 400, ease: "Cubic.out", onUpdate: () => earned.setText(`+${fmt(counter.v)}`) });
-    this.coinShower(W / 2, cy + 110, 10);
+    this.coinShower(W / 2 - 280, cy + 110, 10);
     this.time.delayedCall(info.final ? 5000 : 3000, () => this.tweens.add({ targets: root, alpha: 0, duration: 300, onComplete: () => root.destroy() }));
   }
 
@@ -663,11 +769,15 @@ export class UIScene extends Phaser.Scene implements Host {
     const m = this.showModal(modal(this, 860, h, "SETTINGS", "peach", () => (this.openModal = null)));
     m.body.add(label(this, 0, -h / 2 + 150,
       `Best stage: ${save.bestStage}/${MAX_STAGE}\nMonsters defeated: ${fmt(save.totalKills)}\nRolls: ${fmt(save.totalRolls)}\nRarest roll: ${oneIn(save.bestRoll)}\nPets found: ${save.discovered.length}/${PET_LIST.length}`, 34, "#7a5236"));
-    const snd: Button = button(this, 0, -100, 380, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
+    const snd: Button = button(this, -190, -100, 360, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
       setMuted(!isMuted());
       snd.setLabel(isMuted() ? "Sound: OFF" : "Sound: ON").setColor(isMuted() ? "grey" : "green");
     }, { size: 32 });
-    m.body.add(snd);
+    const mus: Button = button(this, 190, -100, 360, 96, music.isOn() ? "green" : "grey", music.isOn() ? "Music: ON" : "Music: OFF", () => {
+      music.setOn(!music.isOn());
+      mus.setLabel(music.isOn() ? "Music: ON" : "Music: OFF").setColor(music.isOn() ? "green" : "grey");
+    }, { size: 32 });
+    m.body.add([snd, mus]);
     m.body.add(label(this, 0, 0, "Testing tools (removed before release)", 26, "#9a7a5a"));
     const dev = (y: number, x: number, str: string, fn: () => void) =>
       m.body.add(button(this, x, y, 360, 96, "grey", str, () => {
@@ -677,7 +787,7 @@ export class UIScene extends Phaser.Scene implements Host {
     dev(90, -190, "+10K money", () => (save.cash += 1e4));
     dev(90, 190, "+1B money", () => (save.cash += 1e9));
     dev(210, -190, "+100 gems", () => (save.gems += 100));
-    dev(210, 190, "+1Qa money", () => (save.cash += 1e15));
+    dev(210, 190, "+100 dice", () => (save.dice += 100));
     m.body.add(button(this, 0, 350, 460, 110, "red", "RESET SAVE", () => {
       resetSave();
       window.location.reload();
@@ -706,7 +816,7 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add([
       this.add.image(0, -150, "glow").setScale(1.6).setTint(0xffe066).setAlpha(0.6),
       this.add.image(0, -100, "hero").setScale(1.5),
-      label(this, 0, 20, `Your team fought for ${hours ? `${hours}h ` : ""}${mins}m while you were away`, 32, "#7a5236", 700),
+      label(this, 0, 20, `Your pets collected money for ${hours ? `${hours}h ` : ""}${mins}m while you were away`, 32, "#7a5236", 700),
       this.add.image(-150, 135, "icon_cash").setScale(0.95),
       fitText(text(this, -80, 132, `+${fmt(cash)}`, 84, "#8af06a").setOrigin(0, 0.5), 360),
       button(this, -195, 300, 360, 130, "green", "COLLECT", () => collect(1), { size: 44 }),

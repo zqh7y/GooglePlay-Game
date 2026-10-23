@@ -207,7 +207,7 @@ export function effectText(node: TreeNode): string {
     case "crit": return `+${pct} critical hit chance`;
     case "critDmg": return `+${p}x critical damage`;
     case "slot": return "+1 pet in your team";
-    case "villageHp": return `+${pct} village health`;
+    case "villageHp": return `+${pct} health (you and the crystal)`;
     case "moveSpeed": return `+${pct} walking speed`;
     case "range": return `+${pct} attack range`;
     case "gems": return `+${p} gem${p > 1 ? "s" : ""} per boss`;

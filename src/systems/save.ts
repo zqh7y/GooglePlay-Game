@@ -17,8 +17,9 @@ export interface SaveData {
   /** pet ids in the order they were found */
   discovered: string[];
   stage: number;
-  wave: number;
   bestStage: number;
+  /** dice found on the battle map; every roll costs one */
+  dice: number;
   /** upgrade tree: node id -> 1 when bought */
   tree: Record<string, number>;
   autoRoll: boolean;
@@ -30,8 +31,6 @@ export interface SaveData {
   bestRoll: number;
   lastSeen: number;
   cashPerSec: number;
-  /** hero walks to monsters by itself */
-  autoHunt: boolean;
   quests: { type: import("./goals").QuestType; target: number; progress: number }[];
   questTier: number;
   questsDone: number;
@@ -49,7 +48,7 @@ export interface SaveData {
   freeGiftAt: number;
   /** speed potion: rolls are twice as fast until this time */
   speedUntil: number;
-  /** lucky dice bought in the shop: this many upcoming rolls are lucky rolls */
+  /** lucky rolls bought in the shop: this many upcoming rolls are lucky rolls */
   luckyBoost: number;
 }
 
@@ -64,8 +63,8 @@ function fresh(): SaveData {
     equipped: [STARTER],
     discovered: [STARTER],
     stage: 1,
-    wave: 1,
     bestStage: 1,
+    dice: 10,
     tree: {},
     autoRoll: false,
     potionUntil: 0,
@@ -74,7 +73,6 @@ function fresh(): SaveData {
     bestRoll: 2,
     lastSeen: Date.now(),
     cashPerSec: 0,
-    autoHunt: true,
     quests: [],
     questTier: 0,
     questsDone: 0,

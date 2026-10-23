@@ -12,7 +12,7 @@ import {
 } from "../systems/stats";
 import { fmt, luckText, oneIn } from "./format";
 import { Host, Screen } from "./screens";
-import { Button, button, drawBar, fitText, label, text } from "./widgets";
+import { Button, Pill, button, drawBar, fitText, label, text } from "./widgets";
 
 /** Quick-buy cards: each buys the cheapest open hexagon of one tree branch. */
 const BRANCHES: { title: string; icon: string; branch: Branch; value: () => string }[] = [
@@ -39,6 +39,7 @@ export class RollScreen extends Screen {
   private burst: Phaser.GameObjects.Particles.ParticleEmitter;
   private readyAt = 0;
   private reelY: number;
+  private dicePill: Pill;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "roll");
@@ -69,10 +70,13 @@ export class RollScreen extends Screen {
     this.die = s.add.image(W / 2, dieY, dieTexture(s, dieSkin(), 5)).setScale(2.2);
     s.tweens.add({ targets: this.die, y: dieY - 18, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     r.add([this.dieRays, ped, this.die]);
+    // every roll costs one die (found on the battle map)
+    this.dicePill = new Pill(s, W - 190, dieY - 120, 300, 76, "icon_dice", 36, "glass");
+    r.add(this.dicePill);
 
     // reels area
     this.reelY = (dieY + bottom - 430) / 2 + 40;
-    this.hint = text(s, W / 2, this.reelY, "Tap ROLL to find new pets!", 40, "#e8e0ff");
+    this.hint = text(s, W / 2, this.reelY, "Each roll costs 1 die. Find dice in battle!", 38, "#e8e0ff");
     s.tweens.add({ targets: this.hint, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
     r.add(this.hint);
 
@@ -171,7 +175,7 @@ export class RollScreen extends Screen {
     const every = luckyEvery();
     const luckyNext = save.luckyBoost > 0 || save.luckyCount >= every - 1;
     const chips = [`Lucky roll ${luckyNext ? "NOW!" : `in ${Math.max(1, every - save.luckyCount - 1)}`}`];
-    if (save.luckyBoost > 0) chips.push(`${save.luckyBoost} lucky dice`);
+    if (save.luckyBoost > 0) chips.push(`${save.luckyBoost} lucky rolls`);
     if (p.index > 1) chips.push(`Index x${p.index.toFixed(2)}`);
     if (potionActive()) chips.push(`Potion x${p.potion}`);
     if (speedActive()) chips.push("Speed x2");
@@ -179,10 +183,12 @@ export class RollScreen extends Screen {
     fitText(this.luckText, 680);
 
     const left = this.readyAt - time;
-    this.rollBtn.setLabel(left > 0 ? `${(left / 1000).toFixed(1)}s` : "ROLL");
-    this.rollBtn.setSub(luckyNext ? "LUCKY ROLL!" : `Lucky in ${Math.max(1, every - save.luckyCount - 1)}`);
-    this.rollBtn.subText?.setColor(luckyNext ? "#fff27a" : "#ffffff");
-    this.rollBtn.setColor(left > 0 || this.revealing ? "peach" : luckyNext ? "gold" : "orange");
+    const none = save.dice <= 0;
+    this.dicePill.setValue(`${fmt(save.dice)} dice`);
+    this.rollBtn.setLabel(none ? "NO DICE" : left > 0 ? `${(left / 1000).toFixed(1)}s` : "ROLL");
+    this.rollBtn.setSub(none ? "Find dice in battle!" : luckyNext ? "LUCKY ROLL!" : `Lucky in ${Math.max(1, every - save.luckyCount - 1)}`);
+    this.rollBtn.subText?.setColor(luckyNext && !none ? "#fff27a" : "#ffffff");
+    this.rollBtn.setColor(none ? "grey" : left > 0 || this.revealing ? "peach" : luckyNext ? "gold" : "orange");
     this.rollBar.clear();
     if (left > 0) drawBar(this.rollBar, this.scene.scale.width / 2 - 150, this.host.L.navTop - 378, 300, 14, 1 - left / rollTime(), 0xffe066);
     const unlocked = autoUnlocked();

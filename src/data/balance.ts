@@ -1,49 +1,66 @@
 /**
  * Difficulty and reward curves, shared by the game and the progression simulator
  * (so tuning here is what players actually get).
+ *
+ * A stage is a 5 minute survival run: monsters come faster and tougher every minute,
+ * and at 5:00 the boss arrives. Kill it to clear the stage.
  */
-export const WAVES_PER_STAGE = 5;
 export const MAX_STAGE = 100;
+export const STAGE_MS = 5 * 60 * 1000;
+/** the stage timer is shown as 5 marks, one per minute */
+export const MINUTES = 5;
 
 /**
- * Monster health grows every stage: steeply in the first lands (so early pets do not
- * carry you too far), gentler in the middle, and steep again in the final land.
+ * Monster health grows every stage: very steeply over the first stages (your first good
+ * pets do not carry you far), steeply through the first lands, gentler in the middle and
+ * steep again in the final land.
  */
-export const EARLY_HP_GROWTH = 1.5;
-export const MID_HP_GROWTH = 1.32;
-export const LATE_HP_GROWTH = 1.45;
-const growthAt = (s: number) => (s < 25 ? EARLY_HP_GROWTH : s < 80 ? MID_HP_GROWTH : LATE_HP_GROWTH);
+export const START_HP_GROWTH = 2.0;
+export const EARLY_HP_GROWTH = 1.45;
+export const MID_HP_GROWTH = 1.25;
+export const LATE_HP_GROWTH = 1.36;
+const growthAt = (s: number) => (s < 10 ? START_HP_GROWTH : s < 25 ? EARLY_HP_GROWTH : s < 80 ? MID_HP_GROWTH : LATE_HP_GROWTH);
 const HP_TABLE: number[] = [1];
 for (let s = 1; s <= MAX_STAGE + 1; s++) HP_TABLE.push(HP_TABLE[s - 1] * growthAt(s));
 /** Money from monsters grows by this factor every stage. */
 export const CASH_GROWTH = 1.25;
-/** Later waves of a stage are a bit tougher. */
-export const WAVE_HP_STEP = 0.12;
+/** Within a stage, monsters get this much tougher every minute. */
+export const MINUTE_HP_STEP = 0.3;
 
 export const HERO_BASE_DMG = 6;
 /** Hero adds this share of the team's pet damage to each shot. */
 export const HERO_TEAM_SHARE = 0.2;
 export const HERO_FIRE_MS = 420;
+export const HERO_HP = 100;
 
-export const VILLAGE_HP = 100;
-/** Time between monsters appearing, in ms. */
-export const SPAWN_MIN = 650;
-export const SPAWN_MAX = 1050;
+export const CRYSTAL_HP = 250;
+/** Monsters appear this often (ms) at the start; every minute they come faster. */
+export const SPAWN_MS = 1250;
+export const SPAWN_SPEEDUP = 0.5;
+export const MAX_MONSTERS = 140;
+/** Share of monsters that go for the crystal instead of you. */
+export const RAIDER_SHARE = 0.3;
 
 export interface MonsterStats {
   hp: number;
   speed: number;
   cash: number;
+  /** damage to you on touch, or to the crystal per second */
   dmg: number;
+  xp: number;
 }
 
-export const WALKER_A: MonsterStats = { hp: 14, speed: 82, cash: 2, dmg: 2 };
-export const WALKER_B: MonsterStats = { hp: 25, speed: 64, cash: 3, dmg: 3 };
-export const FLYER: MonsterStats = { hp: 10, speed: 125, cash: 2, dmg: 2 };
-export const BOSS: MonsterStats = { hp: 450, speed: 46, cash: 60, dmg: 15 };
+export const WALKER_A: MonsterStats = { hp: 10, speed: 165, cash: 0.4, dmg: 6, xp: 1 };
+export const WALKER_B: MonsterStats = { hp: 18, speed: 135, cash: 0.6, dmg: 9, xp: 2 };
+export const FLYER: MonsterStats = { hp: 7, speed: 235, cash: 0.4, dmg: 5, xp: 1 };
+export const ELITE_MULT = 4;
+export const BOSS: MonsterStats = { hp: 700, speed: 120, cash: 60, dmg: 25, xp: 30 };
 
-export const monsterHp = (base: number, stage: number, wave: number) => base * HP_TABLE[Math.max(0, stage - 1)] * (1 + WAVE_HP_STEP * (wave - 1));
+export const minuteMult = (minute: number) => 1 + MINUTE_HP_STEP * minute;
+export const monsterHp = (base: number, stage: number, minute: number) => base * HP_TABLE[Math.max(0, stage - 1)] * minuteMult(minute);
 export const monsterCash = (base: number, stage: number) => base * CASH_GROWTH ** (stage - 1);
+/** Time between spawns at this point of the stage. */
+export const spawnGap = (minute: number) => SPAWN_MS / (1 + SPAWN_SPEEDUP * minute);
 
-/** How many monsters a wave sends (the boss wave sends a boss plus minions). */
-export const waveSize = (stage: number, wave: number) => (wave === WAVES_PER_STAGE ? 10 : 14 + wave * 3 + Math.floor(((stage - 1) % 20) / 3));
+/** XP needed to go from `level` to the next one. */
+export const xpFor = (level: number) => 6 + level * 5;

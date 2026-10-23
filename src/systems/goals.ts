@@ -3,7 +3,7 @@ import { persist, save } from "./save";
 
 // ───────────────────────── quests ─────────────────────────
 
-export type QuestType = "kill" | "roll" | "wave" | "buy" | "boss" | "combo" | "rare";
+export type QuestType = "kill" | "roll" | "wave" | "buy" | "boss" | "combo" | "rare" | "dice";
 
 export interface Quest {
   type: QuestType;
@@ -11,19 +11,21 @@ export interface Quest {
   progress: number;
 }
 
-const QUEST_TYPES: QuestType[] = ["kill", "roll", "wave", "buy", "boss", "combo", "rare"];
+const QUEST_TYPES: QuestType[] = ["kill", "roll", "wave", "buy", "boss", "combo", "rare", "dice"];
 export const QUEST_SLOTS = 3;
 
 function makeQuest(tier: number, avoid: QuestType[]): Quest {
   const pool = QUEST_TYPES.filter((t) => !avoid.includes(t));
   const type = pool[Math.floor(Math.random() * pool.length)];
   const target = {
-    kill: Math.round(25 * 1.35 ** tier),
-    roll: Math.round(20 * 1.3 ** tier),
-    wave: 3 + tier,
+    kill: Math.round(60 * 1.35 ** tier),
+    roll: Math.round(10 * 1.25 ** tier),
+    // minutes survived
+    wave: 4 + tier * 2,
+    dice: 8 + tier * 3,
     buy: 2 + Math.ceil(tier / 2),
     boss: 1 + Math.floor(tier / 3),
-    combo: 10 + tier * 5,
+    combo: 20 + tier * 10,
     // rarity rank to roll
     rare: Math.min(RARITY_ORDER.length - 1, 2 + Math.floor(tier / 2)),
   }[type];
@@ -39,7 +41,8 @@ export function questText(q: Quest): string {
   switch (q.type) {
     case "kill": return `Defeat ${q.target} monsters`;
     case "roll": return `Roll ${q.target} times`;
-    case "wave": return `Clear ${q.target} waves`;
+    case "wave": return `Survive ${q.target} minutes`;
+    case "dice": return `Find ${q.target} dice`;
     case "buy": return `Buy ${q.target} upgrades`;
     case "boss": return `Defeat ${q.target} boss${q.target > 1 ? "es" : ""}`;
     case "combo": return `Reach a x${q.target} combo`;

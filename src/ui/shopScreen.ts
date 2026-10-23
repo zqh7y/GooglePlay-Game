@@ -131,13 +131,24 @@ export class ShopScreen extends Screen {
       }),
     });
 
-    y = this.section(y + 10, "LUCKY DICE");
+    y = this.section(y + 10, "DICE");
+    for (const [amount, gems] of [[10, 5], [50, 20], [200, 70]] as [number, number][]) {
+      y = this.card(y, {
+        icon: "icon_dice", title: `${amount} Dice`, desc: () => `${amount} more rolls (you have ${fmt(save.dice)})`,
+        price: () => `${gems}`, priceIcon: "icon_gem", color: "gold", buy: () => this.spend(gems, () => {
+          save.dice += amount;
+          host.afterPurchase();
+        }),
+      });
+    }
+
+    y = this.section(y + 10, "LUCKY ROLLS");
     y = this.card(y, {
-      icon: "icon_dice", title: "10 Lucky Dice", desc: () => "Your next 10 rolls are Lucky Rolls",
+      icon: "icon_clover", title: "10 Lucky Rolls", desc: () => "Your next 10 rolls are Lucky Rolls",
       price: () => "15", priceIcon: "icon_gem", color: "orange", buy: () => this.spend(15, () => (save.luckyBoost += 10)),
     });
     y = this.card(y, {
-      icon: "icon_dice", title: "50 Lucky Dice", desc: () => "Your next 50 rolls are Lucky Rolls",
+      icon: "icon_clover", title: "50 Lucky Rolls", desc: () => "Your next 50 rolls are Lucky Rolls",
       price: () => "60", priceIcon: "icon_gem", color: "orange", buy: () => this.spend(60, () => (save.luckyBoost += 50)),
     });
 
@@ -179,13 +190,14 @@ export class ShopScreen extends Screen {
     const cash = income(5);
     save.gems += gems;
     save.cash += cash;
+    save.dice += 3;
     save.freeGiftAt = Date.now() + FREE_GIFT_MS;
     persist();
     sfx.fanfare();
     buzz(80);
     this.scene.cameras.main.flash(180, 255, 240, 170);
     this.host.coinShower(this.giftBtn.x, this.giftBtn.y + this.list.y, 12);
-    this.host.toast(`+${gems} gems  +${fmt(cash)} money`, "#ffe066");
+    this.host.toast(`+${gems} gems  +3 dice  +${fmt(cash)} money`, "#ffe066");
     this.refresh();
   }
 
@@ -207,7 +219,7 @@ export class ShopScreen extends Screen {
       const m = Math.floor(left / 60000);
       const sec = Math.floor((left % 60000) / 1000);
       this.giftBtn.setLabel(`${m}:${String(sec).padStart(2, "0")}`).setColor("grey");
-      this.giftText.setText("Free gems and money every 10 minutes");
+      this.giftText.setText("Free gems, dice and money every 10 minutes");
     } else {
       this.giftBtn.setLabel("OPEN").setColor("green");
       this.giftText.setText("Ready! Tap to open");
