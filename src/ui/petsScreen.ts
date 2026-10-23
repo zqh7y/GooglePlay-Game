@@ -1,15 +1,22 @@
 import Phaser from "phaser";
+import { INK, canvasTexture, linear, radial, rr } from "../art/draw";
+import { petTexture } from "../art/pets";
 import { CARD_H, CARD_W, panelTexture, slotTexture } from "../art/ui";
 import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../data/items";
-import { INDEX_STEP, indexBonus } from "../systems/goals";
+import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
+import { INDEX_LUCK, INDEX_STEP, indexBonus } from "../systems/goals";
 import { canLevelUp, levelUp, persist, save, toggleEquip } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
-import { MAX_PETS, petSlots } from "../systems/stats";
-import { fmt } from "./format";
+import { MAX_PETS, dmgMult, petSlots } from "../systems/stats";
+import { fmt, oneIn } from "./format";
 import { Host, Screen } from "./screens";
-import { Button, Modal, button, drawBar, label, lockedCard, modal, petCard, text } from "./widgets";
+import { Modal, button, drawBar, fitText, label, lockedCard, modal, petCard, text } from "./widgets";
 
 const KIND_LABEL = { shot: "Shooter", pierce: "Star thrower", splash: "Bomber", zap: "Pouncer", buff: "Support" };
+
+type Sort = "power" | "rarity" | "level" | "new";
+const SORTS: Sort[] = ["power", "rarity", "level", "new"];
+const SORT_LABEL: Record<Sort, string> = { power: "Power", rarity: "Rarity", level: "Level", new: "Newest" };
 
 /** Rough strength of a pet at its level, used by "Equip Best". */
 export function petScore(id: string): number {
@@ -19,32 +26,73 @@ export function petScore(id: string): number {
   return ((def.damage * m * def.count) / (def.cooldown / 1000)) * (def.kind === "splash" || def.kind === "pierce" ? 1.4 : 1);
 }
 
-export const anyLevelReady = () => Object.keys(save.pets).some(canLevelUp);
+/** The big "POWER" number shown for pets and the team. */
+export const petPower = (id: string) => petScore(id) * dmgMult() * 10;
+const teamPower = () => save.equipped.reduce((s, id) => s + petPower(id), 0);
 
-/** My Pets (team + collection with levels) and the Index of all 100 pets. */
+export const anyLevelReady = () => Object.keys(save.pets).some(canLevelUp);
+const readyCount = () => Object.keys(save.pets).filter(canLevelUp).length;
+
+/** The team's stage: a purple room with three spotlights and a dark floor. */
+function stageTexture(scene: Phaser.Scene, w: number, h: number): string {
+  return canvasTexture(scene, `pets_stage_${w}_${h}`, w, h, (ctx) => {
+    rr(ctx, 4, 4, w - 8, h - 8, 36);
+    ctx.fillStyle = radial(ctx, w / 2, h * 0.1, w * 0.75, [[0, "#6a58c0"], [0.55, "#40337a"], [1, "#261d52"]]);
+    ctx.fill();
+    ctx.save();
+    rr(ctx, 4, 4, w - 8, h - 8, 36);
+    ctx.clip();
+    for (const x of [w / 2 - 320, w / 2, w / 2 + 320]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 36, 0);
+      ctx.lineTo(x + 36, 0);
+      ctx.lineTo(x + 140, h);
+      ctx.lineTo(x - 140, h);
+      ctx.closePath();
+      ctx.fillStyle = linear(ctx, 0, 0, 0, h, [[0, "rgba(255,240,200,0.32)"], [1, "rgba(255,240,200,0)"]]);
+      ctx.fill();
+    }
+    ctx.fillStyle = "rgba(20,10,40,0.35)";
+    ctx.fillRect(0, h * 0.74, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    for (const [x, y, r] of [[60, 140, 3], [190, 70, 2], [w - 70, 150, 3], [w - 210, 60, 2], [w / 2 + 170, 190, 2], [w / 2 - 180, 200, 2]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    rr(ctx, 4, 4, w - 8, h - 8, 36);
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+  });
+}
+
+/**
+ * My Pets and the Index. At the top your team stands on a lit stage with its TEAM POWER;
+ * below it the collection tracker, then every pet you own (or all 100 in the Index) with
+ * level bars, NEW tags and glowing "ready to level" cards.
+ */
 export class PetsScreen extends Screen {
   private tab: "pets" | "index" = "pets";
+  private sort: Sort = "power";
   private content: Phaser.GameObjects.Container;
   private list: Phaser.GameObjects.Container | null = null;
   private listTop = 0;
   private listBottom = 0;
   private listMax = 0;
   private items: { obj: Phaser.GameObjects.Container; onTap: () => void }[] = [];
-  private tabBtns: Record<"pets" | "index", Button>;
   private detail: Modal | null = null;
   private drag = { on: false, y: 0, oy: 0, moved: false };
+  private team: { img: Phaser.GameObjects.Image; id: string }[] = [];
+  private powerText: Phaser.GameObjects.Text | null = null;
+  private power = { shown: -1 };
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "pets");
     const s = scene;
-    const W = s.scale.width;
-    const y = host.L.headerBottom + 56;
-    this.tabBtns = {
-      pets: button(s, W / 2 - 230, y, 420, 100, "orange", "MY PETS", () => this.setTab("pets"), { icon: "icon_paw", iconSize: 52, size: 36 }),
-      index: button(s, W / 2 + 230, y, 420, 100, "grey", "INDEX", () => this.setTab("index"), { icon: "icon_book", iconSize: 52, size: 36 }),
-    };
     this.content = s.add.container(0, 0);
-    this.root.add([this.tabBtns.pets, this.tabBtns.index, this.content]);
+    this.root.add(this.content);
 
     s.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (!this.visible || !this.list || this.detail || p.y < this.listTop || p.y > this.listBottom) return;
@@ -72,8 +120,18 @@ export class PetsScreen extends Screen {
     this.build();
   }
 
+  /** Pets you have seen in the list are not NEW any more. */
+  protected onHide(): void {
+    if (save.newPets.length) {
+      save.newPets = [];
+      persist();
+    }
+  }
+
   private setTab(tab: "pets" | "index"): void {
+    sfx.click();
     this.tab = tab;
+    this.list = null;
     this.build();
   }
 
@@ -83,41 +141,32 @@ export class PetsScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     const L = this.host.L;
-    this.tabBtns.pets.setColor(this.tab === "pets" ? "orange" : "grey");
-    this.tabBtns.index.setColor(this.tab === "index" ? "blue" : "grey");
     this.content.removeAll(true);
     this.items = [];
-    let gridTop = L.headerBottom + 130;
+    this.team = [];
 
-    if (this.tab === "index") {
-      const next = (Math.floor(save.discovered.length / INDEX_STEP) + 1) * INDEX_STEP;
-      this.content.add(s.add.image(W / 2, gridTop + 40, panelTexture(s, "glass", 1000, 80)));
-      this.content.add(text(s, W / 2, gridTop + 40, `Found ${save.discovered.length}/${PET_LIST.length}  •  Luck x${indexBonus().toFixed(2)}  •  +25% at ${next}`, 32));
-      gridTop += 100;
+    const y0 = L.headerBottom + 8;
+    this.buildTeam(y0, 440);
+    const collY = y0 + 440 + 16 + 72;
+    this.buildCollection(collY);
+
+    // tabs and sorting
+    const tabY = collY + 72 + 16 + 48;
+    this.content.add(button(s, 230, tabY, 400, 96, this.tab === "pets" ? "orange" : "grey", "MY PETS", () => this.setTab("pets"), { icon: "icon_paw", iconSize: 50, size: 34 }));
+    this.content.add(button(s, 612, tabY, 330, 96, this.tab === "index" ? "blue" : "grey", "INDEX", () => this.setTab("index"), { icon: "icon_book", iconSize: 50, size: 34 }));
+    if (this.tab === "pets") {
+      this.content.add(button(s, 930, tabY, 260, 96, "purple", SORT_LABEL[this.sort], () => {
+        sfx.click();
+        this.sort = SORTS[(SORTS.indexOf(this.sort) + 1) % SORTS.length];
+        this.list = null;
+        this.build();
+      }, { size: 30, sub: "sort" }));
     } else {
-      const slots = petSlots();
-      const teamY = gridTop + 110;
-      this.content.add(s.add.image(W / 2, teamY, panelTexture(s, "cream", 1040, 230)));
-      this.content.add(label(s, 60, teamY - 82, `TEAM ${save.equipped.length}/${slots}`, 32).setOrigin(0, 0.5));
-      for (let i = 0; i < MAX_PETS; i++) {
-        const x = 150 + i * 190;
-        const id = save.equipped[i];
-        if (i >= slots) {
-          this.content.add(s.add.image(x, teamY + 18, slotTexture(s, 150, true)));
-          this.content.add(s.add.image(x, teamY + 18, "icon_lock").setScale(0.55));
-        } else if (id) {
-          const c = petCard(s, x, teamY + 18, id, { noOdds: true }).setScale(0.6);
-          c.setInteractive({ useHandCursor: true }).on("pointerup", () => this.openPet(id));
-          this.content.add(c);
-        } else {
-          this.content.add(s.add.image(x, teamY + 18, slotTexture(s, 150, false)));
-        }
-      }
-      this.content.add(button(s, W - 170, teamY - 48, 280, 90, "blue", "EQUIP BEST", () => this.equipBest(), { icon: "icon_star", iconSize: 42, size: 28 }));
-      this.content.add(button(s, W - 170, teamY + 56, 280, 90, anyLevelReady() ? "green" : "grey", "LEVEL ALL", () => this.levelAll(), { icon: "icon_fuse", iconSize: 42, size: 28 }));
-      gridTop = teamY + 140;
+      this.content.add(text(s, 930, tabY, `${save.discovered.length}/${PET_LIST.length}`, 40, "#ffffff"));
     }
 
+    // the grid
+    const gridTop = tabY + 64;
     const gridBottom = L.navTop - 20;
     this.content.add(s.add.image(W / 2, (gridTop + gridBottom) / 2, panelTexture(s, "inset", 1040, gridBottom - gridTop)));
     const list = s.add.container(0, 0);
@@ -127,23 +176,171 @@ export class PetsScreen extends Screen {
     const scale = this.tab === "pets" ? 0.8 : 0.72;
     const cols = 4;
     const colW = 245;
-    const rowH = CARD_H * scale + 20;
-    const ids = this.tab === "pets" ? Object.keys(save.pets).sort((a, b) => ITEMS[b].index - ITEMS[a].index) : PET_LIST.map((p) => p.id);
+    const rowH = CARD_H * scale + 22;
+    const ids = this.tab === "pets" ? this.sorted() : PET_LIST.map((p) => p.id);
+    // after your pets: the next ones to find, as "???" teasers that take you to the Roll screen
+    const teasers = this.tab === "pets" ? PET_LIST.filter((p) => !save.discovered.includes(p.id)).sort((a, b) => a.oneIn - b.oneIn).slice(0, 4 + ((4 - (ids.length % 4)) % 4)) : [];
+    teasers.forEach((p) => ids.push(p.id));
     ids.forEach((id, i) => {
       const x = W / 2 + ((i % cols) - (cols - 1) / 2) * colW;
-      const y = gridTop + 18 + (CARD_H * scale) / 2 + Math.floor(i / cols) * rowH;
+      const y = gridTop + 20 + (CARD_H * scale) / 2 + Math.floor(i / cols) * rowH;
       const owned = !!save.pets[id];
+      const rank = rarityRank(ITEMS[id].rarity);
+      if (owned && canLevelUp(id)) {
+        // ready to level: a green glow pulses behind the card
+        const g = s.add.image(x, y, "glow").setTint(0x7aff5a).setScale(scale * 1.5, scale * 1.9).setAlpha(0.5);
+        s.tweens.add({ targets: g, alpha: 1, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        list.add(g);
+      } else if (owned && rank >= 4) {
+        list.add(s.add.image(x, y, "glow").setTint(RARITY_INFO[ITEMS[id].rarity].color).setScale(scale * 1.4, scale * 1.8).setAlpha(0.55));
+      }
       const card = owned
-        ? petCard(s, x, y, id, { level: true, equipped: this.tab === "pets" && save.equipped.includes(id) }).setScale(scale)
+        ? petCard(s, x, y, id, { level: true, equipped: save.equipped.includes(id), isNew: save.newPets.includes(id) }).setScale(scale)
         : lockedCard(s, x, y, id).setScale(scale);
       list.add(card);
       if (owned) this.items.push({ obj: card, onTap: () => this.openPet(id) });
+      else if (this.tab === "pets") {
+        card.setAlpha(0.75);
+        card.add(text(s, 0, 24, "ROLL TO\nFIND", 30, "#ffe066"));
+        this.items.push({ obj: card, onTap: () => this.host.setTab("roll") });
+      }
     });
     this.list = list;
     this.listTop = gridTop;
     this.listBottom = gridBottom;
     this.listMax = Math.max(0, Math.ceil(ids.length / cols) * rowH + 36 - (gridBottom - gridTop));
     list.y = Phaser.Math.Clamp(keepY, -this.listMax, 0);
+  }
+
+  private sorted(): string[] {
+    const ids = Object.keys(save.pets);
+    const byRarity = (a: string, b: string) => ITEMS[b].index - ITEMS[a].index;
+    const by: Record<Sort, (a: string, b: string) => number> = {
+      power: (a, b) => petPower(b) - petPower(a),
+      rarity: byRarity,
+      level: (a, b) => save.pets[b].level - save.pets[a].level || byRarity(a, b),
+      new: (a, b) => save.discovered.indexOf(b) - save.discovered.indexOf(a),
+    };
+    // pets that can level up always come first, so you never miss them
+    return ids.sort((a, b) => Number(canLevelUp(b)) - Number(canLevelUp(a)) || by[this.sort](a, b));
+  }
+
+  /** Your team on stage: three podiums, the pets bouncing on them, and the TEAM POWER. */
+  private buildTeam(y0: number, h: number): void {
+    const s = this.scene;
+    const W = s.scale.width;
+    const c = this.content;
+    c.add(s.add.image(W / 2, y0 + h / 2, stageTexture(s, 1040, h)));
+    c.add(text(s, W / 2, y0 + 42, "TEAM POWER", 28, "#d9ccff"));
+    this.powerText = text(s, W / 2, y0 + 96, "", 66, "#ffe066");
+    c.add(this.powerText);
+    const target = teamPower();
+    if (this.power.shown < 0) this.power.shown = target;
+    this.countPower(target);
+
+    c.add(button(s, 160, y0 + 66, 250, 90, "blue", "BEST TEAM", () => this.equipBest(), { icon: "icon_star", iconSize: 40, size: 26 }));
+    const ready = readyCount();
+    c.add(button(s, W - 160, y0 + 66, 250, 90, ready ? "green" : "grey", "LEVEL ALL", () => this.levelAll(), { icon: "icon_fuse", iconSize: 40, size: 26 }));
+    if (ready) {
+      const badge = s.add.container(W - 52, y0 + 30, [s.add.circle(0, 0, 24, 0xf03e3e).setStrokeStyle(5, 0x4a2f1d), text(s, 0, -1, String(ready), 28)]);
+      s.tweens.add({ targets: badge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      c.add(badge);
+    }
+
+    const slots = petSlots();
+    const base = y0 + 330;
+    for (let i = 0; i < MAX_PETS; i++) {
+      // the middle spot is the leader's: a little higher
+      const order = [1, 0, 2][i];
+      const x = W / 2 + (order - 1) * 320;
+      const by = base - (order === 1 ? 16 : 0);
+      const id = save.equipped[i];
+      if (i >= slots) {
+        c.add([
+          s.add.ellipse(x, by, 190, 46, 0x1a1238, 0.8).setStrokeStyle(4, 0x4a2f1d),
+          s.add.image(x, by - 70, "icon_lock").setScale(0.75).setAlpha(0.8),
+          label(s, x, by + 46, "Unlock in Upgrades", 22, "#cbbcf0"),
+        ]);
+        continue;
+      }
+      if (!id) {
+        const slot = s.add.image(x, by - 70, slotTexture(s, 130, false)).setAlpha(0.7);
+        s.tweens.add({ targets: slot, scale: 1.08, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        c.add([
+          s.add.ellipse(x, by, 190, 46, 0x1a1238, 0.8).setStrokeStyle(4, 0x4a2f1d),
+          slot, text(s, x, by - 72, "+", 64, "#7a5236"),
+          label(s, x, by + 46, "Tap a pet below", 22, "#cbbcf0"),
+        ]);
+        continue;
+      }
+      const def = ITEMS[id];
+      const info = RARITY_INFO[def.rarity];
+      const glow = s.add.image(x, by - 80, "glow").setTint(info.color).setScale(1.1).setAlpha(0.65);
+      s.tweens.add({ targets: glow, alpha: 0.95, scale: 1.25, duration: 900 + i * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const ped = s.add.ellipse(x, by, 200, 50, info.color).setStrokeStyle(6, 0x4a2f1d);
+      const img = s.add.image(x, by + 6, petTexture(s, id)).setOrigin(0.5, 1).setScale(0.95);
+      img.setInteractive({ useHandCursor: true }).on("pointerup", () => this.openPet(id));
+      s.tweens.add({ targets: img, scaleY: 0.9, scaleX: 1, duration: 260 + i * 30, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const name = fitText(text(s, x, by + 46, `${def.name}  Lv.${save.pets[id].level}`, 26, info.css), 290);
+      c.add([glow, ped, img, name]);
+      this.team.push({ img, id });
+    }
+  }
+
+  /** Count the TEAM POWER up (or down) to its new value, with a "+123" popping out. */
+  private countPower(target: number): void {
+    const s = this.scene;
+    const t = this.powerText!;
+    const from = this.power.shown;
+    s.tweens.killTweensOf(this.power);
+    if (Math.abs(target - from) < 1e-9) {
+      t.setText(fmt(target));
+      return;
+    }
+    t.setText(fmt(from));
+    s.tweens.add({
+      targets: this.power, shown: target, duration: 900, ease: "Cubic.out",
+      onUpdate: () => t.active && t.setText(fmt(this.power.shown)),
+    });
+    if (target > from) {
+      s.tweens.add({ targets: t, scale: 1.25, duration: 160, yoyo: true, repeat: 1 });
+      const plus = text(s, t.x + 180, t.y - 10, `+${fmt(target - from)}`, 40, "#8af06a").setScale(0);
+      this.content.add(plus);
+      s.tweens.add({ targets: plus, scale: 1, duration: 220, ease: "Back.out" });
+      s.tweens.add({ targets: plus, y: plus.y - 60, alpha: 0, delay: 800, duration: 400, onComplete: () => plus.destroy() });
+    }
+  }
+
+  /** Found so far, the next collection reward, and how complete each rarity is. */
+  private buildCollection(cy: number): void {
+    const s = this.scene;
+    const W = s.scale.width;
+    const c = this.content;
+    const found = save.discovered.length;
+    const next = Math.min(PET_LIST.length, (Math.floor(found / INDEX_STEP) + 1) * INDEX_STEP);
+    const done = found >= PET_LIST.length;
+    c.add(s.add.image(W / 2, cy, panelTexture(s, "cream", 1040, 144)));
+    c.add(s.add.image(76, cy - 34, "icon_book").setScale(0.6));
+    c.add(label(s, 122, cy - 46, "COLLECTION", 24, "#7a5236").setOrigin(0, 0.5));
+    c.add(text(s, 122, cy - 16, `${found}/${PET_LIST.length}`, 36, "#ffffff").setOrigin(0, 0.5));
+    const g = s.add.graphics();
+    drawBar(g, 330, cy - 46, 670, 30, done ? 1 : (found % INDEX_STEP) / INDEX_STEP, 0x5ac8ff);
+    c.add(g);
+    c.add(fitText(text(s, 665, cy - 32, done ? "Every pet found!" : `Luck x${indexBonus().toFixed(2)}  →  x${(indexBonus() + INDEX_LUCK).toFixed(2)} at ${next} pets`, 22), 640));
+    // one chip per rarity: found / 10, with a check when complete
+    RARITY_ORDER.forEach((r, i) => {
+      const x = W / 2 + (i - 4.5) * 100;
+      const y = cy + 38;
+      const n = PET_LIST.filter((p) => p.rarity === r && save.discovered.includes(p.id)).length;
+      const total = PET_LIST.filter((p) => p.rarity === r).length;
+      const full = n >= total;
+      const chip = s.add.container(x, y, [
+        s.add.circle(0, 0, 26, RARITY_INFO[r].color, n ? 1 : 0.35).setStrokeStyle(full ? 6 : 4, full ? 0xffcf3a : 0x4a2f1d),
+        full ? s.add.image(0, 0, "icon_check").setScale(0.4) : text(s, 0, -1, `${n}`, 24, n ? "#ffffff" : "#e9dcc6"),
+      ]);
+      if (full) s.tweens.add({ targets: chip, scale: 1.12, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      c.add(chip);
+    });
   }
 
   private changed(): void {
@@ -155,6 +352,7 @@ export class PetsScreen extends Screen {
   private equipBest(): void {
     save.equipped = Object.keys(save.pets).sort((a, b) => petScore(b) - petScore(a)).slice(0, petSlots());
     sfx.buy();
+    buzz(30);
     this.changed();
   }
 
@@ -169,13 +367,29 @@ export class PetsScreen extends Screen {
     buzz(60);
     this.scene.cameras.main.flash(200, 200, 255, 170);
     this.host.toast(`+${n} pet level${n > 1 ? "s" : ""}!`, "#8af06a");
+    this.sparkle(this.scene.scale.width / 2, this.host.L.headerBottom + 300, 60);
     this.changed();
+  }
+
+  /** A burst of green and gold sparks. */
+  private sparkle(x: number, y: number, n: number): void {
+    const s = this.scene;
+    const fx = s.add.particles(x, y, "spark", {
+      speed: { min: 200, max: 620 }, lifespan: 800, scale: { start: 1, end: 0 }, tint: [0xffe066, 0x8af06a, 0xffffff], gravityY: 300, emitting: false,
+    }).setDepth(6000);
+    fx.explode(n);
+    s.time.delayedCall(1000, () => fx.destroy());
   }
 
   openPet(id: string): void {
     const s = this.scene;
     const def = ITEMS[id];
-    const h = 1180;
+    const info = RARITY_INFO[def.rarity];
+    if (save.newPets.includes(id)) {
+      save.newPets = save.newPets.filter((k) => k !== id);
+      persist();
+    }
+    const h = 1260;
     const m = modal(s, 920, h, def.name, "purple", () => {
       if (this.detail === m) this.detail = null;
     });
@@ -188,34 +402,52 @@ export class PetsScreen extends Screen {
       const mult = levelMult(p.level);
       const max = p.level >= MAX_LEVEL;
       const need = copiesFor(p.level);
-      const card = petCard(s, 0, -300, id, { level: true }).setScale(1.15);
-      content.add(card);
-      s.tweens.add({ targets: card, y: -308, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      content.add(label(s, 0, -92, def.description, 32, "#7a5236", 760));
-      content.add(s.add.image(0, 70, panelTexture(s, "inset", 780, 240)));
+      const rays = s.add.image(0, -330, "rays").setTint(info.color).setAlpha(0.45).setScale(0.75);
+      s.tweens.add({ targets: rays, angle: 360, duration: 14000, repeat: -1 });
+      const glow = s.add.image(0, -330, "glow").setTint(info.color).setScale(1.9).setAlpha(0.7);
+      const card = petCard(s, 0, -330, id, { level: true }).setScale(1.1);
+      content.add([rays, glow, card]);
+      s.tweens.add({ targets: card, y: -338, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      content.add(text(s, 0, -142, `${info.label.toUpperCase()}  •  ${oneIn(def.oneIn)}  •  ${KIND_LABEL[def.kind]}`, 28, info.css));
+      content.add(label(s, 0, -96, def.description, 28, "#7a5236", 780));
+
+      // power: now and after the next level
+      content.add(s.add.image(0, 2, panelTexture(s, "inset", 780, 110)));
+      content.add(text(s, -360, -20, "POWER", 26, "#ffe6b8").setOrigin(0, 0.5));
+      const pw = text(s, -360, 22, fmt(petPower(id)), 48, "#ffe066").setOrigin(0, 0.5);
+      content.add(pw);
+      if (!max) {
+        const nextPow = petPower(id) * (levelMult(p.level + 1) / mult);
+        content.add(text(s, 360, 2, `Lv.${p.level + 1}:  ${fmt(nextPow)}`, 34, "#8af06a").setOrigin(1, 0.5));
+      } else {
+        content.add(text(s, 360, 2, "MAX LEVEL", 34, "#ffcf3a").setOrigin(1, 0.5));
+      }
+
       const dmg = (lv: number) => def.damage * levelMult(lv);
       const rows: [string, string, string][] = def.kind === "buff"
-        ? [["icon_star", "Type", KIND_LABEL[def.kind]], ["icon_sword", "Team damage", `+${fmt(dmg(p.level))}%`]]
+        ? [["icon_sword", "Team damage", `+${fmt(dmg(p.level))}%`]]
         : [
-          ["icon_sword", "Damage", max ? fmt(dmg(p.level)) : `${fmt(dmg(p.level))}  →  ${fmt(dmg(p.level + 1))}`],
+          ["icon_sword", "Damage", fmt(dmg(p.level))],
           ["icon_clock", "Attacks every", `${(def.cooldown / 1000).toFixed(1)}s`],
-          ["icon_target", `${KIND_LABEL[def.kind]} targets`, String(def.count)],
+          ["icon_target", "Targets", String(def.count)],
         ];
       rows.forEach(([icon, name, value], i) => {
-        const y = -2 + i * 72 + (rows.length === 2 ? 36 : 0);
+        const y = 100 + i * 60;
         content.add([
-          s.add.image(-330, y, icon).setScale(0.48),
-          label(s, -290, y, name, 32).setOrigin(0, 0.5),
-          text(s, 350, y, value, 36, "#ffe066").setOrigin(1, 0.5),
+          s.add.image(-350, y, icon).setScale(0.42),
+          label(s, -310, y, name, 30).setOrigin(0, 0.5),
+          text(s, 360, y, value, 32, "#ffe066").setOrigin(1, 0.5),
         ]);
       });
       const g = s.add.graphics();
-      drawBar(g, -360, 228, 720, 36, max ? 1 : Math.min(1, p.copies / need), max ? 0xffcf3a : p.copies >= need ? 0x7ad651 : 0x5ac8ff);
+      const ready = canLevelUp(id);
+      drawBar(g, -360, 290, 720, 40, max ? 1 : Math.min(1, p.copies / need), max ? 0xffcf3a : ready ? 0x7ad651 : 0x5ac8ff);
       content.add(g);
-      content.add(text(s, 0, 245, max ? `MAX LEVEL (x${mult.toFixed(2)})` : `Lv.${p.level}  •  copies ${p.copies}/${need}  •  power x${mult.toFixed(2)}`, 28));
+      content.add(text(s, 0, 309, max ? `MAX LEVEL  (x${mult.toFixed(2)} power)` : `Lv.${p.level}   •   copies ${p.copies}/${need}`, 28));
+      if (!max && !ready) content.add(label(s, 0, 362, `Roll ${need - p.copies} more ${def.name} to level up`, 26, "#7a5236"));
       const equipped = save.equipped.includes(id);
       const full = !equipped && save.equipped.length >= petSlots();
-      content.add(button(s, -205, 410, 380, 134, equipped ? "red" : "green", equipped ? "UNEQUIP" : full ? "SWAP IN" : "EQUIP", () => {
+      content.add(button(s, -205, 470, 380, 134, equipped ? "red" : "green", equipped ? "UNEQUIP" : full ? "SWAP IN" : "EQUIP", () => {
         if (full) {
           const weakest = [...save.equipped].sort((a, b) => petScore(a) - petScore(b))[0];
           save.equipped = save.equipped.filter((k) => k !== weakest);
@@ -225,38 +457,51 @@ export class PetsScreen extends Screen {
         m.close();
         this.changed();
       }, { size: 42 }));
-      const ready = canLevelUp(id);
-      content.add(button(s, 205, 410, 380, 134, ready ? "orange" : "grey", max ? "MAXED" : "LEVEL UP", () => {
+      const lvBtn = button(s, 205, 470, 380, 134, ready ? "orange" : "grey", max ? "MAXED" : "LEVEL UP", () => {
         if (!levelUp(id)) {
           this.host.toast(`Roll ${need - p.copies} more ${def.name} to level up`, "#ffe680");
           return;
         }
         persist();
-        this.levelBurst(card);
+        const before = petPower(id) / (levelMult(p.level) / levelMult(p.level - 1));
+        this.levelBurst(card, p.level, petPower(id) - before);
         this.host.petsChanged();
-        s.time.delayedCall(450, () => {
+        s.time.delayedCall(650, () => {
           if (this.detail === m) draw();
           this.build();
         });
-      }, { size: 40, sub: max ? "" : `${Math.min(p.copies, need)}/${need} copies` }).setEnabled(ready));
+      }, { size: 40, sub: max ? "" : `${Math.min(p.copies, need)}/${need} copies` }).setEnabled(ready);
+      content.add(lvBtn);
+      if (ready) {
+        const shine = s.add.image(205, 470, "glow").setTint(0xffe066).setScale(2, 0.9).setAlpha(0.5);
+        s.tweens.add({ targets: shine, alpha: 1, duration: 500, yoyo: true, repeat: -1 });
+        content.addAt(shine, content.list.indexOf(lvBtn));
+      }
     };
     draw();
   }
 
-  /** Sparkly "LEVEL UP!" moment on a card. */
-  private levelBurst(card: Phaser.GameObjects.Container): void {
+  /** Sparkly "LEVEL UP!" moment on a card, with the power it gained. */
+  private levelBurst(card: Phaser.GameObjects.Container, level: number, gain: number): void {
     const s = this.scene;
     sfx.levelUp();
     buzz(50);
     const m = card.getWorldTransformMatrix();
-    const fx = s.add.particles(m.tx, m.ty, "spark", {
-      speed: { min: 200, max: 520 }, lifespan: 700, scale: { start: 0.9, end: 0 }, tint: [0xffe066, 0x8af06a, 0xffffff], emitting: false,
-    }).setDepth(6000);
-    fx.explode(36);
-    const t = text(s, m.tx, m.ty - 120, "LEVEL UP!", 72, "#8af06a").setDepth(6001).setScale(0);
+    this.sparkle(m.tx, m.ty, 50);
+    s.cameras.main.flash(160, 220, 255, 190);
+    const t = text(s, m.tx, m.ty - 150, `LEVEL ${level}!`, 80, "#8af06a").setDepth(6001).setScale(0);
     s.tweens.add({ targets: t, scale: 1, duration: 260, ease: "Back.out" });
     s.tweens.add({ targets: t, y: t.y - 60, alpha: 0, delay: 700, duration: 400, onComplete: () => t.destroy() });
+    const g = text(s, m.tx, m.ty + 40, `+${fmt(gain)} POWER`, 48, "#ffe066").setDepth(6001).setScale(0);
+    s.tweens.add({ targets: g, scale: 1, duration: 260, delay: 150, ease: "Back.out" });
+    s.tweens.add({ targets: g, y: g.y - 80, alpha: 0, delay: 900, duration: 400, onComplete: () => g.destroy() });
     s.tweens.add({ targets: card, scale: card.scale * 1.15, duration: 120, yoyo: true });
-    s.time.delayedCall(900, () => fx.destroy());
+  }
+
+  /** Team pets walk in place on their podiums. */
+  update(time: number): void {
+    if (!this.visible) return;
+    const frame = 1 + (Math.floor(time / 240) % 2);
+    for (const t of this.team) t.img.setTexture(petTexture(this.scene, t.id, frame));
   }
 }

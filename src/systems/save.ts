@@ -59,6 +59,12 @@ export interface SaveData {
   dealDay: number;
   /** battle boosts waiting for the next fight: id -> count */
   boosts: Record<string, number>;
+  /** rolls since the last SUPER ROLL */
+  superCount: number;
+  /** rolls since the last roll gift */
+  giftCount: number;
+  /** pets found but not looked at yet on the Pets screen */
+  newPets: string[];
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
@@ -98,6 +104,9 @@ function fresh(): SaveData {
     wheelAt: 0,
     dealDay: -1,
     boosts: {},
+    superCount: 0,
+    giftCount: 0,
+    newPets: [],
   };
 }
 
@@ -118,6 +127,7 @@ function load(): SaveData {
       for (const id of Object.keys(data.pets)) if (!ITEMS[id]) delete data.pets[id];
       data.equipped = data.equipped.filter((id) => data.pets[id]);
       data.discovered = data.discovered.filter((id) => ITEMS[id]);
+      data.newPets = data.newPets.filter((id) => data.pets[id]);
       data.stage = Math.min(data.stage, MAX_STAGE);
       return data;
     }

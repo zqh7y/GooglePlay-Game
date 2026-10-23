@@ -33,8 +33,27 @@ player needs per stage.
   Every 10th roll is a Lucky Roll (x2 luck).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
-- **Screens** (bottom tab bar): **Shop** (see below), **Pets** (team, levels, Index), **Battle**, **Roll** (luck, the big die, reels, auto/fast,
-  quick upgrades) and **Upgrades** (the honeycomb tree). The **Map** (from Battle) shows the 100-stage journey.
+- **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the honeycomb
+  tree), all described below. The **Map** (from Battle) shows the 100-stage journey.
+- **Top bar**: one slim row with settings, money, gems and dice. Tap money or gems to open the Shop, or
+  dice to open Roll. During a fight only the money stays.
+- **The Roll screen**:
+  - The die sits inside a **lucky ring**. Each roll lights one segment; when the ring is full and gold,
+    the next roll is a lucky roll.
+  - Two meters fill as you roll:
+    - **SUPER ROLL**: every 50th roll has x10 luck.
+    - **Roll gift**: every 25 rolls a present pops out with dice and gems.
+  - **Hot streak**: rolling again within a few seconds adds +2% luck per roll, up to +50%.
+  - Before a big pull the die **charges up** through each rarity colour with rising notes and shakes.
+  - Rare pulls bring rays, flashes, confetti, a **NEW RECORD!** stamp when it is your rarest pet ever,
+    and "LEVEL UP READY!" when a copy completes a level.
+  - **Next to find** shows the three easiest pets you are missing, with your own chance per roll.
+- **The Pets screen**:
+  - Your team stands on a **lit stage** with a **TEAM POWER** number that counts up when it grows.
+  - The **collection** tracker shows found pets, the next luck reward, and a check per finished rarity.
+  - The grid has **NEW** tags, green glow on pets ready to level, sorting (Power, Rarity, Level, Newest),
+    and "roll to find" teasers for the next pets.
+  - The pet popup shows its power now and at the next level. Levelling up bursts with "+POWER".
 - **Lands**: five big open fields (you can walk everywhere), 20 stages each: Sunny Meadow (1-20), Golden
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
 - **The Shop**:
@@ -114,8 +133,8 @@ player needs per stage.
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
 | `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, guns and bullets, airdrops, pets, skills, pickups, boss, win / lose |
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gun panel), pause, stats, skill picker, defeat screen, rolling, popups |
-| `src/ui/rollScreen.ts` | The Roll screen and its reel animation |
-| `src/ui/petsScreen.ts` | My Pets, Index and the pet popup with levelling |
+| `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, charge-up and reel reveal, next-to-find |
+| `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |
 | `src/data/boosts.ts` | The four Battle Boosts |
 | `src/ui/mapScreen.ts` | The 100-stage journey map |

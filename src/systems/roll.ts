@@ -36,7 +36,10 @@ export function rollMany(n: number, luck: number): RollResult[] {
   for (let i = 0; i < n; i++) {
     const item = rollPet(luck);
     const isNew = !save.discovered.includes(item.id);
-    if (isNew) save.discovered.push(item.id);
+    if (isNew) {
+      save.discovered.push(item.id);
+      save.newPets.push(item.id);
+    }
     addPet(item.id);
     save.totalRolls++;
     save.bestRoll = Math.max(save.bestRoll, item.oneIn);

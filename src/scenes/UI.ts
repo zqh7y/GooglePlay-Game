@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { INK_N, darken, rgba } from "../art/draw";
 import { petTexture } from "../art/pets";
-import { btnTexture, panelTexture } from "../art/ui";
+import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -10,9 +10,9 @@ import { PET_LIST } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
-import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
+import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, rollDiceTier, tierIndex } from "../data/tiers";
 import { TREE } from "../data/tree";
-import { GAME_W, Layout, layoutFor } from "../layout";
+import { GAME_W, Layout, TOP_ROW, TOP_Y, layoutFor } from "../layout";
 import {
   DAILY, INDEX_STEP, checkIndexMilestones, claimDaily, claimQuest, dailyCash, dailyDay, ensureQuests, indexBonus, questDone, questEvent,
   questGoal, questReward, questText,
@@ -24,7 +24,7 @@ import { autoUnlocked, canBuy, dicePerRoll, luck, luckyEvery, luckyMult, offline
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
-import { RollScreen } from "../ui/rollScreen";
+import { GIFT_EVERY, RollScreen, SUPER_EVERY, SUPER_MULT } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
 import { ShopScreen, freeGiftReady } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
@@ -39,7 +39,6 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "roll", icon: "icon_dice", label: "Roll" },
   { id: "upgrades", icon: "icon_tree", label: "Upgrades" },
 ];
-const TITLES: Record<Tab, string> = { shop: "SHOP", pets: "PETS", battle: "", roll: "ROLL", upgrades: "UPGRADES" };
 
 interface NavTab {
   box: Phaser.GameObjects.Container;
@@ -62,9 +61,9 @@ export class UIScene extends Phaser.Scene implements Host {
 
   // shared top bar
   private header!: Phaser.GameObjects.Container;
-  private title!: Phaser.GameObjects.Text;
   private cashPill!: Pill;
   private gemPill!: Pill;
+  private diceTop!: Pill;
   private gear!: Phaser.GameObjects.Image;
   // battle tab: the lobby and the in-fight overlay
   private hud!: Phaser.GameObjects.Container;
@@ -91,7 +90,6 @@ export class UIScene extends Phaser.Scene implements Host {
   private stageText!: Phaser.GameObjects.Text;
   private crystalIcon!: Phaser.GameObjects.Image;
   private luckPill!: Pill;
-  private dicePill!: Pill;
   /** Battle Boosts waiting for the next fight */
   private boostRow!: Phaser.GameObjects.Container;
   private boostKey = "";
@@ -236,7 +234,7 @@ export class UIScene extends Phaser.Scene implements Host {
     for (const t of TABS) this.nav[t.id].box.setVisible(lobby);
     this.navBar.setVisible(lobby);
     this.gear.setVisible(lobby || this.tab !== "battle");
-    this.gemPill.setVisible(lobby);
+    this.placeTopBar(!lobby);
     this.mini.setVisible(!lobby);
     if (lobby) {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
@@ -258,6 +256,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.refreshMode();
     this.cashPill.setValue(fmt(save.cash));
     this.gemPill.setValue(fmt(save.gems));
+    this.diceTop.setValue(fmt(totalDice()));
     if (this.tab === "battle" && !this.mapOpen) {
       this.updateHud(time);
       const b = this.battleScene;
@@ -380,7 +379,6 @@ export class UIScene extends Phaser.Scene implements Host {
     else if (tab !== "battle") this.screens[tab].show();
     this.hud.setVisible(tab === "battle");
     this.header.setVisible(tab !== "battle");
-    this.title.setText(TITLES[tab]);
     this.scene.get("Battle").cameras.main.setVisible(tab === "battle");
     this.gear.setVisible(tab !== "battle" || battle.mode === "lobby");
     for (const t of TABS) {
@@ -400,26 +398,44 @@ export class UIScene extends Phaser.Scene implements Host {
     this.hud.setVisible(false);
     this.joyG.clear();
     this.header.setVisible(true);
-    this.title.setText("MAP");
     this.scene.get("Battle").cameras.main.setVisible(false);
     this.map.show();
   }
 
   // ───────────────────────── top bar ─────────────────────────
 
-  /** Top bar of every screen except Battle: title, settings and money. */
+  /**
+   * Slim top bar on every screen: settings, money, gems and dice in one row (tap them to go
+   * where you get more). During a fight only the money stays, in the top right corner.
+   */
   private buildHeader(): void {
     const g = this.add.graphics();
-    g.fillStyle(0x3a2516, 0.9).fillRect(0, 0, this.W, this.L.headerBottom - 20);
-    g.fillStyle(INK_N, 1).fillRect(0, this.L.headerBottom - 24, this.W, 6);
-    this.title = text(this, 130, 165, "", 72, "#ffe6b8").setOrigin(0, 0.5);
-    this.header = this.add.container(0, 0, [g, this.title]).setDepth(3400);
-    // shared by all screens
-    this.gear = iconButton(this, 62, 165, "icon_gear", 86, () => this.showSettings()).setDepth(3500);
-    this.cashPill = new Pill(this, this.W - 190, 160, 330, 84, "icon_cash", 44);
-    this.gemPill = new Pill(this, this.W - 160, 252, 270, 72, "icon_gem", 36);
-    this.cashPill.setDepth(3500);
-    this.gemPill.setDepth(3500);
+    g.fillGradientStyle(0x1a0e08, 0x1a0e08, 0x1a0e08, 0x1a0e08, 0.5, 0.5, 0, 0).fillRect(0, 0, this.W, this.L.headerBottom + 20);
+    this.header = this.add.container(0, 0, [g]).setDepth(3400);
+    this.gear = iconButton(this, TOP_ROW.gear, TOP_Y, "icon_gear", 78, () => this.showSettings()).setDepth(3500);
+    this.cashPill = new Pill(this, TOP_ROW.cash, TOP_Y, 300, 76, "icon_cash", 40);
+    this.gemPill = new Pill(this, TOP_ROW.gems, TOP_Y, 230, 76, "icon_gem", 38);
+    this.diceTop = new Pill(this, TOP_ROW.dice, TOP_Y, 250, 76, "icon_dice", 38);
+    const tap = (pill: Pill, w: number, tab: Tab) => {
+      pill.setDepth(3500).setSize(w, 76).setInteractive({ useHandCursor: true });
+      pill.on("pointerdown", () => this.tweens.add({ targets: pill, scale: 0.92, duration: 60 }));
+      pill.on("pointerout", () => pill.setScale(1));
+      pill.on("pointerup", () => {
+        pill.setScale(1);
+        if (battle.mode === "lobby" || this.tab !== "battle") this.setTab(tab);
+      });
+    };
+    tap(this.cashPill, 300, "shop");
+    tap(this.gemPill, 230, "shop");
+    tap(this.diceTop, 250, "roll");
+  }
+
+  /** Top row in the lobby and the menus; just the money in the corner during a fight. */
+  private placeTopBar(fight: boolean): void {
+    if (fight) this.cashPill.setPosition(this.W - 180, 160);
+    else this.cashPill.setPosition(TOP_ROW.cash, TOP_Y);
+    this.gemPill.setVisible(!fight);
+    this.diceTop.setVisible(!fight);
   }
 
   private buildHud(): void {
@@ -434,17 +450,15 @@ export class UIScene extends Phaser.Scene implements Host {
 
     // ── the lobby: stage card, quests and the big BATTLE button
     this.lobby = this.add.container(0, 0);
-    this.lobbyTitle = text(this, 140, 150, "", 64, "#ffe6b8").setOrigin(0, 0.5);
-    this.lobbyLand = text(this, 140, 212, "", 34).setOrigin(0, 0.5);
-    this.lobbyBest = text(this, 140, 258, "", 26, "#ffe6b8").setOrigin(0, 0.5);
+    this.lobbyTitle = text(this, 40, 178, "", 64, "#ffe6b8").setOrigin(0, 0.5);
+    this.lobbyLand = text(this, 40, 236, "", 34).setOrigin(0, 0.5);
+    this.lobbyBest = text(this, 40, 280, "", 26, "#ffe6b8").setOrigin(0, 0.5);
     const shade = this.add.graphics();
     shade.fillStyle(0x3a2516, 0.55).fillRect(0, 0, W, 300);
     this.lobby.add([shade, this.lobbyTitle, this.lobbyLand, this.lobbyBest]);
     const bottom = this.L.navTop;
-    this.luckPill = new Pill(this, W / 2 - 190, bottom - 330, 340, 70, "icon_clover", 32, "glass");
-    this.luckPill.setSize(340, 70).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
-    this.dicePill = new Pill(this, W / 2 + 190, bottom - 330, 340, 70, "icon_dice", 32, "glass");
-    this.dicePill.setSize(340, 70).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
+    this.luckPill = new Pill(this, W / 2, bottom - 330, 380, 70, "icon_clover", 32, "glass");
+    this.luckPill.setSize(380, 70).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
     const go = button(this, W / 2, bottom - 170, 640, 190, "orange", "BATTLE", () => {
       unlockAudio();
@@ -452,7 +466,7 @@ export class UIScene extends Phaser.Scene implements Host {
     }, { icon: "icon_sword", iconSize: 90, size: 80, sub: "Survive 5:00 and beat the boss" });
     this.tweens.add({ targets: go, scale: 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.boostRow = this.add.container(W / 2, bottom - 432);
-    this.lobby.add([this.luckPill, this.dicePill, this.potionPill, this.boostRow, go]);
+    this.lobby.add([this.luckPill, this.potionPill, this.boostRow, go]);
     // quest tracker
     const qw = 400;
     this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
@@ -536,7 +550,6 @@ export class UIScene extends Phaser.Scene implements Host {
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(luck())}`);
-      this.dicePill.setValue(`${fmt(totalDice())} dice`);
       const owned = BOOSTS.filter((b) => save.boosts[b.id]);
       const key = owned.map((b) => `${b.id}${save.boosts[b.id]}`).join();
       if (key !== this.boostKey) {
@@ -858,7 +871,7 @@ export class UIScene extends Phaser.Scene implements Host {
     for (const b of this.badges) b.obj.setVisible(b.show());
     const owned = Object.keys(save.pets);
     this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0);
-    this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady());
+    this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady() || save.newPets.length > 0);
     this.nav.upgrades.badge.setVisible(TREE.some((n) => canBuy(n)));
     const dice = totalDice();
     this.nav.roll.badge.setVisible(dice > 0 && (dice >= 10 || save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1));
@@ -892,7 +905,23 @@ export class UIScene extends Phaser.Scene implements Host {
     const lucky = save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1;
     if (save.luckyBoost > 0) save.luckyBoost--;
     else save.luckyCount = lucky ? 0 : save.luckyCount + 1;
-    const results = rollMany(dicePerRoll(), luck() * DICE_LUCK[tier] * (lucky ? luckyMult() : 1));
+    // every 50th roll is a SUPER ROLL; rolling again soon builds a hot streak
+    const superRoll = save.superCount >= SUPER_EVERY - 1;
+    save.superCount = superRoll ? 0 : save.superCount + 1;
+    const streak = this.rollScreen.bumpStreak(this.time.now);
+    const prevBest = save.bestRoll;
+    const results = rollMany(dicePerRoll(), luck() * DICE_LUCK[tier] * (lucky ? luckyMult() : 1) * (superRoll ? SUPER_MULT : 1) * streak);
+    const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
+    const record = best.item.oneIn > prevBest && rarityRank(best.item.rarity) >= 1;
+    // every 25 rolls: a little gift of dice and gems
+    let gift: { tier: Tier; dice: number; gems: number } | null = null;
+    if (++save.giftCount >= GIFT_EVERY) {
+      save.giftCount = 0;
+      gift = { tier: rollDiceTier(save.stage + 10), dice: 3, gems: 2 };
+      save.dice[gift.tier] += gift.dice;
+      save.gems += gift.gems;
+    }
+    persist();
     this.rollReadyAt = this.time.now + rollTime();
     questEvent("roll", results.length);
     questEvent("rare", Math.max(...results.map((r) => rarityRank(r.item.rarity))));
@@ -900,10 +929,14 @@ export class UIScene extends Phaser.Scene implements Host {
     this.autoEquip(results);
     this.rollScreen.addHistory(results);
     if (this.tab === "roll" && !this.mapOpen) {
-      this.rollScreen.reveal(results, lucky, () => this.afterReveal(results, 3));
+      this.rollScreen.reveal(results, { lucky, superRoll, record }, () => {
+        this.afterReveal(results, 3, record);
+        if (gift) this.rollScreen.giftPop(gift.tier, gift.dice, gift.gems);
+      });
     } else {
       this.miniReveal(results);
-      this.afterReveal(results, 5);
+      this.afterReveal(results, 5, record);
+      if (gift) this.toast(`Roll gift: +${gift.dice} ${gift.tier} dice, +${gift.gems} gems!`, "#ffe066");
     }
   }
 
@@ -922,11 +955,11 @@ export class UIScene extends Phaser.Scene implements Host {
     }
   }
 
-  /** Big pulls get the full-screen moment. */
-  private afterReveal(results: RollResult[], minRank: number): void {
+  /** Big pulls (new, far beyond your luck, or a new record) get the full-screen moment. */
+  private afterReveal(results: RollResult[], minRank: number, record: boolean): void {
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const rank = rarityRank(best.item.rarity);
-    if (rank >= minRank && (best.isNew || best.item.oneIn >= luck() * 500)) this.celebrate(best);
+    if (rank >= minRank && (best.isNew || record || best.item.oneIn >= luck() * 500)) this.celebrate(best, record);
   }
 
   /** While you are on another screen, rolled pets pop up quietly above the Roll tab. */
@@ -950,7 +983,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** Full-screen moment for great pulls. */
-  private celebrate(res: RollResult): void {
+  private celebrate(res: RollResult, record = false): void {
     this.celebrating = true;
     const { W, H } = this;
     const info = RARITY_INFO[res.item.rarity];
@@ -963,6 +996,20 @@ export class UIScene extends Phaser.Scene implements Host {
     const odds = text(this, W / 2, cy + 345, oneIn(res.item.oneIn), 66, "#ffe680");
     const tap = text(this, W / 2, cy + 470, "TAP TO CONTINUE", 40);
     const root = this.add.container(0, 0, [dim, rays, glow, card, title, odds, tap]).setDepth(6000);
+    if (record) {
+      const rec = this.add.container(W / 2, cy - 360, [
+        this.add.image(0, 0, ribbonTexture(this, "gold", 560, 104)), text(this, 0, -12, "NEW RECORD!", 48),
+      ]).setScale(0);
+      root.add(rec);
+      this.tweens.add({ targets: rec, scale: 1, duration: 400, delay: 600, ease: "Back.out", onStart: () => sfx.record() });
+    }
+    // confetti in the pet's colours
+    const confetti = this.add.particles(0, -30, "petal", {
+      x: { min: 0, max: W }, speedY: { min: 250, max: 650 }, speedX: { min: -220, max: 220 }, rotate: { start: 0, end: 720 },
+      lifespan: 3200, gravityY: 300, scale: { min: 0.9, max: 1.7 }, tint: [info.color, 0xffffff, 0xffe066, 0xff7ab8, 0x5ac8ff], frequency: 40, quantity: 2,
+    });
+    root.add(confetti);
+    this.time.delayedCall(1600, () => confetti.stop());
     this.cameras.main.flash(300, 255, 250, 230);
     sfx.fanfare();
     buzz(200);

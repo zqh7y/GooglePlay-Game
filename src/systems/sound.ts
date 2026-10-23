@@ -101,6 +101,18 @@ export const sfx = {
   fanfare: () => {
     [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, 0.25, "square", 0.045, 0, i * 0.1));
   },
+  /** One step of the die charging up before a big reveal (higher and brighter each step). */
+  charge: (step: number) => {
+    const f = NOTES[Math.min(step + 2, NOTES.length - 1)];
+    tone(f, 0.16, "triangle", 0.06, f * 1.5);
+    if (step >= 4) tone(f * 2, 0.1, "sine", 0.03, 0, 0.04);
+  },
+  superRoll: () => {
+    tone(220, 0.6, "sawtooth", 0.05, 1760);
+    [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.18, "square", 0.04, 0, 0.35 + i * 0.07));
+  },
+  gift: () => [1319, 1568, 2093, 2637].forEach((f, i) => tone(f, 0.12, "sine", 0.06, 0, i * 0.06)),
+  record: () => [659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.2, "square", 0.05, 0, i * 0.08)),
   lucky: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.15, "triangle", 0.06, 0, i * 0.05)),
   coin: () => {
     if (throttle("coin", 60)) return;

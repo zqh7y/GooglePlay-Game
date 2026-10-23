@@ -19,6 +19,7 @@ export interface Host {
   showOdds(): void;
   isFast(): boolean;
   setFast(on: boolean): void;
+  setTab(tab: Tab): void;
 }
 
 /** Soft patterned wallpaper for a screen: dice for rolling, paws for pets, coins for the shop. */
