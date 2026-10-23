@@ -3,7 +3,7 @@ import { ITEMS, ItemDef, Variant } from "../data/items";
 import { Species } from "../data/pets";
 import {
   Ctx, INK, Paint, boltPath, canvasTexture, celShape, circle, darken, ellipse, fill, fillOutline, hexToNum,
-  lighten, linear, outline, radial, rainbowGradient, rgba, starPath, strokeShape, twinkle,
+  lighten, linear, outline, radial, rainbowGradient, rgba, rr, starPath, strokeShape, twinkle,
 } from "./draw";
 
 /**
@@ -17,7 +17,6 @@ const HEADROOM = PET_H - PET_SIZE;
 export const petKey = (id: string, v: Variant) => `pet_${id}_${v}`;
 
 const GOLD = 0xffcf3f;
-const PINK = "rgba(255,150,180,0.9)";
 const CREAM = "#fff6e6";
 
 interface Look {
@@ -54,51 +53,63 @@ function lookFor(ctx: Ctx, def: ItemDef, v: Variant): Look {
   };
 }
 
-// ───────────────────────── faces ─────────────────────────
+// ───────────────────────── faces (boxy style) ─────────────────────────
+
+/** Rounded-rectangle path centred on (x, y). */
+export function box(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  rr(ctx, x - w / 2, y - h / 2, w, h, r);
+}
 
 function eyes(ctx: Ctx, L: Look, x1: number, x2: number, y: number, s = 1): void {
   for (const x of [x1, x2]) {
     if (L.eyes === "glow") {
-      ellipse(ctx, x, y, 11 * s, 12 * s);
-      fill(ctx, radial(ctx, x, y, 12 * s, [[0, "#ffffff"], [0.55, "#f0e0ff"], [1, "rgba(200,140,255,0.2)"]]));
+      box(ctx, x, y, 18 * s, 23 * s, 7 * s);
+      fill(ctx, radial(ctx, x, y, 14 * s, [[0, "#ffffff"], [0.6, "#f0e0ff"], [1, "rgba(200,140,255,0.5)"]]));
       continue;
     }
     if (L.eyes === "happy") {
       ctx.beginPath();
-      ctx.arc(x, y + 4 * s, 7.5 * s, Math.PI * 1.15, Math.PI * 1.85);
-      outline(ctx, 4.5 * s);
+      ctx.moveTo(x - 8 * s, y + 4 * s);
+      ctx.lineTo(x, y - 4 * s);
+      ctx.lineTo(x + 8 * s, y + 4 * s);
+      outline(ctx, 5 * s);
       continue;
     }
-    ellipse(ctx, x, y, 7.5 * s, 10 * s);
+    box(ctx, x, y, 14 * s, 20 * s, 6 * s);
     fill(ctx, INK);
-    ellipse(ctx, x + 2.5 * s, y - 4 * s, 3 * s, 3.4 * s);
+    box(ctx, x + 2.5 * s, y - 4.5 * s, 5.5 * s, 6.5 * s, 2 * s);
     fill(ctx, "#ffffff");
   }
 }
 
 function blush(ctx: Ctx, x1: number, x2: number, y: number): void {
   for (const x of [x1, x2]) {
-    ellipse(ctx, x, y, 9, 5.5);
+    box(ctx, x, y, 18, 9, 4.5);
     fill(ctx, "rgba(255,120,150,0.45)");
   }
 }
 
-function smile(ctx: Ctx, x: number, y: number, r = 7): void {
+function smile(ctx: Ctx, x: number, y: number, w = 14): void {
   ctx.beginPath();
-  ctx.arc(x, y, r, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.moveTo(x - w / 2, y);
+  ctx.lineTo(x - w / 4, y + w * 0.32);
+  ctx.lineTo(x + w / 4, y + w * 0.32);
+  ctx.lineTo(x + w / 2, y);
   outline(ctx, 4);
 }
 
 function catMouth(ctx: Ctx, x: number, y: number): void {
   ctx.beginPath();
-  ctx.arc(x - 5, y, 5, 0.1 * Math.PI, 0.9 * Math.PI);
-  ctx.moveTo(x + 10, y);
-  ctx.arc(x + 5, y, 5, 0.1 * Math.PI, 0.9 * Math.PI);
+  ctx.moveTo(x - 10, y);
+  ctx.lineTo(x - 5, y + 5);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x + 5, y + 5);
+  ctx.lineTo(x + 10, y);
   outline(ctx, 3.5);
 }
 
 function shine(ctx: Ctx, x: number, y: number, s = 1): void {
-  ellipse(ctx, x, y, 10 * s, 6 * s, -0.6);
+  box(ctx, x, y, 16 * s, 8 * s, 4 * s);
   fill(ctx, "rgba(255,255,255,0.6)");
 }
 
@@ -208,7 +219,7 @@ function pattern(ctx: Ctx, L: Look, cx: number, cy: number, r: number): void {
   }
 }
 
-// ───────────────────────── species ─────────────────────────
+// ───────────────────────── species (boxy style) ─────────────────────────
 
 function ear(ctx: Ctx, L: Look, pts: number[], inner: string | null): void {
   const [ax, ay, bx, by, cx, cy] = pts;
@@ -230,311 +241,301 @@ function ear(ctx: Ctx, L: Look, pts: number[], inner: string | null): void {
   fill(ctx, inner);
 }
 
-function bodyBlob(ctx: Ctx, L: Look, x: number, y: number, rx: number, ry: number, belly = true): void {
-  celShape(ctx, () => ellipse(ctx, x, y, rx, ry), L.base, L.dark, rx, () => pattern(ctx, L, x, y, rx));
-  if (belly) {
-    ellipse(ctx, x, y + ry * 0.2, rx * 0.55, ry * 0.58);
-    fill(ctx, L.light);
+/** A boxy body part: flat colour, cel shadow bottom-right and a lighter "top face" band. */
+function block(ctx: Ctx, L: Look, x: number, y: number, w: number, h: number, r: number, paint?: { base: Paint; dark: Paint }, deco = true): void {
+  const half = Math.min(w, h) / 2;
+  celShape(ctx, () => box(ctx, x, y, w, h, r), paint?.base ?? L.base, paint?.dark ?? L.dark, half, () => {
+    if (deco) pattern(ctx, L, x, y, half * 1.1);
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(x - w / 2, y - h / 2, w, h * 0.16);
+  });
+}
+
+function body(ctx: Ctx, L: Look, y: number, w: number, h: number): void {
+  block(ctx, L, 80, y, w, h, 16);
+  box(ctx, 80, y + h * 0.12, w * 0.5, h * 0.55, 10);
+  fill(ctx, L.light);
+}
+
+function paws(ctx: Ctx, L: Look, y = 151, dx = 16): void {
+  for (const x of [80 - dx, 80 + dx]) {
+    box(ctx, x, y, 22, 13, 5);
+    fillOutline(ctx, L.light, 4);
   }
 }
 
-function paws(ctx: Ctx, L: Look, y = 150, dx = 15): void {
-  for (const x of [80 - dx, 80 + dx]) {
-    ellipse(ctx, x, y, 11, 7);
-    fillOutline(ctx, L.light, 4);
-  }
+function lTail(ctx: Ctx, L: Look, pts: number[], w = 13): void {
+  strokeShape(ctx, () => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  }, w, L.base);
 }
 
 const SPECIES: Record<Species, (ctx: Ctx, L: Look) => Anchor> = {
   slime: (ctx, L) => {
-    const path = () => {
-      ctx.beginPath();
-      ctx.moveTo(24, 146);
-      ctx.bezierCurveTo(10, 98, 40, 42, 80, 42);
-      ctx.bezierCurveTo(120, 42, 150, 98, 136, 146);
-      ctx.quadraticCurveTo(80, 156, 24, 146);
-      ctx.closePath();
-    };
-    celShape(ctx, path, L.base, L.dark, 60, () => pattern(ctx, L, 80, 98, 60));
-    shine(ctx, 52, 68);
+    block(ctx, L, 80, 100, 126, 100, 32);
+    shine(ctx, 50, 66);
     eyes(ctx, L, 58, 102, 100);
-    blush(ctx, 42, 118, 114);
-    smile(ctx, 80, 110);
-    return { hx: 80, hy: 44, hr: 56, ey: 100, edx: 22 };
+    blush(ctx, 42, 118, 116);
+    smile(ctx, 80, 113);
+    return { hx: 80, hy: 52, hr: 60, ey: 100, edx: 22 };
   },
 
   cat: (ctx, L) => {
-    strokeShape(ctx, () => {
-      ctx.beginPath();
-      ctx.moveTo(110, 138);
-      ctx.bezierCurveTo(150, 140, 152, 100, 134, 90);
-    }, 12, L.base);
-    bodyBlob(ctx, L, 80, 128, 40, 25);
+    lTail(ctx, L, [110, 140, 142, 140, 142, 100]);
+    body(ctx, L, 132, 84, 42);
     paws(ctx, L);
-    ear(ctx, L, [30, 62, 38, 14, 66, 40], PINK);
-    ear(ctx, L, [130, 62, 122, 14, 94, 40], PINK);
-    celShape(ctx, () => ellipse(ctx, 80, 76, 56, 44), L.base, L.dark, 56, () => pattern(ctx, L, 80, 76, 56));
-    shine(ctx, 50, 52);
-    eyes(ctx, L, 58, 102, 78);
-    blush(ctx, 40, 120, 92);
-    ctx.beginPath();
-    ctx.moveTo(75, 88);
-    ctx.lineTo(85, 88);
-    ctx.lineTo(80, 94);
-    ctx.closePath();
+    ear(ctx, L, [26, 62, 34, 12, 66, 40], "rgba(255,150,180,0.9)");
+    ear(ctx, L, [134, 62, 126, 12, 94, 40], "rgba(255,150,180,0.9)");
+    block(ctx, L, 80, 78, 120, 92, 28);
+    shine(ctx, 46, 50);
+    eyes(ctx, L, 58, 102, 80);
+    blush(ctx, 38, 122, 96);
+    box(ctx, 80, 91, 11, 7, 3);
     fill(ctx, "#ff8fae");
-    catMouth(ctx, 80, 96);
+    catMouth(ctx, 80, 97);
     ctx.globalAlpha = 0.45;
     for (const dir of [-1, 1]) {
       for (const dy of [-3, 5]) {
         ctx.beginPath();
-        ctx.moveTo(80 + dir * 44, 90 + dy * 0.3);
-        ctx.lineTo(80 + dir * 66, 86 + dy);
+        ctx.moveTo(80 + dir * 44, 92 + dy * 0.3);
+        ctx.lineTo(80 + dir * 66, 88 + dy);
         outline(ctx, 2.5);
       }
     }
     ctx.globalAlpha = 1;
-    return { hx: 80, hy: 34, hr: 56, ey: 78, edx: 22 };
+    return { hx: 80, hy: 34, hr: 58, ey: 80, edx: 22 };
   },
 
   dog: (ctx, L) => {
-    strokeShape(ctx, () => {
-      ctx.beginPath();
-      ctx.moveTo(112, 128);
-      ctx.quadraticCurveTo(132, 122, 138, 104);
-    }, 11, L.base);
-    bodyBlob(ctx, L, 80, 130, 40, 24);
+    lTail(ctx, L, [112, 130, 134, 130, 138, 106], 11);
+    body(ctx, L, 132, 82, 40);
     paws(ctx, L);
-    celShape(ctx, () => ellipse(ctx, 80, 80, 52, 44), L.base, L.dark, 52, () => pattern(ctx, L, 80, 80, 52));
-    const earC = rgba(darken(L.color, 0.28));
-    const earD = rgba(darken(L.color, 0.4));
-    for (const dir of [-1, 1]) {
-      celShape(ctx, () => ellipse(ctx, 80 + dir * 50, 82, 15, 29, dir * 0.35), earC, earD, 18);
-    }
-    shine(ctx, 54, 54);
-    ellipse(ctx, 80, 101, 23, 15);
+    block(ctx, L, 80, 80, 112, 90, 28);
+    const ears = { base: rgba(darken(L.color, 0.28)), dark: rgba(darken(L.color, 0.4)) };
+    for (const dir of [-1, 1]) block(ctx, L, 80 + dir * 54, 86, 28, 58, 12, ears, false);
+    shine(ctx, 52, 52);
+    box(ctx, 80, 102, 48, 30, 12);
     fillOutline(ctx, L.light, 4);
-    ellipse(ctx, 80, 94, 8, 6);
+    box(ctx, 80, 94, 17, 11, 5);
     fill(ctx, INK);
-    ellipse(ctx, 78, 92, 3, 2);
-    fill(ctx, "rgba(255,255,255,0.8)");
-    smile(ctx, 80, 101, 6);
+    smile(ctx, 80, 106, 12);
     eyes(ctx, L, 61, 99, 76);
-    blush(ctx, 44, 116, 94);
-    return { hx: 80, hy: 38, hr: 52, ey: 76, edx: 19 };
+    blush(ctx, 46, 114, 92);
+    return { hx: 80, hy: 36, hr: 54, ey: 76, edx: 19 };
   },
 
   bunny: (ctx, L) => {
-    bodyBlob(ctx, L, 80, 134, 36, 21);
-    paws(ctx, L, 151, 14);
+    body(ctx, L, 136, 76, 36);
+    paws(ctx, L, 152, 14);
     for (const dir of [-1, 1]) {
-      celShape(ctx, () => ellipse(ctx, 80 + dir * 20, 40, 13, 34, dir * 0.18), L.base, L.dark, 16);
-      ellipse(ctx, 80 + dir * 20, 44, 6, 23, dir * 0.18);
-      fill(ctx, PINK);
+      block(ctx, L, 80 + dir * 19, 40, 25, 66, 12, undefined, false);
+      box(ctx, 80 + dir * 19, 44, 11, 44, 5);
+      fill(ctx, "rgba(255,150,180,0.9)");
     }
-    celShape(ctx, () => ellipse(ctx, 80, 96, 48, 40), L.base, L.dark, 48, () => pattern(ctx, L, 80, 96, 48));
-    shine(ctx, 56, 76);
-    eyes(ctx, L, 62, 98, 96);
-    blush(ctx, 46, 114, 110);
-    ellipse(ctx, 80, 106, 5, 3.5);
+    block(ctx, L, 80, 98, 108, 86, 28);
+    shine(ctx, 50, 70);
+    eyes(ctx, L, 62, 98, 98);
+    blush(ctx, 44, 116, 112);
+    box(ctx, 80, 108, 10, 7, 3);
     fill(ctx, "#ff8fae");
-    catMouth(ctx, 80, 111);
-    return { hx: 80, hy: 58, hr: 48, ey: 96, edx: 18 };
+    catMouth(ctx, 80, 114);
+    return { hx: 80, hy: 58, hr: 52, ey: 98, edx: 18 };
   },
 
   bear: (ctx, L) => {
     const panda = L.pattern === "panda";
-    bodyBlob(ctx, L, 80, 132, 42, 24);
+    body(ctx, L, 134, 88, 40);
     paws(ctx, L);
     for (const x of [36, 124]) {
       if (panda) {
-        circle(ctx, x, 50, 17);
+        box(ctx, x, 50, 34, 32, 12);
         fillOutline(ctx, "#3a2f3a");
       } else {
-        celShape(ctx, () => circle(ctx, x, 50, 17), L.base, L.dark, 17);
-        circle(ctx, x, 51, 8);
+        block(ctx, L, x, 50, 34, 32, 12, undefined, false);
+        box(ctx, x, 52, 16, 14, 5);
         fill(ctx, L.light);
       }
     }
-    celShape(ctx, () => ellipse(ctx, 80, 86, 52, 46), L.base, L.dark, 52, () => {
-      if (!panda) pattern(ctx, L, 80, 86, 52);
-    });
+    block(ctx, L, 80, 88, 116, 96, 30, undefined, !panda);
     if (panda) {
       for (const dir of [-1, 1]) {
-        ellipse(ctx, 80 + dir * 20, 88, 12, 15, dir * 0.45);
+        box(ctx, 80 + dir * 21, 89, 26, 30, 10);
         fill(ctx, "#3a2f3a");
       }
     }
-    shine(ctx, 54, 58);
-    ellipse(ctx, 80, 106, 20, 14);
+    shine(ctx, 48, 58);
+    box(ctx, 80, 109, 44, 28, 12);
     fillOutline(ctx, L.light, 4);
-    ellipse(ctx, 80, 100, 8, 5.5);
+    box(ctx, 80, 101, 16, 10, 5);
     fill(ctx, INK);
-    smile(ctx, 80, 106, 5);
+    smile(ctx, 80, 110, 10);
     if (panda) {
-      for (const x of [60, 100]) {
-        circle(ctx, x, 87, 6);
+      for (const x of [59, 101]) {
+        box(ctx, x, 88, 12, 15, 5);
         fill(ctx, "#ffffff");
-        circle(ctx, x + 1, 88, 3.5);
+        box(ctx, x + 1, 90, 7, 9, 3);
         fill(ctx, INK);
       }
     } else {
-      eyes(ctx, L, 60, 100, 86);
+      eyes(ctx, L, 60, 100, 88);
     }
-    blush(ctx, 42, 118, 100);
-    return { hx: 80, hy: 40, hr: 52, ey: 86, edx: 20 };
+    blush(ctx, 40, 120, 102);
+    return { hx: 80, hy: 40, hr: 56, ey: 88, edx: 20 };
   },
 
   chick: (ctx, L) => {
     for (const x of [66, 94]) {
-      ellipse(ctx, x, 151, 10, 6);
+      box(ctx, x, 152, 22, 10, 4);
       fillOutline(ctx, "#ff9a3c", 4);
     }
-    for (const dir of [-1, 1]) {
-      celShape(ctx, () => ellipse(ctx, 80 + dir * 50, 104, 12, 20, dir * -0.4), L.base, L.dark, 16);
-    }
-    for (const [dx, h] of [[-8, 16], [4, 22], [14, 14]]) {
-      ctx.beginPath();
-      ctx.moveTo(80 + dx - 6, 50);
-      ctx.quadraticCurveTo(80 + dx - 4, 50 - h, 80 + dx + 4, 48 - h);
-      ctx.quadraticCurveTo(80 + dx + 2, 44 - h * 0.4, 80 + dx + 6, 50);
+    for (const dir of [-1, 1]) block(ctx, L, 80 + dir * 54, 106, 22, 40, 10, undefined, false);
+    for (const [dx, h] of [[-9, 16], [3, 24], [14, 14]]) {
+      box(ctx, 80 + dx, 50 - h / 2, 10, h + 6, 5);
       fillOutline(ctx, L.base, 4);
     }
-    celShape(ctx, () => ellipse(ctx, 80, 98, 54, 52), L.base, L.dark, 54, () => pattern(ctx, L, 80, 98, 54));
-    ellipse(ctx, 80, 122, 30, 20);
+    block(ctx, L, 80, 100, 116, 104, 32);
+    box(ctx, 80, 124, 64, 40, 16);
     fill(ctx, L.light);
-    shine(ctx, 50, 70);
-    eyes(ctx, L, 62, 98, 90);
-    blush(ctx, 46, 114, 104);
+    shine(ctx, 46, 66);
+    eyes(ctx, L, 62, 98, 92);
+    blush(ctx, 44, 116, 106);
     ctx.beginPath();
-    ctx.moveTo(69, 100);
-    ctx.lineTo(91, 100);
-    ctx.lineTo(80, 112);
+    ctx.moveTo(69, 102);
+    ctx.lineTo(91, 102);
+    ctx.lineTo(80, 113);
     ctx.closePath();
     fillOutline(ctx, "#ff9a3c", 4);
-    return { hx: 80, hy: 48, hr: 50, ey: 90, edx: 18 };
+    return { hx: 80, hy: 48, hr: 54, ey: 92, edx: 18 };
   },
 
   fox: (ctx, L) => {
-    celShape(ctx, () => ellipse(ctx, 124, 112, 22, 36, -0.7), L.base, L.dark, 26);
-    ellipse(ctx, 140, 92, 11, 13, -0.7);
+    ctx.save();
+    ctx.translate(126, 112);
+    ctx.rotate(-0.6);
+    block(ctx, L, 0, 0, 40, 78, 18, undefined, false);
+    box(ctx, 0, -32, 30, 22, 10);
     fillOutline(ctx, CREAM, 4);
-    bodyBlob(ctx, L, 80, 132, 36, 22);
-    paws(ctx, L, 151, 13);
-    ear(ctx, L, [34, 68, 36, 14, 70, 44], "rgba(80,40,30,0.55)");
-    ear(ctx, L, [126, 68, 124, 14, 90, 44], "rgba(80,40,30,0.55)");
-    const head = () => ellipse(ctx, 80, 84, 52, 42);
-    celShape(ctx, head, L.base, L.dark, 52, () => {
-      pattern(ctx, L, 80, 84, 52);
-      ellipse(ctx, 80, 106, 38, 20);
+    ctx.restore();
+    body(ctx, L, 134, 74, 36);
+    paws(ctx, L, 152, 13);
+    ear(ctx, L, [32, 68, 34, 12, 70, 44], "rgba(80,40,30,0.55)");
+    ear(ctx, L, [128, 68, 126, 12, 90, 44], "rgba(80,40,30,0.55)");
+    celShape(ctx, () => box(ctx, 80, 84, 116, 88, 26), L.base, L.dark, 44, () => {
+      pattern(ctx, L, 80, 84, 48);
+      box(ctx, 80, 110, 84, 36, 14);
       fill(ctx, CREAM);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(22, 40, 116, 14);
     });
-    shine(ctx, 54, 60);
+    shine(ctx, 46, 58);
     eyes(ctx, L, 62, 98, 82);
-    blush(ctx, 44, 116, 96);
-    ellipse(ctx, 80, 98, 6, 4.5);
+    blush(ctx, 42, 118, 96);
+    box(ctx, 80, 99, 13, 9, 4);
     fill(ctx, INK);
-    catMouth(ctx, 80, 104);
-    return { hx: 80, hy: 42, hr: 52, ey: 82, edx: 18 };
+    catMouth(ctx, 80, 105);
+    return { hx: 80, hy: 40, hr: 56, ey: 82, edx: 18 };
   },
 
   frog: (ctx, L) => {
-    bodyBlob(ctx, L, 80, 134, 42, 20);
+    body(ctx, L, 136, 86, 34);
     for (const x of [54, 106]) {
-      ellipse(ctx, x, 151, 14, 7);
+      box(ctx, x, 152, 30, 12, 5);
       fillOutline(ctx, L.base, 4);
     }
-    for (const x of [52, 108]) celShape(ctx, () => circle(ctx, x, 66, 20), L.base, L.dark, 20);
-    celShape(ctx, () => ellipse(ctx, 80, 100, 62, 40), L.base, L.dark, 62, () => pattern(ctx, L, 80, 100, 62));
-    shine(ctx, 46, 86);
+    for (const x of [52, 108]) block(ctx, L, x, 66, 42, 38, 14, undefined, false);
+    block(ctx, L, 80, 100, 130, 80, 28);
+    shine(ctx, 38, 82);
     if (L.eyes === "glow" || L.eyes === "happy") {
       eyes(ctx, L, 52, 108, 64);
     } else {
       for (const x of [52, 108]) {
-        circle(ctx, x, 64, 13);
+        box(ctx, x, 64, 28, 24, 9);
         fillOutline(ctx, "#ffffff", 3.5);
-        ellipse(ctx, x, 66, 6, 7.5);
+        box(ctx, x, 66, 11, 15, 5);
         fill(ctx, INK);
-        circle(ctx, x + 2, 63, 2.5);
+        box(ctx, x + 3, 62, 5, 5, 2);
         fill(ctx, "#ffffff");
       }
     }
     ctx.beginPath();
-    ctx.arc(80, 96, 28, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.moveTo(52, 100);
+    ctx.lineTo(60, 110);
+    ctx.lineTo(100, 110);
+    ctx.lineTo(108, 100);
     outline(ctx, 4.5);
-    blush(ctx, 38, 122, 108);
+    blush(ctx, 36, 124, 108);
     return { hx: 80, hy: 46, hr: 60, ey: 64, edx: 28 };
   },
 
   ghost: (ctx, L) => {
     for (const dir of [-1, 1]) {
-      ellipse(ctx, 80 + dir * 56, 106, 11, 7, dir * -0.5);
+      box(ctx, 80 + dir * 58, 106, 20, 14, 6);
       fillOutline(ctx, L.base, 4);
     }
     const path = () => {
       ctx.beginPath();
-      ctx.moveTo(26, 140);
-      ctx.lineTo(26, 82);
-      ctx.arc(80, 82, 54, Math.PI, 0);
-      ctx.lineTo(134, 140);
-      ctx.quadraticCurveTo(125, 154, 116, 142);
-      ctx.quadraticCurveTo(107, 130, 98, 142);
-      ctx.quadraticCurveTo(89, 154, 80, 142);
-      ctx.quadraticCurveTo(71, 130, 62, 142);
-      ctx.quadraticCurveTo(53, 154, 44, 142);
-      ctx.quadraticCurveTo(35, 130, 26, 140);
+      ctx.moveTo(26, 142);
+      ctx.lineTo(26, 62);
+      ctx.arcTo(26, 28, 60, 28, 34);
+      ctx.lineTo(100, 28);
+      ctx.arcTo(134, 28, 134, 62, 34);
+      ctx.lineTo(134, 142);
+      for (const [x, y] of [[121, 130], [108, 142], [94, 130], [80, 142], [66, 130], [52, 142], [39, 130]]) ctx.lineTo(x, y);
       ctx.closePath();
     };
-    celShape(ctx, path, L.base, L.dark, 56, () => pattern(ctx, L, 80, 86, 56));
-    shine(ctx, 52, 52);
+    celShape(ctx, path, L.base, L.dark, 54, () => {
+      pattern(ctx, L, 80, 86, 56);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(20, 28, 120, 16);
+    });
+    shine(ctx, 48, 52);
     eyes(ctx, L, 62, 98, 86);
-    blush(ctx, 46, 114, 100);
-    ellipse(ctx, 80, 104, 6, 7);
+    blush(ctx, 44, 116, 100);
+    box(ctx, 80, 106, 12, 14, 5);
     fill(ctx, INK);
     return { hx: 80, hy: 28, hr: 54, ey: 86, edx: 18 };
   },
 
   dragon: (ctx, L) => {
-    const wingC = rgba(darken(L.color, 0.12));
-    const wingD = rgba(darken(L.color, 0.3));
+    const wing = { base: rgba(darken(L.color, 0.12)), dark: rgba(darken(L.color, 0.3)) };
     for (const dir of [-1, 1]) {
       celShape(ctx, () => {
         ctx.beginPath();
-        ctx.moveTo(80 + dir * 30, 112);
-        ctx.lineTo(80 + dir * 72, 56);
-        ctx.quadraticCurveTo(80 + dir * 70, 82, 80 + dir * 76, 92);
-        ctx.quadraticCurveTo(80 + dir * 62, 92, 80 + dir * 64, 106);
-        ctx.quadraticCurveTo(80 + dir * 50, 104, 80 + dir * 48, 120);
+        ctx.moveTo(80 + dir * 30, 114);
+        ctx.lineTo(80 + dir * 74, 54);
+        ctx.lineTo(80 + dir * 74, 90);
+        ctx.lineTo(80 + dir * 62, 92);
+        ctx.lineTo(80 + dir * 62, 106);
+        ctx.lineTo(80 + dir * 48, 108);
+        ctx.lineTo(80 + dir * 48, 120);
         ctx.closePath();
-      }, wingC, wingD, 30);
+      }, wing.base, wing.dark, 30);
     }
-    strokeShape(ctx, () => {
-      ctx.beginPath();
-      ctx.moveTo(108, 140);
-      ctx.quadraticCurveTo(140, 142, 148, 120);
-    }, 11, L.base);
+    lTail(ctx, L, [108, 140, 146, 140, 146, 118], 11);
     for (const dir of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(80 + dir * 14, 50);
-      ctx.quadraticCurveTo(80 + dir * 26, 26, 80 + dir * 32, 14);
-      ctx.quadraticCurveTo(80 + dir * 34, 34, 80 + dir * 30, 52);
+      ctx.moveTo(80 + dir * 16, 50);
+      ctx.lineTo(80 + dir * 26, 14);
+      ctx.lineTo(80 + dir * 36, 50);
       ctx.closePath();
       fillOutline(ctx, "#fff1cf", 4);
     }
-    bodyBlob(ctx, L, 80, 130, 40, 24);
+    body(ctx, L, 132, 82, 42);
     paws(ctx, L);
-    celShape(ctx, () => ellipse(ctx, 80, 80, 52, 44), L.base, L.dark, 52, () => pattern(ctx, L, 80, 80, 52));
-    shine(ctx, 54, 56);
-    ellipse(ctx, 80, 101, 26, 16);
+    block(ctx, L, 80, 80, 114, 90, 28);
+    shine(ctx, 46, 52);
+    box(ctx, 80, 103, 56, 30, 12);
     fillOutline(ctx, L.light, 4);
-    for (const x of [72, 88]) {
-      ellipse(ctx, x, 97, 3, 2.5);
+    for (const x of [71, 89]) {
+      box(ctx, x, 97, 6, 5, 2);
       fill(ctx, INK);
     }
-    smile(ctx, 80, 103, 8);
+    smile(ctx, 80, 107, 14);
     eyes(ctx, L, 60, 100, 74);
-    blush(ctx, 42, 118, 90);
-    return { hx: 80, hy: 38, hr: 52, ey: 74, edx: 20 };
+    blush(ctx, 40, 120, 90);
+    return { hx: 80, hy: 36, hr: 56, ey: 74, edx: 20 };
   },
 };
 

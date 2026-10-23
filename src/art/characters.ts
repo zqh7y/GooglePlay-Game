@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { box } from "./pets";
 import {
   Ctx, INK, boltPath, canvasTexture, celShape, circle, ellipse, fill, fillOutline, linear, outline, radial,
   starPath, strokeShape, twinkle,
@@ -11,119 +12,113 @@ export const HERO_H = 200;
 /** Where the gun is held, relative to the hero's feet (origin 0.5, 0.95). */
 export const HERO_HAND = { x: 46, y: -62 };
 
-function drawHero(ctx: Ctx): void {
+function drawHero(ctx: Ctx, step: number): void {
   const base = "#ffa64d";
   const dark = "#e9853a";
   const cream = "#fff3dc";
   const cx = 95;
-  ellipse(ctx, cx, 190, 62, 9);
+  const block = (x: number, y: number, w: number, h: number, r: number, b = base, d = dark, deco?: () => void) =>
+    celShape(ctx, () => box(ctx, x, y, w, h, r), b, d, Math.min(w, h) / 2, () => {
+      deco?.();
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(x - w / 2, y - h / 2, w, h * 0.16);
+    });
+  ellipse(ctx, cx, 192, 60, 8);
   fill(ctx, "rgba(74,47,29,0.22)");
 
   // headband tails flutter behind
   for (const [dy, len] of [[0, 1], [14, 0.8]]) {
     ctx.beginPath();
-    ctx.moveTo(cx - 52, 66 + dy * 0.3);
-    ctx.bezierCurveTo(cx - 76, 54 + dy, cx - 84, 80 + dy, cx - 92 + (1 - len) * 26, 72 + dy);
-    ctx.lineTo(cx - 86 + (1 - len) * 26, 86 + dy);
-    ctx.bezierCurveTo(cx - 74, 92 + dy, cx - 66, 76 + dy, cx - 50, 80 + dy * 0.3);
+    ctx.moveTo(cx - 56, 62 + dy * 0.3);
+    ctx.lineTo(cx - 92 + (1 - len) * 26, 56 + dy);
+    ctx.lineTo(cx - 88 + (1 - len) * 26, 72 + dy);
+    ctx.lineTo(cx - 54, 76 + dy * 0.3);
     ctx.closePath();
     fillOutline(ctx, "#e8434f", 4.5);
   }
   strokeShape(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(cx + 34, 170);
-    ctx.bezierCurveTo(cx + 84, 172, cx + 86, 126, cx + 64, 114);
+    ctx.moveTo(cx + 40, 170);
+    ctx.lineTo(cx + 78, 170);
+    ctx.lineTo(cx + 78, 122);
   }, 15, base);
-  for (const [x, y] of [[cx + 78, 150], [cx + 74, 130]]) {
-    ctx.beginPath();
-    ctx.moveTo(x - 7, y);
-    ctx.lineTo(x + 7, y - 2);
-    outline(ctx, 4, dark);
-  }
 
-  // body
-  celShape(ctx, () => ellipse(ctx, cx, 156, 48, 32), base, dark, 48);
-  ellipse(ctx, cx, 162, 26, 20);
-  fill(ctx, cream);
-  for (const x of [cx - 20, cx + 20]) {
-    ellipse(ctx, x, 186, 14, 8);
+  // legs (walk cycle)
+  const lift = [0, -7, 7][step];
+  for (const [x, dy] of [[cx - 22, lift], [cx + 22, -lift]]) {
+    box(ctx, x, 182 + Math.min(0, dy), 26, 22 + Math.abs(dy) * 0.3, 7);
     fillOutline(ctx, cream, 4.5);
   }
 
-  // ears
+  block(cx, 152, 104, 56, 20);
+  box(ctx, cx, 158, 54, 34, 12);
+  fill(ctx, cream);
+
   for (const dir of [-1, 1]) {
     celShape(ctx, () => {
       ctx.beginPath();
-      ctx.moveTo(cx + dir * 62, 72);
-      ctx.lineTo(cx + dir * 52, 18);
-      ctx.lineTo(cx + dir * 18, 46);
+      ctx.moveTo(cx + dir * 68, 64);
+      ctx.lineTo(cx + dir * 58, 12);
+      ctx.lineTo(cx + dir * 20, 40);
       ctx.closePath();
     }, base, dark, 24);
     ctx.beginPath();
-    ctx.moveTo(cx + dir * 54, 62);
-    ctx.lineTo(cx + dir * 49, 32);
-    ctx.lineTo(cx + dir * 30, 48);
+    ctx.moveTo(cx + dir * 60, 56);
+    ctx.lineTo(cx + dir * 55, 28);
+    ctx.lineTo(cx + dir * 34, 44);
     ctx.closePath();
     fill(ctx, "rgba(255,150,180,0.9)");
   }
 
-  // head with tabby stripes
-  celShape(ctx, () => ellipse(ctx, cx, 88, 66, 52), base, dark, 66, () => {
-    for (const dx of [-16, 0, 16]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + dx, 34);
-      ctx.lineTo(cx + dx * 1.1, 52);
-      outline(ctx, 7, dark);
+  block(cx, 86, 142, 110, 32, base, dark, () => {
+    for (const dx of [-18, 0, 18]) {
+      ctx.fillStyle = dark;
+      ctx.fillRect(cx + dx - 4, 32, 8, 20);
     }
     for (const dir of [-1, 1]) {
       for (const dy of [0, 14]) {
-        ctx.beginPath();
-        ctx.moveTo(cx + dir * 66, 92 + dy);
-        ctx.lineTo(cx + dir * 50, 94 + dy);
-        outline(ctx, 6, dark);
+        ctx.fillStyle = dark;
+        ctx.fillRect(dir < 0 ? cx - 71 : cx + 55, 90 + dy, 16, 7);
       }
     }
-    ellipse(ctx, cx, 112, 30, 20);
+    box(ctx, cx, 116, 64, 30, 12);
     fill(ctx, cream);
   });
 
   // headband
   ctx.beginPath();
-  ctx.moveTo(cx - 64, 66);
-  ctx.quadraticCurveTo(cx, 40, cx + 64, 66);
-  ctx.lineTo(cx + 62, 80);
-  ctx.quadraticCurveTo(cx, 56, cx - 62, 80);
+  ctx.moveTo(cx - 71, 58);
+  ctx.lineTo(cx + 71, 58);
+  ctx.lineTo(cx + 71, 74);
+  ctx.lineTo(cx - 71, 74);
   ctx.closePath();
   fillOutline(ctx, "#e8434f", 4.5);
-  ctx.beginPath();
-  ctx.rect(cx - 12, 50, 24, 13);
+  box(ctx, cx, 66, 26, 14, 4);
   fillOutline(ctx, "#ffd23f", 3.5);
 
   // face
   for (const dir of [-1, 1]) {
-    ellipse(ctx, cx + dir * 24, 92, 9, 12);
+    box(ctx, cx + dir * 26, 96, 17, 24, 7);
     fill(ctx, INK);
-    ellipse(ctx, cx + dir * 24 + 3, 87, 3.5, 4);
+    box(ctx, cx + dir * 26 + 3, 90, 7, 8, 2.5);
     fill(ctx, "#ffffff");
     ctx.beginPath();
-    ctx.moveTo(cx + dir * 34, 74);
-    ctx.lineTo(cx + dir * 14, 79);
-    outline(ctx, 5);
-    ellipse(ctx, cx + dir * 42, 108, 10, 6);
+    ctx.moveTo(cx + dir * 38, 80);
+    ctx.lineTo(cx + dir * 15, 85);
+    outline(ctx, 6);
+    box(ctx, cx + dir * 46, 112, 20, 10, 5);
     fill(ctx, "rgba(255,120,150,0.45)");
   }
-  ctx.beginPath();
-  ctx.moveTo(cx - 6, 104);
-  ctx.lineTo(cx + 6, 104);
-  ctx.lineTo(cx, 110);
-  ctx.closePath();
+  box(ctx, cx, 108, 12, 8, 3);
   fill(ctx, "#ff8fae");
   ctx.beginPath();
-  ctx.arc(cx - 6, 112, 6, 0.1 * Math.PI, 0.9 * Math.PI);
-  ctx.moveTo(cx + 12, 112);
-  ctx.arc(cx + 6, 112, 6, 0.1 * Math.PI, 0.9 * Math.PI);
+  ctx.moveTo(cx - 11, 116);
+  ctx.lineTo(cx - 5, 121);
+  ctx.lineTo(cx, 116);
+  ctx.lineTo(cx + 5, 121);
+  ctx.lineTo(cx + 11, 116);
   outline(ctx, 3.5);
-  ellipse(ctx, cx - 36, 60, 12, 7, -0.6);
+  box(ctx, cx - 44, 48, 20, 9, 4);
   fill(ctx, "rgba(255,255,255,0.55)");
 }
 
@@ -192,17 +187,13 @@ function angryFace(ctx: Ctx, cx: number, y: number, s = 1, eye = "#ffffff", pupi
 
 function drawEvilSlime(ctx: Ctx): void {
   const cx = 66;
-  ellipse(ctx, cx, 116, 54, 8);
+  ellipse(ctx, cx, 118, 54, 8);
   fill(ctx, "rgba(74,47,29,0.22)");
-  celShape(ctx, () => {
-    ctx.beginPath();
-    ctx.moveTo(cx - 52, 112);
-    ctx.bezierCurveTo(cx - 64, 66, cx - 34, 22, cx, 22);
-    ctx.bezierCurveTo(cx + 34, 22, cx + 64, 66, cx + 52, 112);
-    ctx.quadraticCurveTo(cx, 122, cx - 52, 112);
-    ctx.closePath();
-  }, "#a46cf0", "#7f4cc8", 56);
-  ellipse(ctx, cx - 26, 46, 10, 6, -0.6);
+  celShape(ctx, () => box(ctx, cx, 70, 116, 92, 28), "#a46cf0", "#7f4cc8", 46, () => {
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(cx - 58, 24, 116, 14);
+  });
+  box(ctx, cx - 32, 40, 18, 9, 4);
   fill(ctx, "rgba(255,255,255,0.55)");
   angryFace(ctx, cx, 70);
 }
@@ -350,7 +341,9 @@ function drawGolem(ctx: Ctx): void {
 // ───────────────────────── textures ─────────────────────────
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {
-  canvasTexture(scene, "hero", HERO_W, HERO_H, drawHero);
+  canvasTexture(scene, "hero", HERO_W, HERO_H, (ctx) => drawHero(ctx, 0));
+  canvasTexture(scene, "hero_w1", HERO_W, HERO_H, (ctx) => drawHero(ctx, 1));
+  canvasTexture(scene, "hero_w2", HERO_W, HERO_H, (ctx) => drawHero(ctx, 2));
   canvasTexture(scene, "gun", 142, 64, drawGun);
   canvasTexture(scene, "e_slime", 132, 128, drawEvilSlime);
   canvasTexture(scene, "e_mush", 128, 146, drawMushroom);
