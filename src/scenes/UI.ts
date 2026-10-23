@@ -1,8 +1,8 @@
 import Phaser from "phaser";
-import { petTexture } from "../art/pets";
+import { petKey, petTexture } from "../art/pets";
 import { CARD_H, CARD_W, btnTexture, dieTexture, nodeTexture, panelTexture, pillTexture, slotTexture } from "../art/ui";
 import { INK_N } from "../art/draw";
-import { FUSE_COST, ItemKey, PET_LIST, VARIANT_INFO, makeKey, nextVariant, parseKey } from "../data/items";
+import { FUSE_COST, ItemDef, ItemKey, PET_LIST, VARIANT_INFO, makeKey, nextVariant, parseKey } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
 import { TREE, TREE_BY_ID, TreeNode, effectText, nodeCost } from "../data/tree";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -13,6 +13,7 @@ import {
   petSlots, potionActive, potionMinutes, potionMult, rollTime,
 } from "../systems/stats";
 import { WAVES_PER_STAGE, battle } from "./Battle";
+import { buzz, sfx, unlockAudio } from "../systems/sound";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, lockedCard, modal, petCard, text } from "../ui/widgets";
 
@@ -20,6 +21,8 @@ const VARIANT_RANK = { normal: 0, golden: 1, rainbow: 2 };
 const KIND_LABEL = { shot: "Shooter", pierce: "Beam", splash: "Explosion", zap: "Lightning", buff: "Support" };
 const MAX_SLOTS = 6;
 const BOSS_TIME = 30000;
+const LUCKY_EVERY = 10;
+const LUCKY_MULT = 2;
 
 /** Quick-buy cards at the bottom: each shows the next node of one tree branch. */
 const BRANCHES: { title: string; icon: string; nodes: string[]; value: () => string }[] = [
@@ -85,6 +88,7 @@ export class UIScene extends Phaser.Scene {
   private cards: { bg: Phaser.GameObjects.Image; lvl: Phaser.GameObjects.Text; value: Phaser.GameObjects.Text; cost: Phaser.GameObjects.Text; node: Phaser.GameObjects.Text }[] = [];
 
   // rolling
+  private burst!: Phaser.GameObjects.Particles.ParticleEmitter;
   private rollReadyAt = 0;
   private revealing = false;
   private celebrating = false;
@@ -111,6 +115,10 @@ export class UIScene extends Phaser.Scene {
     this.buildSideButtons();
     this.buildBottom();
     this.setupDragging();
+    this.burst = this.add.particles(0, 0, "spark", {
+      speed: { min: 200, max: 620 }, lifespan: 800, scale: { start: 0.9, end: 0 }, rotate: { min: 0, max: 180 }, gravityY: 500, emitting: false,
+    }).setDepth(4250);
+    this.input.on("pointerdown", () => unlockAudio());
     this.game.events.on("toast", this.toast, this);
     this.game.events.on("cash-arrived", this.onCash, this);
     this.events.once("shutdown", () => {
@@ -233,7 +241,7 @@ export class UIScene extends Phaser.Scene {
       persist();
     }, { icon: "icon_auto", iconSize: 52, stack: true, size: 30 });
     this.rollBtn = button(this, W / 2, rollY, 400, 152, "orange", "ROLL", () => this.tryRoll(), {
-      icon: dieTexture(this, dieSkin(), 5), iconSize: 86, size: 60,
+      icon: dieTexture(this, dieSkin(), 5), iconSize: 80, size: 56, sub: "",
     });
     this.fastBtn = button(this, W - 175, rollY, 220, 122, "grey", "FAST", () => {
       this.fast = !this.fast;
@@ -317,8 +325,11 @@ export class UIScene extends Phaser.Scene {
   private updateBottom(time: number): void {
     const left = this.rollReadyAt - time;
     const busy = this.revealing || this.celebrating;
+    const luckyNext = save.luckyCount >= LUCKY_EVERY - 1;
     this.rollBtn.setLabel(left > 0 ? `${(left / 1000).toFixed(1)}s` : "ROLL");
-    this.rollBtn.setColor(left > 0 || busy ? "peach" : "orange");
+    this.rollBtn.setSub(luckyNext ? "LUCKY ROLL!" : `Lucky in ${LUCKY_EVERY - save.luckyCount - 1}`);
+    this.rollBtn.subText?.setColor(luckyNext ? "#fff27a" : "#ffffff");
+    this.rollBtn.setColor(left > 0 || busy ? "peach" : luckyNext ? "gold" : "orange");
     this.rollBar.clear();
     if (left > 0) drawBar(this.rollBar, this.W / 2 - 150, this.L.rollY + 52, 300, 14, 1 - left / rollTime(), 0xffe066);
     const unlocked = autoUnlocked();
@@ -355,10 +366,13 @@ export class UIScene extends Phaser.Scene {
 
   private tryRoll(): void {
     if (this.revealing || this.celebrating || this.time.now < this.rollReadyAt) return;
-    const results = rollMany(dicePerRoll(), luck());
+    const lucky = save.luckyCount >= LUCKY_EVERY - 1;
+    save.luckyCount = lucky ? 0 : save.luckyCount + 1;
+    const results = rollMany(dicePerRoll(), luck() * (lucky ? LUCKY_MULT : 1));
     this.rollReadyAt = this.time.now + rollTime();
+    this.game.events.emit("rolled", results);
     this.autoEquip(results);
-    this.reveal(results);
+    this.reveal(results, lucky);
   }
 
   /** Fill empty team slots with new pets so players see them fight right away. */
@@ -378,29 +392,94 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
-  /** Dice fly up, flip into pet cards, then the cards fly into the Pets button. */
-  private reveal(results: RollResult[]): void {
+  /** A pet to flash on the reel: mostly below the real result, sometimes a teasing rarer one. */
+  private fakePet(rank: number): ItemDef {
+    const r = Math.random();
+    const tier = r < 0.5 ? Math.max(0, rank - 1 - Math.floor(Math.random() * 2)) : r < 0.82 ? rank : Math.min(9, rank + 1 + Math.floor(Math.random() * 2));
+    return PET_LIST[Math.min(PET_LIST.length - 1, tier * 10 + Math.floor(Math.random() * 10))];
+  }
+
+  /** Slot-machine reels at the bottom: they spin, slow down and land on the rolled pets. */
+  private reveal(results: RollResult[], lucky: boolean): void {
     this.revealing = true;
     const n = results.length;
-    const cy = this.L.catY - 360;
-    const spacing = Math.min(210, 940 / n);
-    const scale = n <= 2 ? 0.8 : n <= 3 ? 0.7 : 0.6;
-    const spin = this.fast ? 0 : Math.min(520, rollTime() * 0.35);
-    const hold = this.fast ? 320 : Math.min(800, Math.max(380, rollTime() * 0.45));
-    const skin = dieSkin();
+    const y = this.L.slotsY - 40;
+    const spacing = Math.min(200, 960 / n);
+    const scale = n <= 1 ? 0.74 : n <= 3 ? 0.66 : 0.58;
+    const spin = this.fast ? 300 : Phaser.Math.Clamp(rollTime() * 0.55, 520, 1100);
+    const hold = this.fast ? 280 : 700;
+    this.slotRow.setAlpha(0.12);
+    if (lucky) {
+      sfx.lucky();
+      const t = text(this, this.W / 2, y - 190, "LUCKY ROLL!  x2 LUCK", 46, "#ffe066").setDepth(4300).setScale(0);
+      this.tweens.add({ targets: t, scale: 1, duration: 220, ease: "Back.out" });
+      this.tweens.add({ targets: t, alpha: 0, y: t.y - 50, delay: 900, duration: 400, onComplete: () => t.destroy() });
+      this.cameras.main.flash(150, 255, 230, 120);
+    }
     let done = 0;
 
-    results.forEach((r, i) => {
+    results.forEach((res, i) => {
       const x = this.W / 2 + (i - (n - 1) / 2) * spacing;
-      const showCard = () => {
-        const card = petCard(this, x, cy, makeKey(r.item.id, "normal"), { isNew: r.isNew }).setScale(0, scale).setDepth(4200);
-        const glow = this.add.image(x, cy, "glow").setTint(RARITY_INFO[r.item.rarity].color).setScale(0).setAlpha(0.8).setDepth(4190);
-        this.tweens.add({ targets: card, scaleX: scale, duration: 140, ease: "Back.out" });
-        this.tweens.add({ targets: glow, scale: scale * 1.6, duration: 200 });
-        this.time.delayedCall(hold, () => {
+      const rank = rarityRank(res.item.rarity);
+      const glow = this.add.image(x, y, "glow").setDepth(4190).setAlpha(0).setScale(scale * 1.8);
+      const frame = this.add.image(0, 0, "card_common");
+      const rar = text(this, 0, -CARD_H / 2 + 25, "", 24);
+      const pet = this.add.image(0, -12, "icon_dice").setScale(1.3);
+      const odds = text(this, 0, CARD_H / 2 - 66, "", 22, "#fff3dc");
+      const name = text(this, 0, CARD_H / 2 - 27, "", 25);
+      const card = this.add.container(x, y, [frame, rar, pet, odds, name]).setDepth(4200).setScale(0);
+      const show = (def: ItemDef, real: boolean) => {
+        frame.setTexture(`card_${def.rarity}`);
+        fitText(rar.setText(RARITY_INFO[def.rarity].label.toUpperCase()), CARD_W - 40);
+        fitText(name.setText(def.name), CARD_W - 36);
+        odds.setText(oneIn(def.oneIn));
+        const key = petKey(def.id, "normal");
+        if (real) pet.setTexture(petTexture(this, def.id, "normal")).setScale(0.9);
+        else if (this.textures.exists(key)) pet.setTexture(key).setScale(0.9);
+        else pet.setTexture("icon_dice").setScale(1.3).setAngle(Phaser.Math.Between(-20, 20));
+        glow.setTint(RARITY_INFO[def.rarity].color);
+      };
+      this.tweens.add({ targets: card, scale, duration: 160, delay: i * 60, ease: "Back.out" });
+
+      let t = 0;
+      let k = 0;
+      const tick = () => {
+        show(this.fakePet(rank), false);
+        sfx.tick(k++);
+        this.tweens.add({ targets: card, y: y - 8, duration: 30, yoyo: true });
+        const p = t / spin;
+        const delay = 40 + 120 * p * p;
+        t += delay;
+        this.time.delayedCall(delay, t < spin ? tick : land);
+      };
+      const land = () => {
+        show(res.item, true);
+        pet.setAngle(0);
+        sfx.reveal(rank);
+        glow.setAlpha(0.95);
+        this.tweens.add({ targets: card, scaleX: scale * 1.18, scaleY: scale * 0.86, duration: 70, yoyo: true, ease: "Quad.out" });
+        this.tweens.add({ targets: glow, scale: scale * (2.2 + rank * 0.25), alpha: 0.6, duration: 260 });
+        if (rank >= 2) {
+          this.burst.setParticleTint(RARITY_INFO[res.item.rarity].color);
+          this.burst.explode(10 + rank * 8, x, y);
+          const call = text(this, x, y - (CARD_H * scale) / 2 - 34, `${RARITY_INFO[res.item.rarity].label.toUpperCase()}!`, 34 + rank * 3, RARITY_INFO[res.item.rarity].css)
+            .setDepth(4300).setScale(0);
+          this.tweens.add({ targets: call, scale: 1, duration: 200, ease: "Back.out" });
+          this.tweens.add({ targets: call, alpha: 0, y: call.y - 30, delay: hold + 150, duration: 300, onComplete: () => call.destroy() });
+        }
+        if (rank >= 4) {
+          this.cameras.main.shake(180 + rank * 30, 0.004 + rank * 0.001);
+          buzz(40 + rank * 15);
+        }
+        if (res.isNew) {
+          const tag = text(this, CARD_W / 2 - 16, -CARD_H / 2 - 2, "NEW!", 32, "#ff6a8a").setAngle(14);
+          card.add(tag);
+          this.tweens.add({ targets: tag, scale: 1.2, duration: 300, yoyo: true, repeat: 2 });
+        }
+        this.time.delayedCall(hold + rank * 60, () => {
           this.tweens.add({ targets: glow, alpha: 0, duration: 200, onComplete: () => glow.destroy() });
           this.tweens.add({
-            targets: card, x: 70, y: this.L.sideTop, scale: 0.08, duration: 320, ease: "Cubic.in",
+            targets: card, x: 70, y: this.L.sideTop, scale: 0.06, duration: 300, ease: "Cubic.in",
             onComplete: () => {
               card.destroy();
               if (++done === n) this.finishReveal(results);
@@ -408,32 +487,13 @@ export class UIScene extends Phaser.Scene {
           });
         });
       };
-      if (spin === 0) {
-        showCard();
-        return;
-      }
-      const die = this.add.image(this.W / 2, this.L.rollY, dieTexture(this, skin, Phaser.Math.Between(1, 6))).setScale(0.3).setDepth(4200);
-      const flicker = this.time.addEvent({ delay: 60, loop: true, callback: () => die.setTexture(dieTexture(this, skin, Phaser.Math.Between(1, 6))) });
-      this.tweens.add({ targets: die, x, duration: spin, ease: "Sine.out" });
-      this.tweens.add({ targets: die, scale: 0.75, angle: Phaser.Math.Between(540, 900), duration: spin });
-      this.tweens.add({
-        targets: die, y: cy, duration: spin, ease: "Back.out",
-        onComplete: () => {
-          flicker.remove();
-          this.tweens.add({
-            targets: die, scaleX: 0, duration: 80,
-            onComplete: () => {
-              die.destroy();
-              showCard();
-            },
-          });
-        },
-      });
+      this.time.delayedCall(i * 60 + 120, tick);
     });
   }
 
   private finishReveal(results: RollResult[]): void {
     this.revealing = false;
+    this.slotRow.setAlpha(1);
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const rank = rarityRank(best.item.rarity);
     if ((best.isNew && rank >= 3) || (rank >= 3 && best.item.oneIn >= luck() * 500)) this.celebrate(best);
@@ -460,6 +520,8 @@ export class UIScene extends Phaser.Scene {
     });
     const root = this.add.container(0, 0, [dim, rays, glow, confetti, card, title, odds, tap]).setDepth(6000);
     this.cameras.main.flash(300, 255, 250, 230);
+    sfx.fanfare();
+    buzz(200);
     this.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
     this.tweens.add({ targets: card, scale: 1.75, duration: 500, ease: "Back.out" });
     title.setScale(0);
