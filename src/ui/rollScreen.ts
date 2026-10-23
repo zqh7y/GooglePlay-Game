@@ -526,7 +526,7 @@ export class RollScreen extends Screen {
     const pitchH = CARD_H + 64;
     const areaTop = this.meterY + 70;
     const areaBottom = this.batchY - 60;
-    const scale = !grid ? (n <= 1 ? 1 : 0.86) : Math.min(0.66, 1000 / (cols * pitchW), (areaBottom - areaTop) / (rows * pitchH));
+    const scale = !grid ? (n <= 1 ? 1 : 0.86) : Math.min(0.84, 1000 / (cols * pitchW), (areaBottom - areaTop) / (rows * pitchH));
     const midY = grid ? (areaTop + areaBottom) / 2 : this.reelY;
     const spot = (i: number): [number, number] => {
       const row = Math.floor(i / cols);
