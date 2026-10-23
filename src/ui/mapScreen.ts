@@ -106,8 +106,8 @@ export class MapScreen extends Screen {
       else this.path.add(text(s, x, y, `${st}`, 36, locked ? "#e8ecf2" : "#ffffff"));
       if (done && !boss) this.path.add(s.add.image(x + 32, y - 32, "icon_check").setScale(0.36));
       if (here) {
-        const me = s.add.image(x, y - 80, "hero").setScale(0.42).setOrigin(0.5, 0.95);
-        s.tweens.add({ targets: me, y: y - 96, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        const me = s.add.image(x, y - 50, "hero").setScale(0.6).setOrigin(0.5, 0.95);
+        s.tweens.add({ targets: me, y: y - 66, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
         const ring = s.add.circle(x, y, r + 14).setStrokeStyle(8, 0xffe066);
         s.tweens.add({ targets: ring, scale: 1.25, alpha: 0, duration: 900, repeat: -1 });
         this.path.add([ring, me]);

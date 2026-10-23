@@ -174,7 +174,7 @@ export class BattleScene extends Phaser.Scene {
 
     const [cx, cy] = this.arena.center;
     this.hero = this.add.image(cx, cy + 260, "hero").setOrigin(0.5, 0.95);
-    this.gun = this.add.image(0, 0, "gun").setOrigin(34 / 152, 46 / 68);
+    this.gun = this.add.image(0, 0, "gun").setOrigin(20 / 96, 28 / 40);
     // keep the hero in the middle of the open play area (between the HUD and the bottom bar)
     const playCenter = (this.L.hudBottom + this.L.navTop) / 2;
     this.cameras.main.setBounds(0, 0, ARENA, ARENA);
@@ -589,7 +589,7 @@ export class BattleScene extends Phaser.Scene {
         this.comboText.setVisible(false);
       }
     }
-    this.comboText.setPosition(this.hero.x, this.hero.y - 250);
+    this.comboText.setPosition(this.hero.x, this.hero.y - 190);
 
     this.moveEnemies(time, delta);
     this.heroAttack(delta);
@@ -710,12 +710,12 @@ export class BattleScene extends Phaser.Scene {
     this.heroTimer -= delta;
     if (this.heroTimer > 0 || !target || this.changingLand) return;
     this.heroTimer = HERO_FIRE_MS;
-    const mx = this.gun.x + Math.cos(this.gun.rotation) * 110;
-    const my = this.gun.y + Math.sin(this.gun.rotation) * 110;
+    const mx = this.gun.x + Math.cos(this.gun.rotation) * 70;
+    const my = this.gun.y + Math.sin(this.gun.rotation) * 70;
     this.fire(mx, my, target, this.heroDamage(), "bolt", 0xffffff, 0, 1);
     sfx.shoot();
     // a little recoil
-    this.gun.x -= Math.cos(this.gun.rotation) * 8;
+    this.gun.x -= Math.cos(this.gun.rotation) * 5;
     const flash = this.add.image(mx, my, "flash").setDepth(9050).setScale(0.5);
     this.tweens.add({ targets: flash, scale: 0.9, alpha: 0, duration: 110, onComplete: () => flash.destroy() });
   }

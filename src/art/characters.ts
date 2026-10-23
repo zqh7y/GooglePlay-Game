@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import {
-  Ctx, boltPath, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, linear, mix, outline, radial, rgba,
+  Ctx, boltPath, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, mix, outline, radial, rgba,
   starPath, twinkle,
 } from "./draw";
 import { Toon, toon } from "./toon";
@@ -9,175 +9,75 @@ const EYE = "#24161e";
 
 // ───────────────────────── hero ─────────────────────────
 
-export const HERO_W = 180;
-export const HERO_H = 240;
+export const HERO_W = 120;
+export const HERO_H = 160;
 /** Where the blaster is held, relative to the hero's feet (origin 0.5, 0.95). */
-export const HERO_HAND = { x: 56, y: -84 };
+export const HERO_HAND = { x: 36, y: -50 };
 
 const BOX = 0xff9a3c;
-const OLIVE = 0x6f7f3e;
-const KHAKI = 0xc9a86a;
-const BOOT = 0x5a3a28;
-const RED = 0xe0453f;
-const STEEL = 0x8a96b0;
+const RED = 0xe8453f;
 
 /**
- * The hero is a box: a chunky orange 2:3 crate with a face, kitted out like a survivor
- * (helmet with goggles, scarf, bandolier, belt with pouches and a grenade, backpack with
- * a bedroll and antenna, shoulder plate, stubby arms and big boots).
+ * The hero: a small, simple orange box (2:3) with a face, a red headband and tiny feet.
  * step 0 = standing, 1 and 2 = walking.
  */
 function drawHero(ctx: Ctx, step: number): void {
-  const t = toon(ctx, "#2a1c1c", 5);
-  const { E, C, poly, rect, part, tube, paint, gloss } = t;
-  const b = step ? -3 : 0;
-  paint("rgba(42,26,30,0.22)", () => E(90, 228, 54, 8));
-
-  // scarf tails flutter behind
-  part(() => poly([[46, 112 + b], [14, 100 + b], [22, 114 + b], [10, 128 + b], [46, 124 + b]], 4), RED);
-  // antenna and bedroll on the backpack
-  tube(() => {
-    ctx.moveTo(30, 96 + b);
-    ctx.lineTo(18, 40 + b);
-  }, 3, 0x3a3a44);
-  part(() => C(18, 38 + b, 5), RED, undefined, 3);
-  part(() => rect(32, 146 + b, 36, 86, 12), OLIVE, () => paint(rgba(darken(OLIVE, 0.2)), () => rect(32, 120 + b, 36, 16, 6)));
-  part(() => E(34, 100 + b, 22, 12, -0.2), 0xb07a4a);
-
-  // stubby legs with big boots (walk cycle)
-  const lift = [0, -8, 8][step];
-  for (const [x, dy, shade] of [[72, lift, 0.15], [112, -lift, 0]] as [number, number, number][]) {
-    const y = 206 + Math.min(0, dy);
-    part(() => rect(x, y - 2, 22, 22, 6), darken(0x4b5568, shade));
-    part(() => poly([[x - 16, y + 6], [x + 12, y + 6], [x + 20, y + 14], [x + 20, y + 22], [x - 16, y + 22]], 5), darken(BOOT, shade), () =>
-      paint(rgba(0x2a1c18), () => ctx.rect(x - 18, y + 18, 40, 6)));
+  const t = toon(ctx, "#2a1c1c", 4.5);
+  const { E, C, poly, rect, part, paint, gloss } = t;
+  const b = step ? -2 : 0;
+  paint("rgba(42,26,30,0.22)", () => E(60, 152, 36, 6));
+  // feet
+  const lift = [0, -5, 5][step];
+  for (const [x, dy] of [[46, lift], [74, -lift]] as [number, number][]) {
+    part(() => rect(x, 144 + Math.min(0, dy), 22, 14, 6), 0x4a3a44);
   }
-
-  // back arm
-  part(() => rect(38, 150 + b, 18, 36, 7), darken(BOX, 0.2));
-
-  // the box: front face, lighter top, darker side
-  part(() => poly([[40, 46 + b], [62, 30 + b], [160, 30 + b], [140, 46 + b]], 5), lighten(BOX, 0.3));
-  part(() => poly([[140, 46 + b], [160, 30 + b], [160, 182 + b], [140, 198 + b]], 5), darken(BOX, 0.18));
-  part(() => rect(90, 122 + b, 100, 152, 10), BOX, () => {
-    // box tape and dents
-    paint(rgba(lighten(BOX, 0.2)), () => ctx.rect(84, 46 + b, 12, 34));
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = rgba(darken(BOX, 0.25));
-    ctx.beginPath();
-    ctx.moveTo(48, 170 + b);
-    ctx.lineTo(58, 176 + b);
-    ctx.moveTo(126, 60 + b);
-    ctx.lineTo(132, 68 + b);
-    ctx.stroke();
+  // headband tails behind
+  part(() => poly([[30, 52 + b], [8, 44 + b], [14, 56 + b], [6, 66 + b], [30, 62 + b]], 3), RED, undefined, 3.5);
+  // the box
+  part(() => rect(60, 84 + b, 76, 112, 14), BOX, () => {
+    paint(rgba(lighten(BOX, 0.25)), () => rect(60, 34 + b, 76, 14, 6));
   });
-  gloss(56, 66 + b, 9, 5);
-
+  gloss(36, 40 + b, 7, 4);
+  // headband
+  part(() => rect(60, 56 + b, 80, 13, 4), RED, () => paint("rgba(255,255,255,0.7)", () => {
+    C(44, 56 + b, 2);
+    C(60, 56 + b, 2);
+    C(76, 56 + b, 2);
+  }), 3.5);
   // face
-  for (const x of [72, 108]) {
-    paint(EYE, () => E(x, 96 + b, 8, 10.5));
-    paint("#ffffff", () => C(x - 2.5, 92 + b, 3.2));
-    paint("rgba(255,255,255,0.8)", () => C(x + 3, 100 + b, 1.4));
-  }
-  ctx.lineWidth = 5.5;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = EYE;
-  for (const [x1, y1, x2, y2] of [[60, 78, 82, 84], [98, 84, 120, 78]]) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1 + b);
-    ctx.lineTo(x2, y2 + b);
-    ctx.stroke();
+  for (const x of [48, 72]) {
+    paint(EYE, () => E(x, 82 + b, 5.5, 7));
+    paint("#ffffff", () => C(x - 1.8, 79 + b, 2.2));
   }
   paint("rgba(255,90,110,0.45)", () => {
-    E(58, 112 + b, 8, 4.5);
-    E(122, 112 + b, 8, 4.5);
+    E(38, 95 + b, 6, 3.5);
+    E(82, 95 + b, 6, 3.5);
   });
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = EYE;
   ctx.beginPath();
-  ctx.moveTo(82, 114 + b);
-  ctx.quadraticCurveTo(90, 121 + b, 99, 113 + b);
+  ctx.moveTo(54, 96 + b);
+  ctx.quadraticCurveTo(60, 101 + b, 66, 96 + b);
   ctx.stroke();
-  part(() => poly([[116, 56 + b], [134, 50 + b], [136, 59 + b], [118, 65 + b]], 2), 0xffe0b0, undefined, 2.5);
-
-  // scarf wrapped around the box
-  part(() => poly([[38, 124 + b], [142, 124 + b], [142, 140 + b], [38, 140 + b]], 5), RED, () =>
-    paint("rgba(255,255,255,0.8)", () => {
-      C(60, 132 + b, 2.5);
-      C(90, 132 + b, 2.5);
-      C(120, 132 + b, 2.5);
-    }));
-  part(() => C(46, 132 + b, 9), darken(RED, 0.1), undefined, 4);
-
-  // bandolier with bullets
-  part(() => poly([[124, 140 + b], [138, 146 + b], [62, 196 + b], [48, 190 + b]], 3), 0x6a4430, undefined, 4);
-  for (let i = 0; i < 4; i++) {
-    const x = 112 - i * 16;
-    const y = 152 + b + i * 10;
-    part(() => rect(x, y, 7, 12, 3), 0xffcf3a, undefined, 2.5);
-  }
-  // belt, buckle, pouches and a grenade
-  part(() => rect(90, 186 + b, 104, 12, 4), 0x6a4430, () => paint("#ffd23f", () => ctx.rect(84, 181 + b, 12, 10)), 4);
-  part(() => rect(120, 198 + b, 18, 16, 4), KHAKI, undefined, 3.5);
-  part(() => rect(60, 198 + b, 16, 14, 4), KHAKI, undefined, 3.5);
-  part(() => C(102, 202 + b, 7), 0x5f7f3a, undefined, 3);
-
-  // helmet with goggles on top of the box
-  part(() => {
-    ctx.moveTo(34, 52 + b);
-    ctx.bezierCurveTo(32, 2 + b, 168, -6 + b, 166, 40 + b);
-    ctx.lineTo(160, 46 + b);
-    ctx.lineTo(38, 60 + b);
-    ctx.closePath();
-  }, OLIVE, () => {
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = rgba(darken(OLIVE, 0.22));
-    ctx.beginPath();
-    ctx.moveTo(70, 16 + b);
-    ctx.lineTo(74, 50 + b);
-    ctx.moveTo(110, 10 + b);
-    ctx.lineTo(110, 46 + b);
-    ctx.stroke();
-  });
-  gloss(64, 22 + b, 14, 6);
-  tube(() => {
-    ctx.moveTo(38, 42 + b);
-    ctx.lineTo(164, 32 + b);
-  }, 6, 0x3a3a44);
-  for (const x of [80, 112]) {
-    part(() => C(x, 37 + b - (x - 80) * 0.08, 13), 0x4a4a58, () => {
-      paint(linear(ctx, 0, 26 + b, 0, 50 + b, [[0, "#c8fbff"], [1, "#38a8d8"]]), () => C(x, 37 + b - (x - 80) * 0.08, 9));
-      paint("rgba(255,255,255,0.85)", () => E(x - 3, 33 + b, 4, 2.5, -0.5));
-    }, 4);
-  }
-  ctx.save();
-  starPath(ctx, 146, 22 + b, 7, 0.5);
-  fillOutline(ctx, "#ffd23f", 2.5);
-  ctx.restore();
-
-  // shoulder plate and front arm (the gloved hand is part of the blaster)
-  part(() => rect(146, 150 + b, 18, 32, 7), BOX);
-  part(() => poly([[132, 132 + b], [160, 128 + b], [164, 142 + b], [134, 146 + b]], 5), STEEL, () => gloss(144, 133 + b, 7, 2.5, 0), 4);
+  // little arm reaching for the blaster
+  part(() => rect(96, 104 + b, 14, 22, 6), darken(BOX, 0.12), undefined, 3.5);
 }
 
-/** The blaster: a separate sprite so it can aim. Points right; the grip (with a gloved hand) is at x=34. */
+/** The blaster: a separate sprite so it can aim. Points right; the grip is at x=20. */
 function drawGun(ctx: Ctx): void {
-  const t = toon(ctx, "#1e1a22", 4);
+  const t = toon(ctx, "#1e1a22", 3.5);
   const { C, poly, rect, part, paint } = t;
-  part(() => poly([[24, 40], [44, 40], [38, 62], [26, 62]], 4), 0x4a3a30);
-  part(() => rect(66, 46, 16, 24, 4), 0x3a3a44);
-  part(() => poly([[10, 22], [104, 18], [112, 26], [112, 40], [14, 44]], 6), 0x5a6488, () => {
-    paint("#ff9a3c", () => ctx.rect(22, 24, 60, 6));
-    paint("rgba(255,255,255,0.25)", () => ctx.rect(14, 18, 96, 5));
-  });
-  part(() => rect(56, 12, 34, 10, 4), 0x2e2e3a, () => paint("#7af0ff", () => ctx.rect(70, 8, 6, 5)), 3);
-  part(() => rect(124, 31, 26, 14, 4), 0x3a3a44);
+  part(() => poly([[14, 22], [28, 22], [24, 36], [14, 36]], 3), 0x4a3a30);
+  part(() => poly([[6, 10], [62, 8], [68, 14], [68, 24], [8, 26]], 5), 0x5a6488, () => paint("#ff9a3c", () => ctx.rect(14, 12, 36, 4)));
+  part(() => rect(76, 17, 14, 9, 3), 0x3a3a44, undefined, 3);
   ctx.save();
   ctx.shadowColor = "#5ff0ff";
-  ctx.shadowBlur = 12;
-  circle(ctx, 138, 31, 6);
-  fillOutline(ctx, "#bffbff", 3);
+  ctx.shadowBlur = 8;
+  circle(ctx, 84, 17, 4);
+  fillOutline(ctx, "#bffbff", 2.5);
   ctx.restore();
-  part(() => C(34, 46, 12), 0x3a3a44, () => paint("rgba(255,255,255,0.2)", () => C(30, 42, 5)));
+  part(() => C(20, 28, 8), 0x3a3a44);
 }
 
 // ───────────────────────── monsters ─────────────────────────
@@ -559,7 +459,7 @@ export function makeCharacterTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "hero", HERO_W, HERO_H, (ctx) => drawHero(ctx, 0));
   canvasTexture(scene, "hero_w1", HERO_W, HERO_H, (ctx) => drawHero(ctx, 1));
   canvasTexture(scene, "hero_w2", HERO_W, HERO_H, (ctx) => drawHero(ctx, 2));
-  canvasTexture(scene, "gun", 152, 68, drawGun);
+  canvasTexture(scene, "gun", 96, 40, drawGun);
   for (const [key, [w, h, draw]] of Object.entries(MONSTER_ART)) canvasTexture(scene, key, w, h, draw);
 
 

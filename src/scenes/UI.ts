@@ -300,7 +300,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.progressText = text(this, W / 2, 88, "", 26);
     this.pathG = this.add.graphics();
     this.bossIcon = this.add.image(0, 160, "icon_boss").setScale(0.5);
-    this.pathMarker = this.add.image(0, 118, "hero").setScale(0.22);
+    this.pathMarker = this.add.image(0, 118, "hero").setScale(0.34);
     this.tweens.add({ targets: this.pathMarker, y: 110, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.stageText = text(this, 400, 216, "", 38);
     this.landText = text(this, 400, 252, "", 24, "#ffe6b8");
@@ -705,7 +705,7 @@ export class UIScene extends Phaser.Scene implements Host {
     };
     m.body.add([
       this.add.image(0, -150, "glow").setScale(1.6).setTint(0xffe066).setAlpha(0.6),
-      this.add.image(0, -100, "hero").setScale(1.1),
+      this.add.image(0, -100, "hero").setScale(1.5),
       label(this, 0, 20, `Your team fought for ${hours ? `${hours}h ` : ""}${mins}m while you were away`, 32, "#7a5236", 700),
       this.add.image(-150, 135, "icon_cash").setScale(0.95),
       fitText(text(this, -80, 132, `+${fmt(cash)}`, 84, "#8af06a").setOrigin(0, 0.5), 360),

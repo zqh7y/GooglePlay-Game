@@ -58,7 +58,9 @@ export class RollScreen extends Screen {
     r.add(button(s, W - 120, panelY, 170, 100, "green", "ODDS", () => host.showOdds(), { icon: "icon_odds", iconSize: 40, size: 28 }));
 
     // the big die on a glowing pedestal
-    const dieY = top + 330;
+    // tall phones: spread things out instead of leaving a gap
+    const extra = Math.max(0, bottom - 1724);
+    const dieY = top + 330 + extra * 0.3;
     this.dieRays = s.add.image(W / 2, dieY, "rays").setScale(0.9).setAlpha(0.25).setTint(0xffe066);
     s.tweens.add({ targets: this.dieRays, angle: 360, duration: 16000, repeat: -1 });
     const ped = s.add.graphics();
@@ -69,7 +71,7 @@ export class RollScreen extends Screen {
     r.add([this.dieRays, ped, this.die]);
 
     // reels area
-    this.reelY = Math.min(dieY + 360, bottom - 640);
+    this.reelY = (dieY + bottom - 430) / 2 + 40;
     this.hint = text(s, W / 2, this.reelY, "Tap ROLL to find new pets!", 40, "#e8e0ff");
     s.tweens.add({ targets: this.hint, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
     r.add(this.hint);
