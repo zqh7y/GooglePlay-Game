@@ -1,86 +1,102 @@
 import Phaser from "phaser";
-import { DICE } from "../data/dice";
 import { RARITY_INFO, RARITY_ORDER, Rarity } from "../data/rarity";
 import {
-  Ctx, INK, boltPath, canvasTexture, darken, ellipse, fill, fillOutline, gloss, lighten, linear, outline,
+  Ctx, INK, RAINBOW, boltPath, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, linear, outline,
   radial, rgba, rr, starPath, twinkle,
 } from "./draw";
 
 // ───────────────────────── buttons & panels ─────────────────────────
 
-export type BtnColor = "green" | "purple" | "orange" | "blue" | "red" | "grey" | "gold" | "dark" | "teal";
+export type BtnColor = "peach" | "mint" | "orange" | "green" | "red" | "grey" | "blue" | "purple" | "gold" | "brown" | "cream" | "pink";
 
 /** [top highlight, base, bottom edge] */
 const BTN: Record<BtnColor, [number, number, number]> = {
-  green: [0x8cf25a, 0x3fc02c, 0x23861a],
-  purple: [0xcf9bff, 0x8c4dff, 0x5626b8],
-  orange: [0xffcc5c, 0xff8a1f, 0xbf560a],
-  blue: [0x7ad8ff, 0x2f97f0, 0x1c5fb0],
-  red: [0xff8585, 0xe53b3b, 0xa32020],
-  grey: [0x9ea6c9, 0x6b7399, 0x454b6e],
-  gold: [0xfff08a, 0xffc21f, 0xc28400],
-  dark: [0x5560b0, 0x3a4188, 0x252a5e],
-  teal: [0x6ff0d8, 0x1fbfa4, 0x0f7d6c],
+  peach: [0xffe6bf, 0xffcf8f, 0xd99652],
+  mint: [0xc9fff0, 0x8ff0d6, 0x45b897],
+  orange: [0xffc98a, 0xff9a4a, 0xd0652a],
+  green: [0xb8f58a, 0x76d651, 0x3f9a2f],
+  red: [0xffa0a0, 0xf26464, 0xb83a3a],
+  grey: [0xe2dbd0, 0xc6bcad, 0x958978],
+  blue: [0xb3e4ff, 0x67c3ff, 0x2f86d0],
+  purple: [0xe2c4ff, 0xb98aff, 0x7d4fd6],
+  gold: [0xfff2a8, 0xffcf3f, 0xd09a10],
+  brown: [0x8a6244, 0x6b4a32, 0x4a2f1d],
+  cream: [0xfffaf0, 0xfff1d6, 0xe0c39a],
+  pink: [0xffd3e3, 0xffa9c8, 0xe0709a],
 };
 
-export const btnEdge = (h: number) => Math.round(Math.max(7, h * 0.1));
+export const btnEdge = (h: number) => Math.round(Math.max(6, h * 0.085));
 
 export function btnTexture(scene: Phaser.Scene, color: BtnColor, w: number, h: number): string {
   return canvasTexture(scene, `btn_${color}_${w}_${h}`, w, h, (ctx) => {
     const [top, base, edge] = BTN[color];
     const o = 5;
     const d = btnEdge(h);
-    const r = Math.min(h * 0.32, 34);
+    const r = Math.min(h * 0.3, 30);
     rr(ctx, 0, 0, w, h, r);
     fill(ctx, INK);
     rr(ctx, o, o, w - o * 2, h - o * 2, r - o);
     fill(ctx, rgba(edge));
     rr(ctx, o, o, w - o * 2, h - o * 2 - d, r - o);
-    fill(ctx, linear(ctx, 0, o, 0, h - d, [[0, rgba(top)], [0.55, rgba(base)], [1, rgba(darken(base, 0.08))]]));
-    rr(ctx, o + 8, o + 6, w - o * 2 - 16, (h - o * 2 - d) * 0.42, (r - o) * 0.75);
-    fill(ctx, "rgba(255,255,255,0.25)");
-    ellipse(ctx, o + 20, o + 14, 7, 4.5, -0.3);
-    fill(ctx, "rgba(255,255,255,0.75)");
+    fill(ctx, linear(ctx, 0, o, 0, h - d, [[0, rgba(top)], [0.45, rgba(base)], [1, rgba(base)]]));
+    rr(ctx, o + 8, o + 5, w - o * 2 - 16, Math.max(6, (h - o * 2 - d) * 0.22), 8);
+    fill(ctx, "rgba(255,255,255,0.35)");
   });
 }
 
-export type PanelStyle = "card" | "inset" | "modal" | "row";
+export type PanelStyle = "cream" | "inset" | "row" | "glass";
 
 export function panelTexture(scene: Phaser.Scene, style: PanelStyle, w: number, h: number): string {
   return canvasTexture(scene, `panel_${style}_${w}_${h}`, w, h, (ctx) => {
-    const r = style === "row" ? 26 : 30;
+    const r = 28;
+    if (style === "glass") {
+      rr(ctx, 2, 2, w - 4, h - 4, r);
+      fill(ctx, "rgba(74,47,29,0.55)");
+      rr(ctx, 2, 2, w - 4, h - 4, r);
+      outline(ctx, 4, "rgba(255,240,215,0.35)");
+      return;
+    }
     if (style === "inset") {
       rr(ctx, 0, 0, w, h, r);
-      fill(ctx, linear(ctx, 0, 0, 0, h, [[0, "#12143a"], [1, "#1c2050"]]));
+      fill(ctx, "#f0dcb8");
       ctx.save();
       rr(ctx, 0, 0, w, h, r);
       ctx.clip();
-      rr(ctx, -10, -10, w + 20, 34, 0);
-      fill(ctx, "rgba(0,0,0,0.25)");
+      ctx.fillStyle = "rgba(120,80,40,0.16)";
+      ctx.fillRect(0, 0, w, 14);
       ctx.restore();
-      rr(ctx, 1.5, 1.5, w - 3, h - 3, r);
-      outline(ctx, 3, "rgba(255,255,255,0.08)");
+      rr(ctx, 2, 2, w - 4, h - 4, r);
+      outline(ctx, 4, "#d9bb8c");
       return;
     }
-    const o = style === "modal" ? 6 : 5;
-    const [c0, c1] = style === "modal" ? ["#4a52b8", "#2c3178"] : style === "row" ? ["#3c438f", "#2b3070"] : ["#363c86", "#262b68"];
+    const o = style === "row" ? 4 : 6;
     rr(ctx, 0, 0, w, h, r);
     fill(ctx, INK);
     rr(ctx, o, o, w - o * 2, h - o * 2, r - o);
-    fill(ctx, linear(ctx, 0, 0, 0, h, [[0, c0], [1, c1]]));
-    rr(ctx, o + 4, o + 4, w - o * 2 - 8, h - o * 2 - 8, r - o - 4);
-    outline(ctx, 3, style === "modal" ? "rgba(160,170,255,0.45)" : "rgba(255,255,255,0.12)");
-    rr(ctx, o + 10, o + 8, w - o * 2 - 20, Math.min(40, h * 0.18), 16);
-    fill(ctx, "rgba(255,255,255,0.06)");
+    fill(ctx, style === "row" ? "#fff8ec" : linear(ctx, 0, 0, 0, h, [[0, "#fff6e4"], [1, "#ffeccc"]]));
+    rr(ctx, o + 5, o + 5, w - o * 2 - 10, h - o * 2 - 10, r - o - 4);
+    outline(ctx, 3, "#ecd1a6");
   });
 }
 
-export function pillTexture(scene: Phaser.Scene, w: number, h: number): string {
-  return canvasTexture(scene, `pill_${w}_${h}`, w, h, (ctx) => {
-    rr(ctx, 2, 2, w - 4, h - 4, (h - 4) / 2);
-    fill(ctx, "rgba(18,14,48,0.62)");
-    rr(ctx, 2, 2, w - 4, h - 4, (h - 4) / 2);
-    outline(ctx, 3.5, "rgba(255,255,255,0.22)");
+/** Cream/dark/glass pill for currency and price tags. */
+export function pillTexture(scene: Phaser.Scene, style: "cream" | "dark" | "glass", w: number, h: number): string {
+  return canvasTexture(scene, `pill_${style}_${w}_${h}`, w, h, (ctx) => {
+    const r = (h - 4) / 2;
+    rr(ctx, 2, 2, w - 4, h - 4, r);
+    if (style === "glass") {
+      fill(ctx, "rgba(74,47,29,0.55)");
+      rr(ctx, 2, 2, w - 4, h - 4, r);
+      outline(ctx, 3, "rgba(255,240,215,0.4)");
+      return;
+    }
+    fill(ctx, style === "cream" ? "#fff3dc" : "#5b3a24");
+    rr(ctx, 2, 2, w - 4, h - 4, r);
+    outline(ctx, 4.5);
+    if (style === "cream") {
+      rr(ctx, 10, 7, w - 20, h * 0.28, h * 0.14);
+      fill(ctx, "rgba(255,255,255,0.7)");
+    }
   });
 }
 
@@ -100,117 +116,92 @@ export function ribbonTexture(scene: Phaser.Scene, color: BtnColor, w: number, h
       fillOutline(ctx, rgba(edge), 5);
     }
     rr(ctx, tail, 4, w - tail * 2, h * 0.76, 16);
-    fillOutline(ctx, linear(ctx, 0, 4, 0, h * 0.8, [[0, rgba(top)], [0.6, rgba(base)], [1, rgba(darken(base, 0.1))]]), 5.5);
-    rr(ctx, tail + 10, 10, w - tail * 2 - 20, h * 0.25, 10);
-    fill(ctx, "rgba(255,255,255,0.25)");
+    fillOutline(ctx, linear(ctx, 0, 4, 0, h * 0.8, [[0, rgba(top)], [0.5, rgba(base)], [1, rgba(base)]]), 5);
+    rr(ctx, tail + 10, 10, w - tail * 2 - 20, h * 0.18, 8);
+    fill(ctx, "rgba(255,255,255,0.35)");
   });
 }
 
-/** Full-width background for the bottom half of the screen. */
-export function bottomPanelTexture(scene: Phaser.Scene, w: number, h: number): string {
-  return canvasTexture(scene, `bottom_${w}_${h}`, w, h, (ctx) => {
-    ctx.fillStyle = linear(ctx, 0, 0, 0, h, [[0, "#2a2f73"], [1, "#171a45"]]);
-    ctx.fillRect(0, 0, w, h);
-    ctx.save();
-    ctx.globalAlpha = 0.05;
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 18;
-    for (let x = -h; x < w; x += 70) {
-      ctx.beginPath();
-      ctx.moveTo(x, h);
-      ctx.lineTo(x + h, 0);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.fillStyle = INK;
-    ctx.fillRect(0, 0, w, 8);
-    ctx.fillStyle = "#5a63c7";
-    ctx.fillRect(0, 8, w, 5);
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.fillRect(0, 13, w, 10);
+/** Round slot for an equipped pet. */
+export function slotTexture(scene: Phaser.Scene, size: number, locked: boolean): string {
+  return canvasTexture(scene, `slot_${size}_${locked ? "l" : "o"}`, size, size, (ctx) => {
+    const c = size / 2;
+    circle(ctx, c, c, c - 3);
+    fill(ctx, INK);
+    circle(ctx, c, c, c - 9);
+    fill(ctx, locked ? "#a89a88" : radial(ctx, c, c - 8, c, [[0, "#fffaf0"], [1, "#f2dcb6"]]));
+    circle(ctx, c, c, c - 14);
+    outline(ctx, 3, locked ? "#8e8070" : "#e6c99c");
   });
 }
 
-// ───────────────────────── item cards ─────────────────────────
+// ───────────────────────── pet cards ─────────────────────────
 
 export const CARD_W = 220;
-export const CARD_H = 280;
+export const CARD_H = 290;
 
-function drawCard(ctx: Ctx, rarity: Rarity): void {
-  const c = RARITY_INFO[rarity].color;
-  const secret = rarity === "secret";
+function drawCard(ctx: Ctx, rarity: Rarity | "locked"): void {
   const W = CARD_W;
   const H = CARD_H;
+  const locked = rarity === "locked";
+  const c = locked ? 0xc9bba6 : RARITY_INFO[rarity].color;
+  const secret = rarity === "secret";
   rr(ctx, 0, 0, W, H, 26);
   fill(ctx, INK);
   rr(ctx, 5, 5, W - 10, H - 10, 22);
   if (secret) {
     const g = ctx.createConicGradient ? ctx.createConicGradient(0, W / 2, H / 2) : null;
     if (g) {
-      ["#ff5f6d", "#ffb347", "#fff35c", "#5ef08a", "#4fc3ff", "#b67bff", "#ff5f6d"].forEach((s, i, a) => g.addColorStop(i / (a.length - 1), s));
+      [...RAINBOW, RAINBOW[0]].forEach((s, i, a) => g.addColorStop(i / (a.length - 1), s));
       fill(ctx, g);
     } else {
-      fill(ctx, linear(ctx, 0, 0, W, H, [[0, "#ff5f6d"], [0.5, "#5ef08a"], [1, "#b67bff"]]));
+      fill(ctx, linear(ctx, 0, 0, W, H, RAINBOW.map((s, i) => [i / (RAINBOW.length - 1), s])));
     }
   } else {
-    fill(ctx, linear(ctx, 0, 5, 0, H - 5, [[0, rgba(lighten(c, 0.35))], [0.5, rgba(c)], [1, rgba(darken(c, 0.25))]]));
+    fill(ctx, linear(ctx, 0, 5, 0, H - 5, [[0, rgba(lighten(c, 0.3))], [1, rgba(darken(c, 0.12))]]));
   }
-  rr(ctx, 11, 9, W - 22, 34, 14);
-  fill(ctx, "rgba(255,255,255,0.2)");
-
-  // inner window
-  rr(ctx, 15, 48, W - 30, 182, 16);
-  fill(ctx, secret
-    ? radial(ctx, W / 2, 130, 140, [[0, "#7b3fd0"], [0.6, "#2a1258"], [1, "#130a2e"]])
-    : radial(ctx, W / 2, 128, 140, [[0, rgba(lighten(c, 0.2))], [0.55, rgba(darken(c, 0.4))], [1, rgba(darken(c, 0.68))]]));
-  ctx.save();
-  rr(ctx, 15, 48, W - 30, 182, 16);
-  ctx.clip();
-  ctx.fillStyle = linear(ctx, 0, 48, 0, 76, [[0, "rgba(0,0,0,0.3)"], [1, "rgba(0,0,0,0)"]]);
-  ctx.fillRect(15, 48, W - 30, 30);
-  if (secret || rarity === "legendary" || rarity === "mythical") {
-    for (const [x, y, r] of [[40, 70, 7], [182, 86, 6], [46, 200, 5], [176, 196, 8], [110, 62, 4]]) twinkle(ctx, x, y, r, "rgba(255,255,255,0.75)");
+  rr(ctx, 11, 9, W - 22, 30, 12);
+  fill(ctx, "rgba(255,255,255,0.3)");
+  // window
+  rr(ctx, 14, 44, W - 28, 196, 16);
+  fill(ctx, locked
+    ? "#e9dcc6"
+    : radial(ctx, W / 2, 140, 150, [[0, "#fffdf6"], [0.55, rgba(lighten(c, 0.6))], [1, rgba(lighten(c, 0.25))]]));
+  if (!locked && rarity !== "common" && rarity !== "uncommon") {
+    ctx.save();
+    rr(ctx, 14, 44, W - 28, 196, 16);
+    ctx.clip();
+    for (const [x, y, s] of [[40, 70, 8], [182, 82, 6], [44, 214, 5], [178, 206, 8]]) twinkle(ctx, x, y, s, rgba(lighten(c, 0.2), 0.8));
+    ctx.restore();
   }
-  ctx.restore();
-  rr(ctx, 15, 48, W - 30, 182, 16);
-  outline(ctx, 4, "rgba(38,24,63,0.7)");
-
-  rr(ctx, 15, 236, W - 30, 36, 12);
-  fill(ctx, "rgba(20,10,40,0.42)");
+  rr(ctx, 14, 44, W - 28, 196, 16);
+  outline(ctx, 4, "rgba(74,47,29,0.55)");
+  rr(ctx, 14, 246, W - 28, 36, 12);
+  fill(ctx, "rgba(74,47,29,0.5)");
 }
 
 export function makeCardTextures(scene: Phaser.Scene): void {
   for (const r of RARITY_ORDER) canvasTexture(scene, `card_${r}`, CARD_W, CARD_H, (ctx) => drawCard(ctx, r));
-  canvasTexture(scene, "card_locked", CARD_W, CARD_H, (ctx) => {
-    rr(ctx, 0, 0, CARD_W, CARD_H, 26);
-    fill(ctx, INK);
-    rr(ctx, 5, 5, CARD_W - 10, CARD_H - 10, 22);
-    fill(ctx, linear(ctx, 0, 0, 0, CARD_H, [[0, "#3a3f72"], [1, "#24284f"]]));
-    rr(ctx, 15, 48, CARD_W - 30, 182, 16);
-    fill(ctx, "#181b3f");
-    rr(ctx, 15, 236, CARD_W - 30, 36, 12);
-    fill(ctx, "rgba(20,10,40,0.42)");
-  });
-  canvasTexture(scene, "card_empty", CARD_W, CARD_H, (ctx) => {
-    rr(ctx, 6, 6, CARD_W - 12, CARD_H - 12, 24);
-    fill(ctx, "rgba(10,8,35,0.45)");
-    ctx.setLineDash([18, 12]);
-    rr(ctx, 6, 6, CARD_W - 12, CARD_H - 12, 24);
-    outline(ctx, 5, "rgba(255,255,255,0.25)");
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(CARD_W / 2 - 22, CARD_H / 2);
-    ctx.lineTo(CARD_W / 2 + 22, CARD_H / 2);
-    ctx.moveTo(CARD_W / 2, CARD_H / 2 - 22);
-    ctx.lineTo(CARD_W / 2, CARD_H / 2 + 22);
-    outline(ctx, 9, "rgba(255,255,255,0.25)");
-  });
+  canvasTexture(scene, "card_locked", CARD_W, CARD_H, (ctx) => drawCard(ctx, "locked"));
 }
 
 // ───────────────────────── dice ─────────────────────────
 
 export const DIE_SIZE = 180;
-export const dieKey = (dieId: string, face: number) => `die_${dieId}_${face}`;
+export interface DieSkin {
+  id: string;
+  name: string;
+  color: number;
+  pip: string;
+}
+/** Dice skins, unlocked through the upgrade tree. Each multiplies luck. */
+export const DIE_SKINS: DieSkin[] = [
+  { id: "wood", name: "Wooden Die", color: 0xd29a5c, pip: INK },
+  { id: "iron", name: "Iron Die", color: 0xb7bfcc, pip: "#2f3442" },
+  { id: "gold", name: "Golden Die", color: 0xffcf3f, pip: "#7a4a10" },
+  { id: "crystal", name: "Crystal Die", color: 0x8fe8ff, pip: "#1b3f8a" },
+  { id: "cosmic", name: "Cosmic Die", color: 0x4a3aa0, pip: "#ffe066" },
+];
 
 const PIPS: Record<number, [number, number][]> = {
   1: [[0, 0]],
@@ -221,25 +212,36 @@ const PIPS: Record<number, [number, number][]> = {
   6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
 };
 
-function drawDie(ctx: Ctx, dieId: string, color: number, face: number): void {
+function drawDie(ctx: Ctx, skin: DieSkin, face: number): void {
   const S = DIE_SIZE;
-  const crystal = dieId === "crystal";
+  const c = skin.color;
   rr(ctx, 10, 10, S - 20, S - 14, 38);
   fill(ctx, INK);
   rr(ctx, 16, 16, S - 32, S - 26, 32);
-  fill(ctx, rgba(darken(color, 0.38)));
+  fill(ctx, rgba(darken(c, 0.32)));
   const fx = 16;
   const fy = 16;
   const fw = S - 32;
   const fh = S - 44;
   rr(ctx, fx, fy, fw, fh, 32);
-  fill(ctx, crystal
-    ? linear(ctx, fx, fy, fx + fw, fy + fh, [[0, "#e8fbff"], [0.45, "#8fe3ff"], [1, "#3fa9e0"]])
-    : linear(ctx, 0, fy, 0, fy + fh, [[0, rgba(lighten(color, 0.3))], [1, rgba(color)]]));
+  fill(ctx, linear(ctx, 0, fy, 0, fy + fh, [[0, rgba(lighten(c, 0.3))], [1, rgba(c)]]));
   ctx.save();
   rr(ctx, fx, fy, fw, fh, 32);
   ctx.clip();
-  if (crystal) {
+  if (skin.id === "wood") {
+    for (let i = 0; i < 6; i++) {
+      const y = fy + 14 + i * 22;
+      ctx.beginPath();
+      ctx.moveTo(fx - 4, y);
+      ctx.bezierCurveTo(fx + fw * 0.3, y - 8, fx + fw * 0.6, y + 10, fx + fw + 4, y - 2);
+      outline(ctx, 3, rgba(darken(c, 0.25), 0.45));
+    }
+  } else if (skin.id === "iron") {
+    for (const [x, y] of [[fx + 16, fy + 16], [fx + fw - 16, fy + 16], [fx + 16, fy + fh - 16], [fx + fw - 16, fy + fh - 16]]) {
+      circle(ctx, x, y, 5);
+      fill(ctx, "#8a93a4");
+    }
+  } else if (skin.id === "crystal" || skin.id === "gold") {
     ctx.fillStyle = "rgba(255,255,255,0.35)";
     ctx.beginPath();
     ctx.moveTo(fx, fy + fh * 0.55);
@@ -247,50 +249,28 @@ function drawDie(ctx: Ctx, dieId: string, color: number, face: number): void {
     ctx.lineTo(fx + fw * 0.75, fy);
     ctx.lineTo(fx, fy + fh * 0.8);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    ctx.beginPath();
-    ctx.moveTo(fx + fw * 0.4, fy + fh);
-    ctx.lineTo(fx + fw, fy + fh * 0.35);
-    ctx.lineTo(fx + fw, fy + fh * 0.55);
-    ctx.lineTo(fx + fw * 0.6, fy + fh);
-    ctx.fill();
   } else {
-    ctx.strokeStyle = rgba(darken(color, 0.25), 0.45);
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 6; i++) {
-      const y = fy + 14 + i * 22;
-      ctx.beginPath();
-      ctx.moveTo(fx - 4, y);
-      ctx.bezierCurveTo(fx + fw * 0.3, y - 8, fx + fw * 0.6, y + 10, fx + fw + 4, y - 2);
-      ctx.stroke();
-    }
-    ellipse(ctx, fx + fw * 0.72, fy + fh * 0.7, 9, 5, 0.2);
-    outline(ctx, 3, rgba(darken(color, 0.3), 0.5));
+    for (const [x, y, r] of [[fx + 24, fy + 30, 5], [fx + fw - 30, fy + 26, 4], [fx + fw - 22, fy + fh - 26, 6], [fx + 30, fy + fh - 24, 4]]) twinkle(ctx, x, y, r * 1.6);
   }
   ctx.restore();
   rr(ctx, fx + 6, fy + 5, fw - 12, fh - 10, 26);
-  outline(ctx, 3.5, "rgba(255,255,255,0.35)");
-
-  const pip = crystal ? "#1b2f78" : INK;
+  outline(ctx, 3.5, "rgba(255,255,255,0.4)");
   const cx = fx + fw / 2;
   const cy = fy + fh / 2;
   for (const [px, py] of PIPS[face]) {
     const x = cx + px * fw * 0.27;
     const y = cy + py * fh * 0.27;
-    ctx.beginPath();
-    ctx.arc(x, y, face === 1 ? 19 : 14, 0, Math.PI * 2);
-    fill(ctx, face === 1 && !crystal ? "#d62d4f" : pip);
-    ctx.beginPath();
-    ctx.arc(x + 2, y + 3, face === 1 ? 13 : 9, 0, Math.PI * 2);
-    fill(ctx, "rgba(255,255,255,0.14)");
+    circle(ctx, x, y, face === 1 ? 19 : 14);
+    fill(ctx, face === 1 && skin.id === "wood" ? "#e8434f" : skin.pip);
+    circle(ctx, x + 2, y + 3, face === 1 ? 13 : 9);
+    fill(ctx, "rgba(255,255,255,0.15)");
   }
-  if (crystal) for (const [x, y, r] of [[fx + 22, fy + 22, 9], [fx + fw - 26, fy + fh - 20, 7]]) twinkle(ctx, x, y, r);
 }
 
-export function makeDiceTextures(scene: Phaser.Scene): void {
-  for (const d of DICE) {
-    for (let f = 1; f <= 6; f++) canvasTexture(scene, dieKey(d.id, f), DIE_SIZE, DIE_SIZE, (ctx) => drawDie(ctx, d.id, d.color, f));
-  }
+export const dieKey = (skin: number, face: number) => `die_${DIE_SKINS[skin].id}_${face}`;
+
+export function dieTexture(scene: Phaser.Scene, skin: number, face: number): string {
+  return canvasTexture(scene, dieKey(skin, face), DIE_SIZE, DIE_SIZE, (ctx) => drawDie(ctx, DIE_SKINS[skin], face));
 }
 
 // ───────────────────────── icons ─────────────────────────
@@ -298,24 +278,41 @@ export function makeDiceTextures(scene: Phaser.Scene): void {
 const I = 96;
 
 const ICONS: Record<string, (ctx: Ctx) => void> = {
-  coin: (ctx) => {
+  cash: (ctx) => {
+    ctx.save();
+    ctx.translate(48, 50);
+    ctx.rotate(-0.25);
+    rr(ctx, -42, -26, 84, 52, 8);
+    fillOutline(ctx, "#3f9a4f", 5);
+    rr(ctx, -34, -18, 68, 36, 6);
+    fill(ctx, "#6fd27a");
+    circle(ctx, 0, 0, 13);
+    fillOutline(ctx, "#3f9a4f", 3);
+    ctx.fillStyle = "#e8ffe0";
+    ctx.font = "bold 20px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("$", 0, 1);
+    ctx.restore();
+  },
+  gem: (ctx) => {
     ctx.beginPath();
-    ctx.arc(48, 50, 42, 0, Math.PI * 2);
-    fill(ctx, INK);
+    ctx.moveTo(24, 18);
+    ctx.lineTo(72, 18);
+    ctx.lineTo(90, 40);
+    ctx.lineTo(48, 86);
+    ctx.lineTo(6, 40);
+    ctx.closePath();
+    fillOutline(ctx, linear(ctx, 0, 18, 0, 86, [[0, "#b3f3ff"], [1, "#3a8fe8"]]), 5);
     ctx.beginPath();
-    ctx.arc(48, 50, 37, 0, Math.PI * 2);
-    fill(ctx, "#d98a00");
-    ctx.beginPath();
-    ctx.arc(48, 46, 37, 0, Math.PI * 2);
-    fill(ctx, linear(ctx, 0, 10, 0, 84, [[0, "#fff09a"], [0.5, "#ffc928"], [1, "#f0a000"]]));
-    ctx.beginPath();
-    ctx.arc(48, 46, 26, 0, Math.PI * 2);
-    outline(ctx, 4, "rgba(190,110,0,0.65)");
-    starPath(ctx, 48, 47, 15, 0.45);
-    fill(ctx, "#f2a600");
-    starPath(ctx, 48, 45, 15, 0.45);
-    fill(ctx, "#ffe680");
-    gloss(ctx, 32, 28, 10, 5, -0.7, 0.8);
+    ctx.moveTo(6, 40);
+    ctx.lineTo(90, 40);
+    ctx.moveTo(34, 18);
+    ctx.lineTo(28, 40);
+    ctx.lineTo(48, 86);
+    ctx.moveTo(62, 18);
+    ctx.lineTo(68, 40);
+    outline(ctx, 3, "rgba(74,47,29,0.45)");
   },
   dice: (ctx) => {
     ctx.save();
@@ -324,39 +321,38 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     rr(ctx, -34, -34, 68, 72, 18);
     fill(ctx, INK);
     rr(ctx, -30, -30, 60, 62, 14);
-    fill(ctx, "#c9cbe0");
+    fill(ctx, "#d9c6a8");
     rr(ctx, -30, -30, 60, 56, 14);
-    fill(ctx, linear(ctx, 0, -30, 0, 26, [[0, "#ffffff"], [1, "#e6e8f5"]]));
+    fill(ctx, "#fffaf0");
     for (const [x, y] of [[-14, -14], [14, -14], [0, -1], [-14, 12], [14, 12]]) {
-      ctx.beginPath();
-      ctx.arc(x, y, 6, 0, Math.PI * 2);
-      fill(ctx, x === 0 ? "#e8324f" : INK);
+      circle(ctx, x, y, 6);
+      fill(ctx, x === 0 ? "#e8434f" : INK);
     }
     ctx.restore();
   },
   paw: (ctx) => {
     ellipse(ctx, 48, 62, 24, 20);
-    fillOutline(ctx, linear(ctx, 0, 40, 0, 82, [[0, "#ffffff"], [1, "#ffd0e0"]]), 5);
+    fillOutline(ctx, "#fff3e6");
     for (const [x, y, r] of [[22, 38, 10], [38, 24, 10.5], [58, 24, 10.5], [74, 38, 10]]) {
       ellipse(ctx, x, y, r, r * 1.15);
-      fillOutline(ctx, "#ffb3cc", 5);
+      fillOutline(ctx, "#ffb3cc");
     }
   },
-  up: (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(48, 8);
-    ctx.lineTo(86, 48);
-    ctx.lineTo(64, 48);
-    ctx.lineTo(64, 86);
-    ctx.lineTo(32, 86);
-    ctx.lineTo(32, 48);
-    ctx.lineTo(10, 48);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 8, 0, 86, [[0, "#b3ff7a"], [1, "#2fae2a"]]), 6);
-    ctx.beginPath();
-    ctx.moveTo(48, 20);
-    ctx.lineTo(70, 42);
-    outline(ctx, 4, "rgba(255,255,255,0.55)");
+  tree: (ctx) => {
+    rr(ctx, 40, 52, 16, 36, 4);
+    fillOutline(ctx, "#9c6a43");
+    for (const [x, y, r] of [[30, 48, 20], [66, 48, 20], [48, 30, 24]]) {
+      circle(ctx, x, y, r);
+      outline(ctx, 9);
+    }
+    for (const [x, y, r] of [[30, 48, 20], [66, 48, 20], [48, 30, 24]]) {
+      circle(ctx, x, y, r);
+      fill(ctx, "#7ad651");
+    }
+    for (const [x, y] of [[36, 30], [60, 42], [42, 52]]) {
+      circle(ctx, x, y, 5);
+      fill(ctx, "#ffe066");
+    }
   },
   clover: (ctx) => {
     for (let i = 0; i < 4; i++) {
@@ -367,7 +363,7 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
       ctx.moveTo(0, 0);
       ctx.bezierCurveTo(-24, -10, -20, -38, 0, -26);
       ctx.bezierCurveTo(20, -38, 24, -10, 0, 0);
-      fillOutline(ctx, linear(ctx, 0, -36, 0, 0, [[0, "#9cf05a"], [1, "#2f9e2a"]]), 5);
+      fillOutline(ctx, linear(ctx, 0, -36, 0, 0, [[0, "#a8f06a"], [1, "#46a83a"]]));
       ctx.restore();
     }
     ctx.beginPath();
@@ -377,80 +373,77 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     ctx.beginPath();
     ctx.moveTo(48, 50);
     ctx.quadraticCurveTo(54, 74, 66, 86);
-    outline(ctx, 4, "#2f9e2a");
+    outline(ctx, 4, "#46a83a");
   },
-  sword: (ctx) => {
+  potion: (ctx) => {
+    rr(ctx, 38, 8, 20, 16, 4);
+    fillOutline(ctx, "#c9a27a");
+    ctx.beginPath();
+    ctx.moveTo(40, 22);
+    ctx.lineTo(56, 22);
+    ctx.lineTo(56, 36);
+    ctx.quadraticCurveTo(84, 48, 80, 70);
+    ctx.quadraticCurveTo(76, 90, 48, 90);
+    ctx.quadraticCurveTo(20, 90, 16, 70);
+    ctx.quadraticCurveTo(12, 48, 40, 36);
+    ctx.closePath();
+    fillOutline(ctx, "#e9f9ff");
     ctx.save();
-    ctx.translate(48, 48);
-    ctx.rotate(Math.PI / 4);
-    ctx.beginPath();
-    ctx.moveTo(0, -44);
-    ctx.lineTo(10, -30);
-    ctx.lineTo(10, 14);
-    ctx.lineTo(-10, 14);
-    ctx.lineTo(-10, -30);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, -10, 0, 10, 0, [[0, "#ffffff"], [0.5, "#d8dcf0"], [1, "#9aa0c0"]]), 5);
-    rr(ctx, -24, 12, 48, 12, 6);
-    fillOutline(ctx, "#ffc21f", 5);
-    rr(ctx, -6, 22, 12, 18, 4);
-    fillOutline(ctx, "#8a4b2a", 5);
-    ctx.beginPath();
-    ctx.arc(0, 44, 7, 0, Math.PI * 2);
-    fillOutline(ctx, "#ffc21f", 4.5);
+    ctx.clip();
+    ctx.fillStyle = linear(ctx, 0, 52, 0, 90, [[0, "#9cf06a"], [1, "#3fae3a"]]);
+    ctx.fillRect(0, 54, 96, 40);
     ctx.restore();
+    for (const [x, y] of [[36, 66], [56, 74]]) twinkle(ctx, x, y, 6);
   },
-  bolt: (ctx) => {
-    boltPath(ctx, 48, 48, 42);
-    fillOutline(ctx, linear(ctx, 0, 6, 0, 90, [[0, "#fffbd0"], [1, "#ffb81f"]]), 6);
+  book: (ctx) => {
+    rr(ctx, 14, 14, 68, 72, 8);
+    fillOutline(ctx, "#e8434f");
+    rr(ctx, 22, 20, 52, 58, 4);
+    fill(ctx, "#fff3dc");
+    starPath(ctx, 48, 46, 15, 0.45);
+    fillOutline(ctx, "#ffcf3f", 3);
   },
-  heart: (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(48, 84);
-    ctx.bezierCurveTo(8, 58, 4, 26, 26, 16);
-    ctx.bezierCurveTo(38, 10, 46, 18, 48, 28);
-    ctx.bezierCurveTo(50, 18, 58, 10, 70, 16);
-    ctx.bezierCurveTo(92, 26, 88, 58, 48, 84);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 12, 0, 84, [[0, "#ff8a9a"], [1, "#e0203f"]]), 6);
-    gloss(ctx, 28, 30, 9, 6, -0.8, 0.8);
-  },
-  star: (ctx) => {
-    starPath(ctx, 48, 50, 42, 0.48);
-    fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#fff3a0"], [1, "#ffb300"]]), 6);
-  },
-  skull: (ctx) => {
-    ctx.beginPath();
-    ctx.arc(48, 42, 32, Math.PI * 0.85, Math.PI * 2.15);
-    ctx.lineTo(66, 82);
-    ctx.lineTo(30, 82);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 10, 0, 82, [[0, "#ffffff"], [1, "#cfd3e6"]]), 6);
-    for (const x of [34, 62]) {
-      ellipse(ctx, x, 46, 9, 10);
+  boss: (ctx) => {
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(48 + dir * 22, 30);
+      ctx.quadraticCurveTo(48 + dir * 40, 22, 48 + dir * 38, 6);
+      ctx.quadraticCurveTo(48 + dir * 30, 20, 48 + dir * 14, 22);
+      ctx.closePath();
+      fillOutline(ctx, "#fff3dc");
+    }
+    circle(ctx, 48, 52, 34);
+    fillOutline(ctx, "#ff6a3a");
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(48 + dir * 22, 42);
+      ctx.lineTo(48 + dir * 6, 50);
+      ctx.lineTo(48 + dir * 20, 54);
+      ctx.closePath();
       fill(ctx, INK);
     }
     ctx.beginPath();
-    ctx.moveTo(48, 56);
-    ctx.lineTo(43, 66);
-    ctx.lineTo(53, 66);
-    ctx.closePath();
-    fill(ctx, INK);
+    ctx.moveTo(32, 68);
+    ctx.lineTo(64, 68);
+    outline(ctx, 5);
   },
-  check: (ctx) => {
+  odds: (ctx) => {
+    for (const [x, h, c] of [[14, 30, "#7ad651"], [38, 54, "#67c3ff"], [62, 42, "#ffcf3f"]] as [number, number, string][]) {
+      rr(ctx, x, 84 - h, 20, h, 5);
+      fillOutline(ctx, c);
+    }
+  },
+  gear: (ctx) => {
     ctx.beginPath();
-    ctx.arc(48, 48, 40, 0, Math.PI * 2);
-    fillOutline(ctx, linear(ctx, 0, 8, 0, 88, [[0, "#8cf25a"], [1, "#2a9a1f"]]), 6);
-    ctx.beginPath();
-    ctx.moveTo(28, 50);
-    ctx.lineTo(42, 64);
-    ctx.lineTo(70, 34);
-    outline(ctx, 16);
-    ctx.beginPath();
-    ctx.moveTo(28, 50);
-    ctx.lineTo(42, 64);
-    ctx.lineTo(70, 34);
-    outline(ctx, 9, "#ffffff");
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const r = i % 2 ? 30 : 40;
+      ctx.lineTo(48 + Math.cos(a) * r, 48 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    fillOutline(ctx, "#c6bcad");
+    circle(ctx, 48, 48, 13);
+    fillOutline(ctx, "#6b4a32");
   },
   auto: (ctx) => {
     for (const a of [0, Math.PI]) {
@@ -459,7 +452,7 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
       ctx.rotate(a);
       ctx.beginPath();
       ctx.arc(0, 0, 28, Math.PI * 1.05, Math.PI * 1.85);
-      outline(ctx, 18);
+      outline(ctx, 17);
       ctx.beginPath();
       ctx.arc(0, 0, 28, Math.PI * 1.05, Math.PI * 1.85);
       outline(ctx, 9, "#ffffff");
@@ -468,37 +461,15 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
       ctx.lineTo(36, -24);
       ctx.lineTo(12, -12);
       ctx.closePath();
-      fillOutline(ctx, "#ffffff", 5);
+      fillOutline(ctx, "#ffffff");
       ctx.restore();
     }
   },
-  fast: (ctx) => {
-    for (const x of [14, 46]) {
-      ctx.beginPath();
-      ctx.moveTo(x, 20);
-      ctx.lineTo(x + 36, 48);
-      ctx.lineTo(x, 76);
-      ctx.closePath();
-      fillOutline(ctx, "#ffffff", 6);
-    }
-  },
-  odds: (ctx) => {
-    for (const [x, h] of [[14, 34], [38, 58], [62, 44]]) {
-      rr(ctx, x, 84 - h, 20, h, 5);
-      fillOutline(ctx, "#ffffff", 5);
-    }
-    ctx.beginPath();
-    ctx.moveTo(10, 88);
-    ctx.lineTo(88, 88);
-    outline(ctx, 5, "#ffffff");
-  },
   close: (ctx) => {
-    ctx.beginPath();
-    ctx.arc(48, 48, 42, 0, Math.PI * 2);
+    circle(ctx, 48, 48, 42);
     fill(ctx, INK);
-    ctx.beginPath();
-    ctx.arc(48, 46, 37, 0, Math.PI * 2);
-    fill(ctx, linear(ctx, 0, 8, 0, 84, [[0, "#ff8585"], [1, "#d42a2a"]]));
+    circle(ctx, 48, 46, 36);
+    fill(ctx, linear(ctx, 0, 10, 0, 82, [[0, "#ff9a9a"], [1, "#e04848"]]));
     for (const [a, b, c, d] of [[32, 30, 64, 62], [64, 30, 32, 62]]) {
       ctx.beginPath();
       ctx.moveTo(a, b);
@@ -516,44 +487,28 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     outline(ctx, 16);
     ctx.beginPath();
     ctx.arc(48, 40, 20, Math.PI, 0);
-    outline(ctx, 8, "#c9cde6");
+    outline(ctx, 8, "#d6cfc4");
     rr(ctx, 20, 40, 56, 46, 10);
-    fillOutline(ctx, linear(ctx, 0, 40, 0, 86, [[0, "#ffd75a"], [1, "#e09a00"]]), 6);
-    ctx.beginPath();
-    ctx.arc(48, 60, 7, 0, Math.PI * 2);
+    fillOutline(ctx, linear(ctx, 0, 40, 0, 86, [[0, "#ffd75a"], [1, "#e09a00"]]));
+    circle(ctx, 48, 60, 7);
     fill(ctx, INK);
   },
-  ad: (ctx) => {
-    rr(ctx, 8, 18, 80, 60, 14);
-    fillOutline(ctx, "#ffffff", 6);
+  check: (ctx) => {
+    circle(ctx, 48, 48, 40);
+    fillOutline(ctx, linear(ctx, 0, 8, 0, 88, [[0, "#a8f06a"], [1, "#3f9a2f"]]), 6);
     ctx.beginPath();
-    ctx.moveTo(38, 32);
-    ctx.lineTo(62, 48);
-    ctx.lineTo(38, 64);
-    ctx.closePath();
-    fill(ctx, "#8c4dff");
-  },
-  clock: (ctx) => {
+    ctx.moveTo(28, 50);
+    ctx.lineTo(42, 64);
+    ctx.lineTo(70, 34);
+    outline(ctx, 16);
     ctx.beginPath();
-    ctx.arc(48, 50, 38, 0, Math.PI * 2);
-    fillOutline(ctx, linear(ctx, 0, 12, 0, 88, [[0, "#ffffff"], [1, "#d6dbf2"]]), 6);
-    ctx.beginPath();
-    ctx.moveTo(48, 50);
-    ctx.lineTo(48, 26);
-    ctx.moveTo(48, 50);
-    ctx.lineTo(66, 58);
-    outline(ctx, 6);
-  },
-  target: (ctx) => {
-    for (const [r, c] of [[38, "#ff5a5a"], [26, "#ffffff"], [14, "#ff5a5a"]] as [number, string][]) {
-      ctx.beginPath();
-      ctx.arc(48, 48, r, 0, Math.PI * 2);
-      fillOutline(ctx, c, 5);
-    }
+    ctx.moveTo(28, 50);
+    ctx.lineTo(42, 64);
+    ctx.lineTo(70, 34);
+    outline(ctx, 9, "#ffffff");
   },
   fuse: (ctx) => {
-    ctx.beginPath();
-    ctx.arc(48, 48, 40, 0, Math.PI * 2);
+    circle(ctx, 48, 48, 40);
     fillOutline(ctx, linear(ctx, 0, 8, 0, 88, [[0, "#ffcc5c"], [1, "#e86a0a"]]), 6);
     ctx.beginPath();
     ctx.moveTo(48, 20);
@@ -564,42 +519,109 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     ctx.lineTo(38, 48);
     ctx.lineTo(24, 48);
     ctx.closePath();
-    fillOutline(ctx, "#ffffff", 5);
+    fillOutline(ctx, "#ffffff");
   },
-  gem: (ctx) => {
+  star: (ctx) => {
+    starPath(ctx, 48, 50, 42, 0.48);
+    fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#fff3a0"], [1, "#ffb300"]]), 6);
+  },
+  sword: (ctx) => {
+    ctx.save();
+    ctx.translate(48, 48);
+    ctx.rotate(Math.PI / 4);
     ctx.beginPath();
-    ctx.moveTo(24, 16);
-    ctx.lineTo(72, 16);
-    ctx.lineTo(90, 38);
-    ctx.lineTo(48, 86);
-    ctx.lineTo(6, 38);
+    ctx.moveTo(0, -44);
+    ctx.lineTo(10, -30);
+    ctx.lineTo(10, 14);
+    ctx.lineTo(-10, 14);
+    ctx.lineTo(-10, -30);
     ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 16, 0, 86, [[0, "#9ff3ff"], [1, "#2a7fe0"]]), 6);
+    fillOutline(ctx, linear(ctx, -10, 0, 10, 0, [[0, "#ffffff"], [0.5, "#dfe3f0"], [1, "#a6acc4"]]));
+    rr(ctx, -24, 12, 48, 12, 6);
+    fillOutline(ctx, "#ffc21f");
+    rr(ctx, -6, 22, 12, 18, 4);
+    fillOutline(ctx, "#8a4b2a");
+    ctx.restore();
+  },
+  bolt: (ctx) => {
+    boltPath(ctx, 48, 48, 42);
+    fillOutline(ctx, linear(ctx, 0, 6, 0, 90, [[0, "#fffbd0"], [1, "#ffb81f"]]), 6);
+  },
+  clock: (ctx) => {
+    circle(ctx, 48, 50, 38);
+    fillOutline(ctx, "#fffaf0", 6);
     ctx.beginPath();
-    ctx.moveTo(6, 38);
-    ctx.lineTo(90, 38);
-    ctx.moveTo(34, 16);
-    ctx.lineTo(28, 38);
-    ctx.lineTo(48, 86);
-    ctx.moveTo(62, 16);
-    ctx.lineTo(68, 38);
-    outline(ctx, 3, "rgba(38,24,63,0.5)");
+    ctx.moveTo(48, 50);
+    ctx.lineTo(48, 26);
+    ctx.moveTo(48, 50);
+    ctx.lineTo(66, 58);
+    outline(ctx, 6);
+  },
+  target: (ctx) => {
+    for (const [r, c] of [[38, "#ff6a6a"], [26, "#ffffff"], [14, "#ff6a6a"]] as [number, string][]) {
+      circle(ctx, 48, 48, r);
+      fillOutline(ctx, c);
+    }
+  },
+  slots: (ctx) => {
+    for (const [x, y] of [[30, 34], [66, 34], [30, 68], [66, 68]]) {
+      circle(ctx, x, y, 15);
+      fillOutline(ctx, "#ffb3cc");
+    }
+  },
+  ad: (ctx) => {
+    rr(ctx, 8, 18, 80, 60, 14);
+    fillOutline(ctx, "#ffffff", 6);
+    ctx.beginPath();
+    ctx.moveTo(38, 32);
+    ctx.lineTo(62, 48);
+    ctx.lineTo(38, 64);
+    ctx.closePath();
+    fill(ctx, "#b98aff");
+  },
+  skull: (ctx) => {
+    ctx.beginPath();
+    ctx.arc(48, 42, 32, Math.PI * 0.85, Math.PI * 2.15);
+    ctx.lineTo(66, 82);
+    ctx.lineTo(30, 82);
+    ctx.closePath();
+    fillOutline(ctx, "#fffaf0", 6);
+    for (const x of [34, 62]) {
+      ellipse(ctx, x, 46, 9, 10);
+      fill(ctx, INK);
+    }
   },
 };
 
 export function makeIconTextures(scene: Phaser.Scene): void {
   for (const [name, draw] of Object.entries(ICONS)) canvasTexture(scene, `icon_${name}`, I, I, draw);
-  // round badge behind upgrade icons
-  canvasTexture(scene, "badge_round", 120, 120, (ctx) => {
-    ctx.beginPath();
-    ctx.arc(60, 60, 56, 0, Math.PI * 2);
+}
+
+// ───────────────────────── upgrade tree nodes ─────────────────────────
+
+export type NodeState = "locked" | "open" | "ready" | "max";
+
+export function nodeTexture(scene: Phaser.Scene, state: NodeState): string {
+  const S = 150;
+  return canvasTexture(scene, `node_${state}`, S, S, (ctx) => {
+    const c = S / 2;
+    if (state === "ready") {
+      circle(ctx, c, c, c - 2);
+      fill(ctx, radial(ctx, c, c, c, [[0.6, "rgba(140,255,120,0.8)"], [1, "rgba(140,255,120,0)"]]));
+    }
+    const [face, rim] = {
+      locked: ["#c9bfb2", "#9a8e80"],
+      open: ["#fff4de", "#e6c99c"],
+      ready: ["#f2ffe6", "#7ad651"],
+      max: ["#fff3a8", "#ffbf1f"],
+    }[state];
+    circle(ctx, c, c, 58);
     fill(ctx, INK);
-    ctx.beginPath();
-    ctx.arc(60, 60, 50, 0, Math.PI * 2);
-    fill(ctx, radial(ctx, 60, 50, 56, [[0, "#ffffff"], [1, "#cfd4ee"]]));
-  });
-  canvasTexture(scene, "badge_count", 72, 52, (ctx) => {
-    rr(ctx, 2, 2, 68, 48, 24);
-    fillOutline(ctx, linear(ctx, 0, 2, 0, 50, [[0, "#4a4f8f"], [1, "#24285c"]]), 4);
+    circle(ctx, c, c, 52);
+    fill(ctx, rim);
+    circle(ctx, c, c - 3, 44);
+    fill(ctx, face);
+    ellipse(ctx, c - 16, c - 26, 14, 7, -0.5);
+    fill(ctx, "rgba(255,255,255,0.7)");
   });
 }

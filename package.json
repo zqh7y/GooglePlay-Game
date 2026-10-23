@@ -9,8 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource/fredoka": "^5.2.6",
-    "@fontsource/lilita-one": "^5.2.5",
+    "@fontsource/jua": "^5.2.5",
     "phaser": "3.90.0"
   },
   "devDependencies": {

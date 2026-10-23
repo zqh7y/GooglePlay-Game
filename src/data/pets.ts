@@ -1,0 +1,125 @@
+/**
+ * The 100 collectable pets, from most common to rarest.
+ * Each row: name, species, body colour ("rainbow" for a rainbow body),
+ * accessories, body pattern, eye style.
+ *
+ * Their "1 in N" chance comes from their position in this list:
+ * the first is 1 in 2 and the last is 1 in 500Sp (5e26).
+ * Every 10 pets is one rarity tier (Common, Uncommon, ... Secret).
+ */
+export type Species = "slime" | "cat" | "dog" | "bunny" | "bear" | "chick" | "fox" | "frog" | "ghost" | "dragon";
+
+export type PetRow = [name: string, species: Species, color: string, accs: string, pattern: string, eyes: string];
+
+export const PET_ROWS: PetRow[] = [
+  // Common
+  ["Pebble Slime", "slime", "#a9a39a", "pebble", "stone", ""],
+  ["Puddle Slime", "slime", "#7cc7f2", "", "drops", ""],
+  ["Kitten", "cat", "#f6b26b", "", "", ""],
+  ["Puppy", "dog", "#e8c39e", "", "", ""],
+  ["Leaf Slime", "slime", "#9bdc5a", "sprout", "", ""],
+  ["Chick", "chick", "#ffe066", "", "", ""],
+  ["Bunny", "bunny", "#f6efe6", "", "", ""],
+  ["Froggy", "frog", "#8fd46b", "", "", ""],
+  ["Teddy", "bear", "#c48a5a", "", "", ""],
+  ["Kit Fox", "fox", "#f08a3c", "", "", ""],
+  // Uncommon
+  ["Mud Slime", "slime", "#9a6b47", "", "spots", ""],
+  ["Tabby Cat", "cat", "#e89a4a", "", "stripes", ""],
+  ["Spotty Pup", "dog", "#f5efe6", "", "spots", ""],
+  ["Flower Bunny", "bunny", "#ffc8dc", "flower", "", ""],
+  ["Sprout Frog", "frog", "#74c95a", "sprout", "", ""],
+  ["Honey Bear", "bear", "#f2b33d", "bow", "", "happy"],
+  ["Ember Slime", "slime", "#ff8a3d", "flame", "", ""],
+  ["Snow Chick", "chick", "#eef7ff", "beanie", "", ""],
+  ["Bubble Cat", "cat", "#8fd3ff", "bubble", "", ""],
+  ["Mushroom Frog", "frog", "#6fbf73", "mushroom", "", ""],
+  // Rare
+  ["Spark Slime", "slime", "#ffd84a", "sparkantenna", "", ""],
+  ["Frost Slime", "slime", "#9feaff", "icecrown", "frost", ""],
+  ["Ninja Cat", "cat", "#5a5a6e", "ninja", "", ""],
+  ["Pirate Pup", "dog", "#d9a066", "bandana,eyepatch", "", ""],
+  ["Candy Bunny", "bunny", "#ffb3d9", "bow", "sprinkles", ""],
+  ["Cloud Chick", "chick", "#ffffff", "cloud", "", "happy"],
+  ["Lava Slime", "slime", "#e8432e", "rock", "cracks", ""],
+  ["Panda", "bear", "#f7f3ee", "", "panda", ""],
+  ["Arctic Fox", "fox", "#eef6ff", "icecrown", "", ""],
+  ["Ghostie", "ghost", "#f4f0ff", "", "", ""],
+  // Epic
+  ["Cookie Bear", "bear", "#b97a4a", "", "sprinkles", ""],
+  ["Thunder Cat", "cat", "#6f7dff", "bolt", "", ""],
+  ["Coral Frog", "frog", "#ff8f7a", "flower", "", ""],
+  ["Rocket Pup", "dog", "#c9d3e0", "antenna", "rivets", ""],
+  ["Crystal Slime", "slime", "#8fe8ff", "crystal", "facets", ""],
+  ["Flame Fox", "fox", "#ff6a2a", "flame", "", ""],
+  ["Moon Bunny", "bunny", "#4a56a0", "moon", "stars", ""],
+  ["Baby Dragon", "dragon", "#7cd36a", "", "", ""],
+  ["Robo Cat", "cat", "#b8c2d2", "antenna,glasses", "rivets", ""],
+  ["Pumpkin Ghost", "ghost", "#ff9a3c", "pumpkin", "", ""],
+  // Legendary
+  ["Golden Chick", "chick", "#ffcc33", "crown", "gold", ""],
+  ["Storm Bear", "bear", "#6b7a99", "bolt,cloud", "", ""],
+  ["Sakura Fox", "fox", "#ffc0d6", "flower", "", "happy"],
+  ["Ice Dragon", "dragon", "#9fe3ff", "icecrown", "frost", ""],
+  ["Shadow Cat", "cat", "#4b3a78", "", "", "glow"],
+  ["Jelly Slime", "slime", "#ff8ad8", "", "sprinkles", ""],
+  ["Knight Pup", "dog", "#d9b38c", "helmet", "", ""],
+  ["Wizard Frog", "frog", "#66c27a", "wizard", "", ""],
+  ["Fire Dragon", "dragon", "#ff7a3d", "flame", "", ""],
+  ["Royal Bunny", "bunny", "#fff0f6", "crown", "", ""],
+  // Mythic
+  ["Star Slime", "slime", "#ffe066", "star", "stars", ""],
+  ["Angel Cat", "cat", "#fff8e6", "halo,wings", "", "happy"],
+  ["Demon Pup", "dog", "#c23b4a", "horns,batwings", "", ""],
+  ["Phantom", "ghost", "#6a5acd", "", "", "glow"],
+  ["Galaxy Fox", "fox", "#3a3a8c", "", "galaxy", ""],
+  ["Thunder Dragon", "dragon", "#ffd23f", "bolt", "", ""],
+  ["Diamond Bear", "bear", "#aeefff", "crystal", "facets", ""],
+  ["Sun Chick", "chick", "#ffb02e", "sun", "", "happy"],
+  ["Void Slime", "slime", "#4a2a7a", "halo", "galaxy", "glow"],
+  ["King Frog", "frog", "#5fbf5a", "crown", "", ""],
+  // Divine
+  ["Aurora Bunny", "bunny", "rainbow", "", "", "happy"],
+  ["Cyber Dragon", "dragon", "#7a8aa8", "antenna,glasses", "rivets", ""],
+  ["Holy Pup", "dog", "#fff4d6", "halo,wings", "", "happy"],
+  ["Nebula Cat", "cat", "#5a3a9a", "", "galaxy", ""],
+  ["Inferno Bear", "bear", "#d93a2a", "flame", "cracks", ""],
+  ["Spirit Fox", "fox", "#bff0ff", "halo", "", "glow"],
+  ["Comet Chick", "chick", "#9fb8ff", "star", "stars", ""],
+  ["Abyss Slime", "slime", "#241d40", "horns", "galaxy", "glow"],
+  ["Royal Dragon", "dragon", "#b06cff", "crown", "", ""],
+  ["Ghost King", "ghost", "#e6e0ff", "crown", "", ""],
+  // Celestial
+  ["Celestial Bunny", "bunny", "#fffbe8", "halo,wings", "", "happy"],
+  ["Lunar Cat", "cat", "#2f3a7a", "moon", "stars", ""],
+  ["Solar Dragon", "dragon", "#ffa62e", "sun", "", ""],
+  ["Crystal Fox", "fox", "#c2f5ff", "crystal", "facets", ""],
+  ["Archangel Bear", "bear", "#fff6dc", "halo,wings", "gold", "happy"],
+  ["Shadow Dragon", "dragon", "#3a2a5a", "horns", "", "glow"],
+  ["Cosmic Slime", "slime", "#2a2a6e", "star", "galaxy", ""],
+  ["Chrono Frog", "frog", "#8fd4c8", "glasses,wizard", "stars", ""],
+  ["Starlight Pup", "dog", "#fff0a8", "star", "stars", "happy"],
+  ["Eclipse Cat", "cat", "#1f1f2f", "moon", "", "glow"],
+  // Cosmic
+  ["Prism Chick", "chick", "rainbow", "crystal", "", ""],
+  ["Titan Bear", "bear", "#ffd23f", "crown", "gold", ""],
+  ["Void Dragon", "dragon", "#2a1a4a", "halo", "galaxy", "glow"],
+  ["Seraph Fox", "fox", "#fff8e6", "halo,wings", "gold", "happy"],
+  ["Quantum Slime", "slime", "#5ad1ff", "antenna", "galaxy", ""],
+  ["Divine Bunny", "bunny", "#ffe9a8", "halo,wings", "gold", "happy"],
+  ["Infinity Cat", "cat", "rainbow", "halo", "", ""],
+  ["Galaxy Dragon", "dragon", "#2f2a7a", "star", "galaxy", ""],
+  ["Omega Ghost", "ghost", "#1a1530", "crown", "galaxy", "glow"],
+  ["Supernova Fox", "fox", "#ff7a2e", "sun", "stars", ""],
+  // Secret
+  ["Rainbow Slime", "slime", "rainbow", "crown", "", "happy"],
+  ["Emperor Frog", "frog", "#ffd23f", "crown", "gold", ""],
+  ["Chaos Dragon", "dragon", "#8a1a3a", "horns,batwings", "cracks", "glow"],
+  ["Heavenly Pup", "dog", "#fffbe8", "halo,wings", "gold", "happy"],
+  ["Big Bang Bear", "bear", "#2a1f5a", "sun", "galaxy", ""],
+  ["Eternal Chick", "chick", "#fff6dc", "halo,wings", "gold", "happy"],
+  ["Paradox Cat", "cat", "#1a1a2e", "halo", "galaxy", "glow"],
+  ["Genesis Dragon", "dragon", "rainbow", "halo,wings", "", ""],
+  ["Omniverse Slime", "slime", "#12102a", "crown", "galaxy", "glow"],
+  ["The Golden Cat", "cat", "#ffc933", "crown,sun", "gold", "happy"],
+];

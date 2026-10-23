@@ -1,22 +1,32 @@
-import type { Rarity } from "./rarity";
+import { PET_ROWS, Species } from "./pets";
+import { RARITY_ORDER, Rarity } from "./rarity";
 
 /**
  * How a pet attacks:
  * - shot:   fires at the closest enemy
- * - pierce: a beam that hits every enemy in its lane
- * - splash: lobs a blob that damages an area
+ * - pierce: a beam through everything in a line
+ * - splash: an explosion that damages an area
  * - zap:    lightning on random enemies
- * - buff:   no attack, boosts all damage by `damage`%
+ * - buff:   no attack, boosts the whole team's damage by `damage`%
  */
 export type PetKind = "shot" | "pierce" | "splash" | "zap" | "buff";
 
 export interface ItemDef {
   id: string;
+  index: number;
   name: string;
+  /** base chance: 1 in this many rolls (before luck) */
+  oneIn: number;
   rarity: Rarity;
+  species: Species;
+  /** body colour, or "rainbow" */
+  color: string;
+  accs: string[];
+  pattern: string;
+  eyes: string;
   kind: PetKind;
-  /** colour of its attacks */
-  color: number;
+  /** attack colour */
+  fx: number;
   damage: number;
   /** milliseconds between attacks */
   cooldown: number;
@@ -25,59 +35,97 @@ export interface ItemDef {
   description: string;
 }
 
-/**
- * Every pet that can be rolled.
- * To add a new pet: add an entry here, then add it to a die in dice.ts.
- */
-export const ITEMS: Record<string, ItemDef> = {
-  pebble: {
-    id: "pebble", name: "Pebble Slime", rarity: "common", kind: "shot", color: 0xa8a29e,
-    damage: 6, cooldown: 1200, count: 1, description: "Spits little rocks.",
-  },
-  leaf: {
-    id: "leaf", name: "Leaf Slime", rarity: "common", kind: "shot", color: 0x84cc16,
-    damage: 4, cooldown: 700, count: 1, description: "Fast leaf shots.",
-  },
-  ember: {
-    id: "ember", name: "Ember Slime", rarity: "uncommon", kind: "splash", color: 0xfb923c,
-    damage: 10, cooldown: 1800, count: 1, description: "Lobs fireballs that hit an area.",
-  },
-  bubble: {
-    id: "bubble", name: "Bubble Cat", rarity: "uncommon", kind: "buff", color: 0x7dd3fc,
-    damage: 20, cooldown: 0, count: 0, description: "Cheers the team on.",
-  },
-  spark: {
-    id: "spark", name: "Spark Slime", rarity: "rare", kind: "zap", color: 0xfacc15,
-    damage: 25, cooldown: 1600, count: 2, description: "Zaps random enemies.",
-  },
-  frost: {
-    id: "frost", name: "Frost Slime", rarity: "rare", kind: "pierce", color: 0x67e8f9,
-    damage: 18, cooldown: 1500, count: 1, description: "Ice beam through a whole lane.",
-  },
-  lava: {
-    id: "lava", name: "Lava Slime", rarity: "epic", kind: "splash", color: 0xef4444,
-    damage: 45, cooldown: 1500, count: 2, description: "Rains lava on the horde.",
-  },
-  thunderCat: {
-    id: "thunderCat", name: "Thunder Cat", rarity: "legendary", kind: "zap", color: 0xfde047,
-    damage: 90, cooldown: 1200, count: 4, description: "Calls down a lightning storm.",
-  },
-  voidSlime: {
-    id: "voidSlime", name: "Void Slime", rarity: "mythical", kind: "pierce", color: 0xa855f7,
-    damage: 220, cooldown: 1000, count: 2, description: "Tears holes in reality.",
-  },
-  goldenCat: {
-    id: "goldenCat", name: "Golden Cat", rarity: "secret", kind: "shot", color: 0xffd700,
-    damage: 800, cooldown: 400, count: 2, description: "Meow. Deletes everything.",
-  },
+const NICE = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5];
+
+/** Rounds to a "nice" number: integers below 20, steps of 5 below 100, then 1/1.2/1.5/2/2.5/3/4/5/6/7.5 x 10^n. */
+function niceSteps(v: number): number[] {
+  if (v < 20) return [Math.max(2, Math.round(v))];
+  if (v < 100) return [Math.round(v / 5) * 5];
+  const e = Math.floor(Math.log10(v));
+  return NICE.map((m) => m * 10 ** e).concat(10 ** (e + 1));
+}
+
+function nextNice(after: number): number {
+  if (after < 19) return after + 1;
+  if (after < 95) return Math.ceil((after + 1) / 5) * 5;
+  const e = Math.floor(Math.log10(after));
+  const steps = NICE.map((m) => m * 10 ** e).concat(10 ** (e + 1), 1.2 * 10 ** (e + 1));
+  return steps.find((s) => s > after * 1.0001)!;
+}
+
+/** 1 in 2 for the first pet, rising along a curve to 1 in 500Sp for the last. */
+function oddsCurve(count: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i === count - 1) {
+      out.push(5e26);
+      continue;
+    }
+    const v = 2 * 10 ** (26.4 * (i / (count - 1)) ** 1.6);
+    const steps = niceSteps(v);
+    let n = steps.reduce((best, s) => (Math.abs(Math.log(s / v)) < Math.abs(Math.log(best / v)) ? s : best), steps[0]);
+    const prev = out[i - 1] ?? 1;
+    if (n <= prev) n = nextNice(prev);
+    out.push(n);
+  }
+  return out;
+}
+
+function kindFor(accs: string[], pattern: string): PetKind {
+  const has = (...a: string[]) => a.some((x) => accs.includes(x) || pattern === x);
+  if (has("halo", "wings", "flower", "bubble")) return "buff";
+  if (has("flame", "sun", "cracks", "rock")) return "splash";
+  if (has("bolt", "sparkantenna", "antenna")) return "zap";
+  if (has("icecrown", "crystal", "galaxy", "frost", "moon")) return "pierce";
+  return "shot";
+}
+
+const FX: Record<PetKind, number> = { shot: 0xfff2a0, pierce: 0x9ff3ff, splash: 0xffa23a, zap: 0xffe14d, buff: 0xffd86b };
+
+const DESCRIPTION: Record<PetKind, string> = {
+  shot: "Shoots the closest enemy.",
+  pierce: "Fires a beam through every enemy in a line.",
+  splash: "Blasts an area with explosions.",
+  zap: "Strikes random enemies with lightning.",
+  buff: "Cheers the team on: boosts all damage.",
 };
+
+const ODDS = oddsCurve(PET_ROWS.length);
+
+export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accs, pattern, eyes], index) => {
+  const accList = accs ? accs.split(",") : [];
+  const tier = Math.floor(index / 10);
+  // very rare angels attack with holy lightning instead of only cheering
+  const kind = kindFor(accList, pattern) === "buff" && tier >= 6 ? "zap" : kindFor(accList, pattern);
+  const base = 5 * 1.45 ** index;
+  return {
+    id: name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+    index,
+    name,
+    oneIn: ODDS[index],
+    rarity: RARITY_ORDER[Math.min(tier, RARITY_ORDER.length - 1)],
+    species,
+    color,
+    accs: accList,
+    pattern,
+    eyes,
+    kind,
+    fx: FX[kind],
+    damage: kind === "buff" ? 10 + tier * 12 : Math.round(base * (kind === "splash" ? 0.8 : kind === "shot" ? 1 : 0.9)),
+    cooldown: { shot: 1000, pierce: 1500, splash: 1600, zap: 1400, buff: 0 }[kind],
+    count: 1 + Math.floor(tier / 3),
+    description: DESCRIPTION[kind],
+  };
+});
+
+export const ITEMS: Record<string, ItemDef> = Object.fromEntries(PET_LIST.map((p) => [p.id, p]));
 
 export type Variant = "normal" | "golden" | "rainbow";
 
 export const VARIANT_INFO: Record<Variant, { label: string; mult: number }> = {
   normal: { label: "", mult: 1 },
-  golden: { label: "Golden ", mult: 2.5 },
-  rainbow: { label: "Rainbow ", mult: 6 },
+  golden: { label: "Golden ", mult: 3 },
+  rainbow: { label: "Rainbow ", mult: 10 },
 };
 
 /** How many copies fuse into the next variant. */
@@ -87,7 +135,7 @@ export function nextVariant(v: Variant): Variant | null {
   return v === "normal" ? "golden" : v === "golden" ? "rainbow" : null;
 }
 
-/** Inventory key, e.g. "pebble:golden". */
+/** Inventory key, e.g. "kitten:golden". */
 export type ItemKey = string;
 export const makeKey = (id: string, v: Variant): ItemKey => `${id}:${v}`;
 export function parseKey(key: ItemKey): { def: ItemDef; variant: Variant } {

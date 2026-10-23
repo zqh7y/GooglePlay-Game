@@ -2,13 +2,18 @@ import Phaser from "phaser";
 
 /** Low-level canvas helpers shared by all the procedural art. */
 export type Ctx = CanvasRenderingContext2D;
+export type Paint = string | CanvasGradient;
 
-/** The dark outline colour used on every character and UI element. */
-export const INK = "#26183f";
-export const INK_N = 0x26183f;
+/** The warm dark-brown outline used on every character and UI element. */
+export const INK = "#4a2f1d";
+export const INK_N = 0x4a2f1d;
 
 export function rgba(c: number, a = 1): string {
   return `rgba(${(c >> 16) & 255},${(c >> 8) & 255},${c & 255},${a})`;
+}
+
+export function hexToNum(hex: string): number {
+  return parseInt(hex.replace("#", ""), 16);
 }
 
 export function mix(a: number, b: number, t: number): number {
@@ -35,6 +40,11 @@ export function ellipse(ctx: Ctx, x: number, y: number, rx: number, ry: number, 
   ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
 }
 
+export function circle(ctx: Ctx, x: number, y: number, r: number): void {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+}
+
 export function linear(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, stops: [number, string][]): CanvasGradient {
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
   stops.forEach(([o, c]) => g.addColorStop(o, c));
@@ -47,7 +57,7 @@ export function radial(ctx: Ctx, x: number, y: number, r: number, stops: [number
   return g;
 }
 
-export function outline(ctx: Ctx, width = 6, color = INK): void {
+export function outline(ctx: Ctx, width = 5, color = INK): void {
   ctx.lineWidth = width;
   ctx.strokeStyle = color;
   ctx.lineJoin = "round";
@@ -55,44 +65,48 @@ export function outline(ctx: Ctx, width = 6, color = INK): void {
   ctx.stroke();
 }
 
-export function fill(ctx: Ctx, style: string | CanvasGradient): void {
+export function fill(ctx: Ctx, style: Paint): void {
   ctx.fillStyle = style;
   ctx.fill();
 }
 
 /** Fill the current path, then outline it. */
-export function fillOutline(ctx: Ctx, style: string | CanvasGradient, width = 6): void {
+export function fillOutline(ctx: Ctx, style: Paint, width = 5): void {
   fill(ctx, style);
   outline(ctx, width);
 }
 
 /**
- * Soft 3D shading over the current path: light from the top-left, shadow bottom-right.
- * Call after filling the base colour.
+ * Flat 2D cel-shaded shape: dark colour, then the base colour shifted up-left
+ * (leaving a shadow crescent bottom-right), optional decoration, then the outline.
  */
-export function shadeVolume(ctx: Ctx, cx: number, cy: number, r: number, strength = 1): void {
+export function celShape(ctx: Ctx, path: () => void, base: Paint, dark: Paint, r: number, deco?: () => void, width = 5): void {
+  path();
+  fill(ctx, dark);
   ctx.save();
+  path();
   ctx.clip();
-  ctx.fillStyle = radial(ctx, cx + r * 0.25, cy + r * 0.3, r * 1.25, [
-    [0, "rgba(255,255,255,0)"],
-    [0.55, "rgba(0,0,0,0)"],
-    [1, `rgba(20,0,40,${0.38 * strength})`],
-  ], cx - r * 0.35, cy - r * 0.45, r * 0.05);
-  ctx.fillRect(cx - r * 2, cy - r * 2, r * 4, r * 4);
-  ctx.fillStyle = radial(ctx, cx - r * 0.35, cy - r * 0.45, r * 0.9, [
-    [0, `rgba(255,255,255,${0.35 * strength})`],
-    [1, "rgba(255,255,255,0)"],
-  ]);
-  ctx.fillRect(cx - r * 2, cy - r * 2, r * 4, r * 4);
+  ctx.save();
+  ctx.translate(-r * 0.1, -r * 0.14);
+  path();
+  fill(ctx, base);
   ctx.restore();
+  deco?.();
+  ctx.restore();
+  path();
+  outline(ctx, width);
 }
 
-/** Glossy highlight blob, the "shine" on cartoon objects. */
-export function gloss(ctx: Ctx, x: number, y: number, rx: number, ry: number, rot = -0.6, a = 0.75): void {
-  ellipse(ctx, x, y, rx, ry, rot);
-  fill(ctx, `rgba(255,255,255,${a})`);
-  ellipse(ctx, x + rx * 1.35, y - ry * 0.6, rx * 0.28, rx * 0.28);
-  fill(ctx, `rgba(255,255,255,${a * 0.8})`);
+/** A thick outlined stroke (tails, stems, antennae). */
+export function strokeShape(ctx: Ctx, path: () => void, width: number, paint: Paint): void {
+  path();
+  outline(ctx, width + 9);
+  path();
+  ctx.lineWidth = width;
+  ctx.strokeStyle = paint;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke();
 }
 
 /** Four-pointed twinkle star. */
@@ -126,10 +140,10 @@ export function boltPath(ctx: Ctx, x: number, y: number, s: number): void {
   ctx.closePath();
 }
 
-export function rainbowGradient(ctx: Ctx, x0: number, y0: number, x1: number, y1: number): CanvasGradient {
-  return linear(ctx, x0, y0, x1, y1, [
-    [0, "#ff5f6d"], [0.2, "#ffb347"], [0.4, "#fff35c"], [0.6, "#5ef08a"], [0.8, "#4fc3ff"], [1, "#b67bff"],
-  ]);
+export const RAINBOW = ["#ff6b81", "#ffb347", "#fff35c", "#6ff08a", "#5ac8ff", "#b98aff"];
+
+export function rainbowGradient(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, dark = 0): CanvasGradient {
+  return linear(ctx, x0, y0, x1, y1, RAINBOW.map((c, i) => [i / (RAINBOW.length - 1), dark ? rgba(darken(hexToNum(c), dark)) : c]));
 }
 
 /** Create (once) a canvas texture of the given size and draw into it. Returns the key. */

@@ -1,74 +1,66 @@
-import { DiceDef, DiceEntry, PITY_ROLLS } from "../data/dice";
-import { ITEMS, ItemDef, makeKey } from "../data/items";
-import { rarityRank } from "../data/rarity";
+import { ItemDef, PET_LIST, makeKey } from "../data/items";
+import { RARITY_ORDER, rarityRank } from "../data/rarity";
 import { addItem, persist, save } from "./save";
 
-const RARE = rarityRank("rare");
-const LEGENDARY = rarityRank("legendary");
+const RAREST_FIRST = [...PET_LIST].reverse();
 
-/** Luck multiplies the weight of Rare and better entries. */
-function luckyPool(die: DiceDef, luck: number): DiceEntry[] {
-  return die.pool.map((e) => ({
-    itemId: e.itemId,
-    weight: rarityRank(ITEMS[e.itemId].rarity) >= RARE ? e.weight * luck : e.weight,
-  }));
+/** True with probability p, accurate even for tiny chances like 1 in 500Sp. */
+function chance(p: number): boolean {
+  if (p >= 1) return true;
+  while (p < 1e-9) {
+    if (Math.random() >= 1e-9) return false;
+    p *= 1e9;
+  }
+  return Math.random() < p;
 }
 
-function pickWeighted(pool: DiceEntry[]): DiceEntry {
-  const total = pool.reduce((s, e) => s + e.weight, 0);
-  let r = Math.random() * total;
-  for (const e of pool) {
-    r -= e.weight;
-    if (r < 0) return e;
+/**
+ * RNG roll in the style of Roblox RNG games: check pets from rarest to most common,
+ * each with chance luck / oneIn. Luck higher than a pet's odds guarantees at least that pet.
+ */
+export function rollPet(luck: number): ItemDef {
+  for (const p of RAREST_FIRST) {
+    if (p.index === 0) break;
+    if (chance(luck / p.oneIn)) return p;
   }
-  return pool[pool.length - 1];
+  return PET_LIST[0];
 }
 
 export interface RollResult {
   item: ItemDef;
-  /** "1 in N" chance of this result with the luck used */
-  oneIn: number;
-  /** true when this roll was forced by the pity counter */
-  pity: boolean;
-  /** first time the player has ever owned this item */
   isNew: boolean;
 }
 
-/** Roll one die: pays nothing (caller pays), adds the pet to the inventory. */
-export function rollDie(die: DiceDef, luck: number): RollResult {
-  save.pity++;
-  save.totalRolls++;
-
-  let pool = luckyPool(die, luck);
-  const pity = save.pity >= PITY_ROLLS;
-  if (pity) {
-    pool = pool.filter((e) => rarityRank(ITEMS[e.itemId].rarity) >= LEGENDARY);
+export function rollMany(n: number, luck: number): RollResult[] {
+  const results: RollResult[] = [];
+  for (let i = 0; i < n; i++) {
+    const item = rollPet(luck);
+    const isNew = !save.discovered.includes(item.id);
+    if (isNew) save.discovered.push(item.id);
+    addItem(makeKey(item.id, "normal"));
+    save.totalRolls++;
+    save.bestRoll = Math.max(save.bestRoll, item.oneIn);
+    results.push({ item, isNew });
   }
-
-  const item = ITEMS[pickWeighted(pool).itemId];
-  if (rarityRank(item.rarity) >= LEGENDARY) save.pity = 0;
-
-  const isNew = !save.discovered.includes(item.id);
-  if (isNew) save.discovered.push(item.id);
-  addItem(makeKey(item.id, "normal"));
   persist();
-  return { item, oneIn: oneIn(die, item.id, luck), pity, isNew };
+  return results;
 }
 
-export function oneIn(die: DiceDef, itemId: string, luck: number): number {
-  const pool = luckyPool(die, luck);
-  const total = pool.reduce((s, e) => s + e.weight, 0);
-  const entry = pool.find((e) => e.itemId === itemId);
-  return entry ? Math.max(1, Math.round(total / entry.weight)) : 0;
+/** Chance per roll of landing each rarity tier, with the given luck. */
+export function tierChances(luck: number): number[] {
+  const out = RARITY_ORDER.map(() => 0);
+  let remaining = 1;
+  for (const p of RAREST_FIRST) {
+    if (p.index === 0) break;
+    const c = Math.min(1, luck / p.oneIn);
+    out[rarityRank(p.rarity)] += remaining * c;
+    remaining *= 1 - c;
+  }
+  out[0] += remaining;
+  return out;
 }
 
-/** Odds of each entry, for the odds popup. */
-export function oddsOf(die: DiceDef, luck: number): { item: ItemDef; percent: string }[] {
-  const pool = luckyPool(die, luck);
-  const total = pool.reduce((s, e) => s + e.weight, 0);
-  return pool.map((e) => {
-    const p = (e.weight / total) * 100;
-    const percent = p >= 1 ? p.toFixed(1) + "%" : p >= 0.1 ? p.toFixed(2) + "%" : `1 in ${Math.round(total / e.weight).toLocaleString()}`;
-    return { item: ITEMS[e.itemId], percent };
-  });
+/** The rarest pet whose odds your luck already beats (you'll never roll worse). */
+export function luckFloor(luck: number): ItemDef {
+  return RAREST_FIRST.find((p) => p.oneIn <= luck) ?? PET_LIST[0];
 }

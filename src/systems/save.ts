@@ -1,43 +1,48 @@
-import { FUSE_COST, ItemKey, makeKey, nextVariant, parseKey } from "../data/items";
-import type { UpgradeId } from "../data/upgrades";
+import { FUSE_COST, ItemKey, PET_LIST, makeKey, nextVariant, parseKey } from "../data/items";
 
 export interface SaveData {
-  coins: number;
+  cash: number;
+  gems: number;
   /** item key -> how many you own */
   inventory: Record<ItemKey, number>;
-  /** up to MAX_EQUIPPED pets fighting next to the cat */
+  /** pets fighting next to the cat */
   equipped: ItemKey[];
-  /** rolls since the last Legendary+ */
-  pity: number;
-  totalRolls: number;
-  /** item ids ever obtained (for the NEW! tag) */
+  /** pet ids ever obtained */
   discovered: string[];
   stage: number;
   wave: number;
   bestStage: number;
-  upgrades: Record<UpgradeId, number>;
-  /** for offline earnings */
+  /** upgrade tree node id -> level */
+  tree: Record<string, number>;
+  autoRoll: boolean;
+  potionUntil: number;
+  totalRolls: number;
+  /** rarest "1 in N" ever rolled */
+  bestRoll: number;
   lastSeen: number;
-  coinsPerSec: number;
+  cashPerSec: number;
 }
 
-export const MAX_EQUIPPED = 4;
-const STORAGE_KEY = "dice-idle-save-v1";
+const STORAGE_KEY = "dice-idle-save-v2";
+const STARTER = PET_LIST[0].id;
 
 function fresh(): SaveData {
   return {
-    coins: 300,
-    inventory: { [makeKey("pebble", "normal")]: 1 },
-    equipped: [makeKey("pebble", "normal")],
-    pity: 0,
-    totalRolls: 0,
-    discovered: ["pebble"],
+    cash: 0,
+    gems: 10,
+    inventory: { [makeKey(STARTER, "normal")]: 1 },
+    equipped: [makeKey(STARTER, "normal")],
+    discovered: [STARTER],
     stage: 1,
     wave: 1,
     bestStage: 1,
-    upgrades: { power: 0, fireRate: 0, health: 0, luck: 0 },
+    tree: {},
+    autoRoll: false,
+    potionUntil: 0,
+    totalRolls: 0,
+    bestRoll: 2,
     lastSeen: Date.now(),
-    coinsPerSec: 0,
+    cashPerSec: 0,
   };
 }
 
@@ -45,8 +50,11 @@ function load(): SaveData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const data = JSON.parse(raw);
-      return { ...fresh(), ...data, upgrades: { ...fresh().upgrades, ...data.upgrades } };
+      const data = { ...fresh(), ...JSON.parse(raw) } as SaveData;
+      // drop anything that no longer exists
+      for (const key of Object.keys(data.inventory)) if (!parseKey(key).def) delete data.inventory[key];
+      data.equipped = data.equipped.filter((k) => data.inventory[k]);
+      return data;
     }
   } catch {
     // storage unavailable (private mode etc.) — play without saving
@@ -90,18 +98,15 @@ export function fuse(key: ItemKey): ItemKey | null {
   removeItem(key, FUSE_COST);
   const newKey = makeKey(def.id, next);
   addItem(newKey);
-  // keep the slot pointing at something useful
-  if (wasEquipped && !save.equipped.includes(key) && !save.equipped.includes(newKey)) {
-    save.equipped.push(newKey);
-  }
+  if (wasEquipped && !save.equipped.includes(key) && !save.equipped.includes(newKey)) save.equipped.push(newKey);
   persist();
   return newKey;
 }
 
-export function toggleEquip(key: ItemKey): void {
+export function toggleEquip(key: ItemKey, maxSlots: number): void {
   if (save.equipped.includes(key)) {
     save.equipped = save.equipped.filter((k) => k !== key);
-  } else if (save.equipped.length < MAX_EQUIPPED) {
+  } else if (save.equipped.length < maxSlots) {
     save.equipped.push(key);
   }
   persist();
