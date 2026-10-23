@@ -550,12 +550,19 @@ export class ShopScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     const H = s.scale.height;
-    const cy = H * 0.4;
+    // everything is centred on the screen: a chest sits above its rewards, a gift bursts
+    // right where its rewards appear, and the light rays shine from behind them
+    const cols = Math.min(4, rewards.length);
+    const rows = Math.ceil(rewards.length / cols);
+    const rowH = 210;
+    const block = (rows - 1) * rowH;
+    const cy = chest ? H / 2 - 120 - block / 2 : H / 2 - block / 2;
+    const firstRow = chest ? cy + 270 : cy;
     const dim = s.add.rectangle(0, 0, W, H, 0x1a0e08, 0.82).setOrigin(0).setInteractive();
-    const rays = s.add.image(W / 2, cy, "rays").setScale(2).setTint(0xffe066).setAlpha(0);
-    const head = text(s, W / 2, cy - 380, title, 84, "#ffe066").setScale(0);
+    const rays = s.add.image(W / 2, chest ? cy : cy + block / 2, "rays").setScale(2).setTint(0xffe066).setAlpha(0);
+    const head = text(s, W / 2, cy - 330, title, 84, "#ffe066").setScale(0);
     const box = s.add.image(W / 2, cy, chest ?? "icon_gift").setScale(chest ? 2.6 : 2.2);
-    const tap = text(s, W / 2, H - 260, "TAP TO CONTINUE", 40).setAlpha(0);
+    const tap = text(s, W / 2, firstRow + block + 230, "TAP TO CONTINUE", 40).setAlpha(0);
     const root = s.add.container(0, 0, [dim, rays, head, box, tap]).setDepth(6500);
     this.overlay = root;
     s.tweens.add({ targets: head, scale: 1, duration: 350, ease: "Back.out" });
@@ -569,13 +576,13 @@ export class ShopScreen extends Screen {
       else s.tweens.add({ targets: box, scale: 0, alpha: 0, duration: 200 });
       s.tweens.add({ targets: rays, alpha: 0.55, duration: 300 });
       s.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
-      // rewards burst out into a grid
-      const cols = Math.min(4, rewards.length);
+      // rewards burst out into a centred grid
       rewards.forEach((rw, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = W / 2 + (col - (cols - 1) / 2) * 220;
-        const y = cy + 250 + row * 210;
+        const inRow = Math.min(cols, rewards.length - row * cols);
+        const x = W / 2 + (col - (inRow - 1) / 2) * 220;
+        const y = firstRow + row * rowH;
         const icon = s.add.image(0, 0, rw.icon);
         icon.setScale(110 / Math.max(icon.width, icon.height));
         const item = s.add.container(W / 2, cy, [

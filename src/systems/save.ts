@@ -65,6 +65,8 @@ export interface SaveData {
   giftCount: number;
   /** pets found but not looked at yet on the Pets screen */
   newPets: string[];
+  /** monster mutations already announced */
+  mutSeen: string[];
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
@@ -107,6 +109,7 @@ function fresh(): SaveData {
     superCount: 0,
     giftCount: 0,
     newPets: [],
+    mutSeen: [],
   };
 }
 

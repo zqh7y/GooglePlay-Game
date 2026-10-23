@@ -5,8 +5,9 @@ import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
-import { gunKey } from "../data/guns";
-import { CLASS_SIZES, PET_LIST } from "../data/items";
+import { STARTER_GUN, gunKey } from "../data/guns";
+import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
+import { mutationsAt } from "../data/mutations";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -20,7 +21,10 @@ import {
 import { RollResult, classChances, luckFloor, rollMany } from "../systems/roll";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
-import { autoUnlocked, canBuy, dicePerRoll, luck, luckyEvery, luckyMult, offlineRate, petSlots, potionActive, potionMult, rollTime } from "../systems/stats";
+import {
+  autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
+} from "../systems/stats";
+import { heroMaxHp, teamDps } from "../systems/power";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
@@ -74,6 +78,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private lobbyTitle!: Phaser.GameObjects.Text;
   private lobbyLand!: Phaser.GameObjects.Text;
   private lobbyBest!: Phaser.GameObjects.Text;
+  /** which monster mutations this stage has */
+  private lobbyMuts!: Phaser.GameObjects.Text;
   private overlay!: Phaser.GameObjects.Graphics;
   private joyG!: Phaser.GameObjects.Graphics;
   private mini!: Phaser.GameObjects.Image;
@@ -91,6 +97,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private stageText!: Phaser.GameObjects.Text;
   private crystalIcon!: Phaser.GameObjects.Image;
   private luckPill!: Pill;
+  /** total damage per second of the hero and pets, above the BATTLE button */
+  private dpsPill!: Pill;
   /** Battle Boosts waiting for the next fight */
   private boostRow!: Phaser.GameObjects.Container;
   private boostKey = "";
@@ -241,6 +249,8 @@ export class UIScene extends Phaser.Scene implements Host {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
       this.lobbyLand.setText(regionForStage(save.stage).name);
       this.lobbyBest.setText(`Best: stage ${save.bestStage} / ${MAX_STAGE}`);
+      const muts = mutationsAt(save.stage);
+      fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
     }
   }
 
@@ -455,12 +465,15 @@ export class UIScene extends Phaser.Scene implements Host {
     this.lobbyTitle = text(this, 40, 178, "", 64, "#ffe6b8").setOrigin(0, 0.5);
     this.lobbyLand = text(this, 40, 236, "", 34).setOrigin(0, 0.5);
     this.lobbyBest = text(this, 40, 280, "", 26, "#ffe6b8").setOrigin(0, 0.5);
+    this.lobbyMuts = text(this, 40, 318, "", 24, "#e0c4ff").setOrigin(0, 0.5);
     const shade = this.add.graphics();
-    shade.fillStyle(0x3a2516, 0.55).fillRect(0, 0, W, 300);
-    this.lobby.add([shade, this.lobbyTitle, this.lobbyLand, this.lobbyBest]);
+    shade.fillStyle(0x3a2516, 0.55).fillRect(0, 0, W, 344);
+    this.lobby.add([shade, this.lobbyTitle, this.lobbyLand, this.lobbyBest, this.lobbyMuts]);
     const bottom = this.L.navTop;
-    this.luckPill = new Pill(this, W / 2, bottom - 330, 380, 70, "icon_clover", 32, "glass");
-    this.luckPill.setSize(380, 70).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
+    this.dpsPill = new Pill(this, W / 2 - 196, bottom - 330, 372, 76, "icon_sword", 34, "glass");
+    this.dpsPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showHero());
+    this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
+    this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
     const go = button(this, W / 2, bottom - 170, 640, 190, "orange", "BATTLE", () => {
       unlockAudio();
@@ -468,7 +481,7 @@ export class UIScene extends Phaser.Scene implements Host {
     }, { icon: "icon_sword", iconSize: 90, size: 80, sub: "Survive 5:00 and beat the boss" });
     this.tweens.add({ targets: go, scale: 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.boostRow = this.add.container(W / 2, bottom - 432);
-    this.lobby.add([this.luckPill, this.potionPill, this.boostRow, go]);
+    this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
     // quest tracker
     const qw = 400;
     this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
@@ -481,15 +494,29 @@ export class UIScene extends Phaser.Scene implements Host {
       this.questLabel, this.questG, this.questCount,
     ]).setSize(qw, 104).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showQuests());
     this.lobby.add(tracker);
+    // small round shortcuts down the left side
     const side = (i: number, icon: string, str: string, fn: () => void, badge?: () => boolean) => {
-      const x = 100;
-      const y = this.L.hudBottom + 100 + i * 140;
-      this.lobby.add(button(this, x, y, 160, 128, "peach", str, fn, { icon, iconSize: 60, stack: true, size: 26 }));
-      if (badge) this.addBadge(x + 60, y - 50, badge);
+      const x = 64;
+      const y = this.L.hudBottom + 70 + i * 122;
+      const b = this.add.container(x, y, [
+        this.add.circle(0, 0, 42, 0x3a2516, 0.7).setStrokeStyle(4, 0xffe6b8, 0.85),
+        this.add.image(0, -2, icon).setScale(54 / Math.max(this.textures.getFrame(icon).width, this.textures.getFrame(icon).height)),
+        text(this, 0, 52, str, 22, "#fff3dc"),
+      ]).setSize(96, 120).setInteractive({ useHandCursor: true });
+      b.on("pointerdown", () => this.tweens.add({ targets: b, scale: 0.88, duration: 60 }));
+      b.on("pointerout", () => b.setScale(1));
+      b.on("pointerup", () => {
+        b.setScale(1);
+        sfx.click();
+        fn();
+      });
+      this.lobby.add(b);
+      if (badge) this.addBadge(x + 32, y - 32, badge);
     };
     side(0, "icon_map", "Map", () => this.openMap());
     side(1, "icon_quest", "Quests", () => this.showQuests(), () => save.quests.some(questDone));
     side(2, "icon_gift", "Daily", () => this.showDaily(), () => dailyDay() >= 0);
+    side(3, "hero", "Hero", () => this.showHero());
 
     // ── the fight: clock, level, crystal, gun, pause and stats
     this.run = this.add.container(0, 0).setVisible(false);
@@ -525,7 +552,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   private addBadge(x: number, y: number, show: () => boolean): void {
-    const obj = this.add.container(x, y, [this.add.circle(0, 0, 21, 0xf03e3e).setStrokeStyle(5, INK_N), text(this, 0, -1, "!", 32)]).setVisible(false);
+    const obj = this.add.container(x, y, [this.add.circle(0, 0, 15, 0xf03e3e).setStrokeStyle(4, INK_N), text(this, 0, -1, "!", 24)]).setVisible(false);
     this.tweens.add({ targets: obj, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(obj);
     this.badges.push({ obj, show });
@@ -552,6 +579,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(luck())}`);
+      this.dpsPill.setValue(`${fmt(teamDps().total)} DPS`);
       const owned = BOOSTS.filter((b) => save.boosts[b.id]);
       const key = owned.map((b) => `${b.id}${save.boosts[b.id]}`).join();
       if (key !== this.boostKey) {
@@ -1159,6 +1187,61 @@ export class UIScene extends Phaser.Scene implements Host {
       this.toast(`Day ${day + 1} reward collected!`, "#ffe066");
       m.close();
     }, { size: 46 }).setEnabled(day >= 0));
+  }
+
+  /** Your hero up close: walking on a lit stage, total damage per second and where it comes from. */
+  private showHero(): void {
+    const dps = teamDps();
+    const h = 1320;
+    const m = this.showModal(modal(this, 940, h, "MY HERO", "orange", () => {
+      this.openModal = null;
+      walk.remove();
+    }));
+    const b = m.body;
+    const top = -h / 2;
+    const heroY = top + 400;
+    const rays = this.add.image(0, heroY - 120, "rays").setTint(0xffe066).setAlpha(0.35).setScale(0.85);
+    this.tweens.add({ targets: rays, angle: 360, duration: 16000, repeat: -1 });
+    const hero = this.add.image(0, heroY, "hero").setOrigin(0.5, 0.95);
+    hero.setScale(300 / hero.height);
+    let frame = 0;
+    const walk = this.time.addEvent({ delay: 230, loop: true, callback: () => hero.setTexture(++frame % 2 ? "hero_w1" : "hero_w2") });
+    this.tweens.add({ targets: hero, y: heroY - 10, duration: 460, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    b.add([
+      this.add.image(0, top + 250, panelTexture(this, "inset", 820, 330)), rays,
+      this.add.ellipse(0, heroY - 6, 300, 60, 0x2a1a10, 0.35), hero,
+      text(this, 0, top + 470, "TOTAL DAMAGE PER SECOND", 28, "#9a7a5a").setStroke("#ffffff", 0),
+      text(this, 0, top + 535, fmt(dps.total), 84, "#ffcf3a"),
+    ]);
+    // where the damage comes from
+    const rows: [string, string, number][] = [["hero", `Hero  (${STARTER_GUN.name})`, dps.hero]];
+    for (const [id, v] of Object.entries(dps.perPet)) rows.push([petTexture(this, id), ITEMS[id].name, v]);
+    const g = this.add.graphics();
+    b.add(g);
+    rows.forEach(([icon, name, v], i) => {
+      const y = top + 640 + i * 78;
+      const img = this.add.image(-370, y, icon);
+      img.setScale(60 / Math.max(img.width, img.height));
+      b.add([img, label(this, -320, y - 14, name, 28).setOrigin(0, 0.5), text(this, 380, y - 14, fmt(v), 32, "#ffe066").setOrigin(1, 0.5)]);
+      drawBar(g, -320, y + 12, 700, 14, dps.total ? v / dps.total : 0, i ? 0x7ad651 : 0xffb22e);
+    });
+    // other numbers
+    const stats: [string, string, string][] = [
+      ["icon_shield", "Health", fmt(heroMaxHp())],
+      ["icon_boot", "Speed", `x${moveSpeedMult().toFixed(2)}`],
+      ["icon_target", "Crit chance", `${Math.round(critChance() * 100)}%`],
+      ["icon_star", "Crit damage", `x${critDamage().toFixed(1)}`],
+    ];
+    stats.forEach(([icon, name, v], i) => {
+      const x = i % 2 ? 210 : -210;
+      const y = top + 980 + Math.floor(i / 2) * 110;
+      b.add([
+        this.add.image(x, y, panelTexture(this, "row", 400, 92)),
+        this.add.image(x - 150, y, icon).setScale(0.5),
+        label(this, x - 110, y - 16, name, 24, "#9a7a5a").setOrigin(0, 0.5),
+        text(this, x - 110, y + 16, v, 32, "#ffffff").setOrigin(0, 0.5),
+      ]);
+    });
   }
 
   showOdds(): void {

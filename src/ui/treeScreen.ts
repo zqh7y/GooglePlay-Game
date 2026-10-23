@@ -5,10 +5,22 @@ import { buyNode, canBuy, nodeOwned, nodeUnlocked } from "../systems/stats";
 import { sfx } from "../systems/sound";
 import { Layout } from "../layout";
 import { fmt } from "./format";
-import { button, fitText, label, text } from "./widgets";
+import { save } from "../systems/save";
+import { Button, button, drawBar, fitText, label, text } from "./widgets";
 
 const SIZE = 74;
 type State = "owned" | "ready" | "open" | "locked";
+
+/** What each path is for, in a few words. */
+const BRANCH_DESC: Record<Branch, string> = {
+  start: "",
+  luck: "Roll rarer pets",
+  roll: "Roll faster, more dice",
+  money: "Earn more money",
+  power: "Hit harder in battle",
+  team: "More pets, more health",
+  gems: "Gems and stronger potions",
+};
 
 /** Pointy-top hexagon path. */
 function hexPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
@@ -83,16 +95,22 @@ interface NodeView {
   hex: Phaser.GameObjects.Image;
   icon: Phaser.GameObjects.Image;
   name: Phaser.GameObjects.Text;
+  price: Phaser.GameObjects.Text;
   q: Phaser.GameObjects.Text;
   check: Phaser.GameObjects.Image;
   glow: Phaser.GameObjects.Image;
   state: State | "";
 }
 
+const BRANCHES = (Object.keys(BRANCH_INFO) as Branch[]).filter((b) => b !== "start");
+
 /**
  * The upgrade tree screen: a honeycomb you drag around (pinch or mouse wheel to zoom).
- * Owned hexes are bright in their branch colour, ones you can buy glow, ones you can't
- * afford yet are greyish, and locked ones are dark "?" hexes.
+ * Owned hexes are bright in their branch colour with a check, ones you can buy glow, ones
+ * you can't afford yet are greyish with their price in red, and locked ones are dark "?".
+ * Up top, one chip per path shows what it is for and how much of it you own (tap to jump
+ * there); at the bottom, the best next upgrade with a BUY button. A bouncing NEXT marker
+ * sits on that hexagon.
  */
 export class TreeScreen {
   readonly root: Phaser.GameObjects.Container;
@@ -105,28 +123,76 @@ export class TreeScreen {
   private refreshTimer = 0;
   private drag = { on: false, x: 0, y: 0, mx: 0, my: 0, moved: false, pinch: 0, scale: 1 };
   private pointers = new Map<number, { x: number; y: number }>();
+  private chips: { branch: Branch; count: Phaser.GameObjects.Text; bar: Phaser.GameObjects.Graphics; dot: Phaser.GameObjects.Arc }[] = [];
+  private nextMark: Phaser.GameObjects.Container;
+  private best: { panel: Phaser.GameObjects.Container; icon: Phaser.GameObjects.Image; name: Phaser.GameObjects.Text; info: Phaser.GameObjects.Text; buy: Button; node: TreeNode | null };
 
   constructor(private scene: Phaser.Scene, L: Layout, private onBuy: () => void, private toast: (s: string, c?: string) => void) {
     const W = scene.scale.width;
-    this.top = L.headerBottom + 110;
-    this.bottom = L.navTop;
+    this.top = L.headerBottom + 250;
+    this.bottom = L.navTop - 160;
     this.root = scene.add.container(0, 0).setDepth(3000).setVisible(false);
     const bg = scene.add.tileSprite(0, 0, W, L.navTop, backgroundTexture(scene)).setOrigin(0).setInteractive();
     this.map = scene.add.container(W / 2, (this.top + this.bottom) / 2);
     this.lines = scene.add.graphics();
     this.map.add(this.lines);
     for (const node of TREE) this.makeNode(node);
-    // branch colour legend
-    const legend = scene.add.container(0, 0);
-    const branches = (Object.keys(BRANCH_INFO) as Branch[]).filter((b) => b !== "start");
-    branches.forEach((b, i) => {
-      const x = 40 + (i % 3) * 340;
-      const y = L.headerBottom + 30 + Math.floor(i / 3) * 44;
-      const dot = scene.add.graphics().fillStyle(BRANCH_INFO[b].color, 1).fillCircle(x + 12, y, 12).lineStyle(4, 0x0a1a20, 1).strokeCircle(x + 12, y, 12);
-      legend.add([dot, text(scene, x + 34, y, BRANCH_INFO[b].label, 26).setOrigin(0, 0.5)]);
+    this.nextMark = scene.add.container(0, 0, [
+      scene.add.image(0, 0, "glow").setTint(0xffe066).setScale(0.6, 0.35).setAlpha(0.8),
+      scene.add.rectangle(0, 0, 112, 44, 0xffcf3a).setStrokeStyle(5, 0x4a2f1d),
+      text(scene, 0, -2, "NEXT", 28),
+      scene.add.triangle(0, 34, -14, 0, 14, 0, 0, 16, 0xffcf3a).setStrokeStyle(4, 0x4a2f1d),
+    ]).setVisible(false);
+    this.map.add(this.nextMark);
+
+    // the six paths: what they do and how much of each you own (tap to jump there)
+    const top = scene.add.container(0, 0);
+    const shade = scene.add.graphics();
+    shade.fillStyle(0x0d3a40, 0.85).fillRect(0, 0, W, L.headerBottom + 240);
+    top.add(shade);
+    BRANCHES.forEach((b, i) => {
+      const x = 20 + (i % 3) * 347;
+      const y = L.headerBottom + 10 + Math.floor(i / 3) * 96;
+      const info = BRANCH_INFO[b];
+      const g = scene.add.graphics();
+      g.fillStyle(0x0a2a30, 1).fillRoundedRect(0, 0, 333, 86, 18);
+      g.lineStyle(4, info.color, 1).strokeRoundedRect(0, 0, 333, 86, 18);
+      const dot = scene.add.circle(30, 26, 14, info.color).setStrokeStyle(4, 0x0a1a20);
+      const count = text(scene, 318, 26, "", 24, "#ffffff").setOrigin(1, 0.5);
+      const bar = scene.add.graphics();
+      const chip = scene.add.container(x, y, [
+        g, dot, text(scene, 54, 26, info.label, 26).setOrigin(0, 0.5), count,
+        label(scene, 18, 52, BRANCH_DESC[b], 20, "#bfe6e8").setOrigin(0, 0.5), bar,
+      ]).setSize(333, 86).setInteractive(new Phaser.Geom.Rectangle(0, 0, 333, 86), Phaser.Geom.Rectangle.Contains);
+      chip.on("pointerup", () => this.jumpTo(b));
+      top.add(chip);
+      this.chips.push({ branch: b, count, bar, dot });
     });
-    const hint = text(scene, W / 2, L.navTop - 40, "Drag to explore  •  Pinch to zoom  •  Tap a hexagon", 28, "#cfeff0");
-    this.root.add([bg, this.map, legend, hint]);
+    // what the colours mean
+    const ly = L.headerBottom + 216;
+    const key: [State, string][] = [["owned", "Owned"], ["ready", "Can buy"], ["open", "Need money"], ["locked", "Locked"]];
+    key.forEach(([st, str], i) => {
+      const x = 50 + i * 262;
+      top.add([scene.add.image(x, ly, hexTexture(scene, "luck", st)).setScale(0.26), text(scene, x + 30, ly, str, 24, "#cfeff0").setOrigin(0, 0.5)]);
+      if (st === "owned") top.add(scene.add.image(x + 12, ly - 12, "icon_check").setScale(0.2));
+      if (st === "locked") top.add(text(scene, x, ly - 1, "?", 24, "#7f93a3", { stroke: false }));
+    });
+
+    // the best next upgrade, always on screen
+    const by = L.navTop - 82;
+    const pg = scene.add.graphics();
+    pg.fillStyle(0x0d3a40, 0.95).fillRect(0, by - 78, W, 156);
+    pg.fillStyle(0xffcf3a, 1).fillRect(0, by - 78, W, 6);
+    const bIcon = scene.add.image(78, by, "icon_star").setScale(0.75);
+    const bName = text(scene, 140, by - 26, "", 32, "#ffe066").setOrigin(0, 0.5);
+    const bInfo = text(scene, 140, by + 18, "", 24, "#cfeff0").setOrigin(0, 0.5);
+    const buy = button(scene, W - 150, by, 250, 108, "green", "BUY", () => this.best.node && this.buy(this.best.node), { size: 36, sub: "", subIcon: "icon_cash" });
+    const panel = scene.add.container(0, 0, [pg, text(scene, 140, by - 60, "BEST NEXT UPGRADE", 20, "#8fd0d4").setOrigin(0, 0.5), bIcon, bName, bInfo, buy]);
+    const tapArea = scene.add.zone(0, by - 78, W - 300, 156).setOrigin(0).setInteractive();
+    tapArea.on("pointerup", () => this.best.node && this.focusOn(this.best.node, true));
+    panel.add(tapArea);
+    this.best = { panel, icon: bIcon, name: bName, info: bInfo, buy, node: null };
+    this.root.add([bg, this.map, top, panel]);
     this.setupInput(bg);
   }
 
@@ -158,11 +224,12 @@ export class TreeScreen {
     s.tweens.add({ targets: glow, alpha: { from: 0.35, to: 0.95 }, scale: { from: 0.7, to: 0.85 }, duration: 700, yoyo: true, repeat: -1 });
     const hex = s.add.image(x, y, hexTexture(s, node.branch, "locked"));
     const icon = s.add.image(x, y - 16, `icon_${node.icon}`).setScale(node.id === "start" ? 0.8 : 0.55);
-    const name = fitText(text(s, x, y + 34, node.name, 20), 112);
+    const name = fitText(text(s, x, y + 28, node.name, 20), 112);
+    const price = text(s, x, y + 52, "", 20);
     const q = text(s, x, y - 4, "?", 64, "#7f93a3", { stroke: false });
-    const check = s.add.image(x + 46, y - 44, "icon_check").setScale(0.4);
-    this.map.add([glow, hex, icon, name, q, check]);
-    this.views.set(node.id, { node, hex, icon, name, q, check, glow, state: "" });
+    const check = s.add.image(x + 46, y - 44, "icon_check").setScale(0.48);
+    this.map.add([glow, hex, icon, name, price, q, check]);
+    this.views.set(node.id, { node, hex, icon, name, price, q, check, glow, state: "" });
   }
 
   private stateOf(node: TreeNode): State {
@@ -171,11 +238,74 @@ export class TreeScreen {
     return canBuy(node) ? "ready" : "open";
   }
 
+  /** The best thing to buy now: the cheapest one you can afford, else the cheapest open one. */
+  private bestNext(): TreeNode | null {
+    const open = TREE.filter((n) => n.id !== "start" && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => a.cost - b.cost);
+    return open.find((n) => this.stateOf(n) === "ready") ?? open[0] ?? null;
+  }
+
+  /** Path chips, the NEXT marker and the best-next bar. */
+  private refreshGuide(): void {
+    for (const c of this.chips) {
+      const nodes = TREE.filter((n) => n.branch === c.branch);
+      const owned = nodes.filter((n) => nodeOwned(n.id)).length;
+      const canBuyHere = nodes.some((n) => this.stateOf(n) === "ready");
+      c.count.setText(`${owned}/${nodes.length}`).setColor(owned === nodes.length ? "#ffe066" : "#ffffff");
+      c.bar.clear();
+      drawBar(c.bar, 18, 68, 297, 10, owned / nodes.length, BRANCH_INFO[c.branch].color, 0x163a40);
+      c.dot.setScale(canBuyHere ? 1.25 : 1);
+    }
+    const node = this.bestNext();
+    this.best.node = node;
+    if (!node) {
+      this.nextMark.setVisible(false);
+      this.best.name.setText("Everything bought!");
+      this.best.info.setText("You own the whole tree");
+      this.best.buy.setVisible(false);
+      return;
+    }
+    const p = hexPos(node, SIZE + 4);
+    this.nextMark.setVisible(true).setX(p.x);
+    if (!this.nextMark.getData("y") || this.nextMark.getData("id") !== node.id) {
+      this.scene.tweens.killTweensOf(this.nextMark);
+      this.nextMark.setY(p.y - 112).setData("id", node.id).setData("y", 1);
+      this.scene.tweens.add({ targets: this.nextMark, y: p.y - 98, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    }
+    const ready = this.stateOf(node) === "ready";
+    this.best.icon.setTexture(`icon_${node.icon}`);
+    fitText(this.best.name.setText(`${node.name}  •  ${BRANCH_INFO[node.branch].label}`), this.scene.scale.width - 460);
+    fitText(this.best.info.setText(ready ? effectText(node) : `${effectText(node)}  •  need ${fmt(node.cost - save.cash)} more`), this.scene.scale.width - 460);
+    this.best.buy.setVisible(true).setColor(ready ? "green" : "grey").setSub(fmt(node.cost));
+  }
+
+  /** Jump to a path: its best open hexagon, with its info. */
+  private jumpTo(branch: Branch): void {
+    sfx.click();
+    const open = TREE.filter((n) => n.branch === branch && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => a.cost - b.cost);
+    const node = open.find((n) => this.stateOf(n) === "ready") ?? open[0] ?? TREE.filter((n) => n.branch === branch).pop();
+    if (node) this.focusOn(node, true);
+  }
+
+  /** Slide the map so a hexagon is in the middle, then (optionally) open its info. */
+  private focusOn(node: TreeNode, tip: boolean): void {
+    const p = hexPos(node, SIZE + 4);
+    const W = this.scene.scale.width;
+    this.closeTip();
+    this.scene.tweens.add({
+      targets: this.map, x: W / 2 - p.x * this.map.scale, y: (this.top + this.bottom) / 2 + 60 - p.y * this.map.scale, duration: 350, ease: "Cubic.out",
+      onComplete: () => tip && node.id !== "start" && this.showTip(node),
+    });
+  }
+
   /** Update hex colours and the connecting lines. */
   private refresh(force: boolean): void {
     let changed = force;
+    this.refreshGuide();
     for (const v of this.views.values()) {
       const st = this.stateOf(v.node);
+      const showPrice = st === "ready" || st === "open";
+      if (showPrice) v.price.setText(fmt(v.node.cost)).setColor(st === "ready" ? "#b6ff8a" : "#ff9a9a");
+      v.price.setVisible(showPrice);
       if (st === v.state) continue;
       changed = true;
       v.state = st;
@@ -313,7 +443,7 @@ export class TreeScreen {
     const sx = this.map.x + p.x * this.map.scale;
     const sy = this.map.y + p.y * this.map.scale;
     const w = 560;
-    const h = 260;
+    const h = 300;
     const below = sy - h - 90 < this.top;
     const tx = Phaser.Math.Clamp(sx, w / 2 + 20, W - w / 2 - 20);
     const ty = below ? sy + 90 * this.map.scale + h / 2 : sy - 90 * this.map.scale - h / 2;
@@ -325,6 +455,12 @@ export class TreeScreen {
       g,
       fitText(label(s, 0, -h / 2 + 46, st === "locked" ? "???" : node.name, 44, "#2a2a2a"), w - 60),
       fitText(label(s, 0, -h / 2 + 100, st === "locked" ? "Buy the hexagon before it first" : effectText(node), 32, "#6a6a6a"), w - 60),
+      fitText(label(s, 0, -h / 2 + 142, {
+        owned: "You own this",
+        ready: "You can buy this now!",
+        open: `Need ${fmt(node.cost - save.cash)} more money`,
+        locked: `Part of the ${BRANCH_INFO[node.branch].label} path`,
+      }[st], 26, st === "ready" ? "#3f9a2f" : st === "open" ? "#c0564a" : "#8a8a8a"), w - 60),
     ];
     if (st === "owned") {
       parts.push(text(s, 0, h / 2 - 62, "Purchased", 46, "#5fd14a"));

@@ -175,13 +175,14 @@ export class PetsScreen extends Screen {
     const mask = s.make.graphics({}, false).fillRect(0, gridTop + 6, W, gridBottom - gridTop - 12);
     list.setMask(mask.createGeometryMask());
     this.content.add(list);
-    const scale = this.tab === "pets" ? 0.8 : 0.72;
-    const cols = 4;
-    const colW = 245;
+    // five cards per row
+    const cols = 5;
+    const colW = 200;
+    const scale = 0.82;
     const rowH = CARD_H * scale + 22;
     const ids = this.tab === "pets" ? this.sorted() : PET_LIST.map((p) => p.id);
     // after your pets: the next ones to find, as "???" teasers that take you to the Roll screen
-    const teasers = this.tab === "pets" ? PET_LIST.filter((p) => !save.discovered.includes(p.id)).sort((a, b) => a.oneIn - b.oneIn).slice(0, 4 + ((4 - (ids.length % 4)) % 4)) : [];
+    const teasers = this.tab === "pets" ? PET_LIST.filter((p) => !save.discovered.includes(p.id)).sort((a, b) => a.oneIn - b.oneIn).slice(0, 5 + ((5 - (ids.length % 5)) % 5)) : [];
     teasers.forEach((p) => ids.push(p.id));
     ids.forEach((id, i) => {
       const x = W / 2 + ((i % cols) - (cols - 1) / 2) * colW;

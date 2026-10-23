@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
-import { INK_N } from "../art/draw";
+import { INK_N, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGunTextures } from "../art/guns";
 import { petTexture } from "../art/pets";
@@ -15,6 +15,8 @@ import { GunDef, STARTER_GUN, gunDps, gunKey, gunsOfTier } from "../data/guns";
 import { ITEMS, ItemDef, levelMult } from "../data/items";
 import { REGIONS, Region, regionForStage } from "../data/regions";
 import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
+import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
+import { makeMutationTextures } from "../art/mutations";
 import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGunTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -132,6 +134,14 @@ interface Enemy {
   phaseT: number;
   dashX: number;
   dashY: number;
+  /** mutations (see data/mutations.ts) and their state */
+  muts: MutationId[];
+  badge?: Phaser.GameObjects.Image;
+  speedMult: number;
+  lives: number;
+  blinkT: number;
+  ghostT: number;
+  phased: boolean;
 }
 
 interface Pet {
@@ -340,6 +350,7 @@ export class BattleScene extends Phaser.Scene {
     makeWorldTextures(this, REGIONS);
     makePickupTextures(this);
     makeGunTextures(this);
+    makeMutationTextures(this);
     this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
     Object.assign(this, {
@@ -1385,28 +1396,65 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private addEnemy(type: EnemyType, x: number, y: number, elite = false): Enemy {
+  /**
+   * A new monster. Most can spawn mutated (faster, teleporting, an extra life... more and
+   * harder mutations on later stages); `mutate: false` for the halves of a splitter.
+   */
+  private addEnemy(type: EnemyType, x: number, y: number, elite = false, mutate = true, size = 1): Enemy {
     const stage = save.stage;
-    const scale = type.boss ? 1.3 : elite ? 1.45 : 1;
+    const muts = mutate ? rollMutations(stage, elite, !!type.boss) : [];
+    const has = (m: MutationId) => muts.includes(m);
+    const scale = (type.boss ? 1.3 : elite ? 1.45 : 1) * (has("giant") ? 1.4 : 1) * size;
     const img = this.add.image(x, y, type.tex).setOrigin(0.5, type.flying ? 0.5 : 0.94).setDepth(y).setAlpha(0).setScale(0.3);
     this.tweens.add({ targets: img, alpha: 1, scale, duration: 350, ease: "Back.out" });
     if (type.flying) this.tweens.add({ targets: img, scaleY: scale * 0.85, duration: 160, yoyo: true, repeat: -1, delay: 350 });
     else this.tweens.add({ targets: img, angle: { from: -5, to: 5 }, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 350 });
-    const hp = Math.round(monsterHp(type.stats.hp, stage, this.minute) * (elite ? ELITE_MULT : 1));
+    const hp = Math.round(monsterHp(type.stats.hp, stage, this.minute) * (elite ? ELITE_MULT : 1) * (has("giant") ? 3 : 1));
+    // mutated monsters pay a little more
+    const bonus = muts.length ? 1 + 0.5 * muts.length : 1;
     const e: Enemy = {
       img, type, hp, maxHp: hp, elite,
-      cash: monsterCash(type.stats.cash, stage) * (elite ? 5 : 1),
-      xp: elite ? 8 : type.stats.xp,
+      cash: monsterCash(type.stats.cash, stage) * (elite ? 5 : 1) * bonus,
+      xp: Math.round((elite ? 8 : type.stats.xp) * bonus),
       dmg: type.stats.dmg * (1 + 0.05 * (stage - 1)) * (1 + 0.2 * this.minute) * (elite ? 1.5 : 1),
-      r: type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34,
+      r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
       flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0,
+      muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
+      blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false,
     };
-    if (elite) {
-      e.aura = this.add.image(x, y, "glow").setTint(0xff4a4a).setScale(1.3, 0.6).setAlpha(0.7).setDepth(y - 1);
+    if (elite || muts.length >= 2) {
+      const color = elite ? 0xff4a4a : MUTATION_BY_ID[muts[1]].color;
+      e.aura = this.add.image(x, y, "glow").setTint(color).setScale(1.3 * scale, 0.6 * scale).setAlpha(0.7).setDepth(y - 1);
       this.tweens.add({ targets: e.aura, alpha: 0.35, duration: 400, yoyo: true, repeat: -1 });
+    }
+    if (muts.length) {
+      e.badge = this.add.image(x, y, `mut_${muts[0]}`).setScale(type.boss ? 1.7 : 1.15);
+      this.announceMutations(muts);
     }
     this.enemies.push(e);
     return e;
+  }
+
+  /** The first time you meet a mutation, a big warning says what it does. */
+  private announceMutations(muts: MutationId[]): void {
+    for (const m of muts) {
+      if (save.mutSeen.includes(m)) continue;
+      save.mutSeen.push(m);
+      persist();
+      const def = MUTATION_BY_ID[m];
+      this.banner("NEW MUTATION!", "purple", 1000);
+      this.toast(`${def.name}: this monster ${def.desc}!`, rgba(def.color === 0xe8f4ff ? 0xffffff : def.color));
+    }
+  }
+
+  /** The mutation badge follows the monster (or goes away when it has none left). */
+  private refreshBadge(e: Enemy): void {
+    if (!e.muts.length) {
+      e.badge?.destroy();
+      e.badge = undefined;
+      return;
+    }
+    e.badge?.setTexture(`mut_${e.muts[0]}`);
   }
 
   /**
@@ -1699,7 +1747,9 @@ export class BattleScene extends Phaser.Scene {
         else e.img.clearTint();
       }
       e.aura?.setPosition(e.img.x, e.img.y - 10).setDepth(e.img.y - 1);
+      e.badge?.setPosition(e.img.x, e.img.y - e.img.displayHeight * (e.type.flying ? 0.5 : 0.95) - 24).setDepth(e.img.y + 2);
       if (frozen || !fighting) continue;
+      if (e.muts.length) this.mutantTick(e, delta);
       const heroD = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
       if (this.shielded || e.type.boss || heroD <= AGGRO) e.huntHero = true;
       e.toCrystal = !e.huntHero;
@@ -1710,8 +1760,20 @@ export class BattleScene extends Phaser.Scene {
       const dy = ty - e.img.y;
       const d = Math.hypot(dx, dy) || 1;
       const stop = e.toCrystal ? 200 : HERO_R + e.r - 10;
-      let speed = e.type.stats.speed;
-      if (e.type.boss) speed = this.bossMove(e, delta, dx / d, dy / d);
+      let speed = e.type.stats.speed * e.speedMult;
+      if (e.type.boss) speed = this.bossMove(e, delta, dx / d, dy / d) * e.speedMult;
+      // blinkers teleport a good way toward their target every few seconds
+      if (e.muts.includes("blink") && d > stop + 220) {
+        e.blinkT -= delta;
+        if (e.blinkT <= 0) {
+          e.blinkT = 2600 + Math.random() * 1800;
+          const jump = Math.min(d - stop - 80, 360);
+          this.puff.setParticleTint(0xb36aff);
+          this.puff.explode(10, e.img.x, e.img.y - 40);
+          e.img.setPosition(clampX(e.img.x + (dx / d) * jump), clampY(e.img.y + (dy / d) * jump));
+          this.puff.explode(10, e.img.x, e.img.y - 40);
+        }
+      }
       if (d > stop) {
         const step = (speed * delta) / 1000;
         const [mx, my] = e.phase === "dash" ? [e.dashX, e.dashY] : [dx / d, dy / d];
@@ -1742,6 +1804,8 @@ export class BattleScene extends Phaser.Scene {
       if (heroD < HERO_R + e.r + 10 && e.atkTimer <= 0) {
         e.atkTimer = 800;
         this.hurt(e.dmg * hurtMult);
+        // vampires heal by biting
+        if (e.muts.includes("vampire")) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.3);
         if (!this.fighting) return;
       }
       // ...and so does bumping into a pet
@@ -2014,7 +2078,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private hit(e: Enemy, dmg: number, quiet = false): void {
-    if (!this.enemies.includes(e)) return;
+    if (!this.enemies.includes(e) || e.phased) return;
+    if (e.muts.includes("armor")) dmg *= 0.5;
     const crit = Math.random() < critChance();
     const amount = Math.max(1, Math.round(dmg * (crit ? critDamage() : 1) * Phaser.Math.FloatBetween(0.9, 1.1)));
     e.hp -= amount;
@@ -2030,7 +2095,31 @@ export class BattleScene extends Phaser.Scene {
       if (crit) this.boom(e.img.x, hy + 30, 0.55);
     }
     this.damageNumber(e.img.x, hy, amount, crit);
+    if (e.hp <= 0 && e.lives > 0) {
+      // an extra life: it pops back up with some health
+      e.lives--;
+      e.hp = e.maxHp * 0.6;
+      e.muts = e.muts.filter((m) => m !== "lives");
+      this.refreshBadge(e);
+      this.puff.setParticleTint(0xff6a8a);
+      this.puff.explode(16, e.img.x, hy + 30);
+      this.tweens.add({ targets: e.img, scaleY: e.img.scaleY * 1.3, duration: 120, yoyo: true });
+      return;
+    }
     if (e.hp <= 0) this.kill(e);
+  }
+
+  /** Mutations that act over time: regrowing health and ghosts fading in and out. */
+  private mutantTick(e: Enemy, delta: number): void {
+    if (e.muts.includes("regen") && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.04 * (delta / 1000));
+    if (e.muts.includes("ghost")) {
+      e.ghostT = (e.ghostT + delta) % 4500;
+      const phased = e.ghostT < 1100;
+      if (phased !== e.phased) {
+        e.phased = phased;
+        this.tweens.add({ targets: e.img, alpha: phased ? 0.3 : 1, duration: 200 });
+      }
+    }
   }
 
   private damageNumber(x: number, y: number, amount: number, crit: boolean): void {
@@ -2045,6 +2134,21 @@ export class BattleScene extends Phaser.Scene {
   private kill(e: Enemy, sweep = false): void {
     this.enemies = this.enemies.filter((o) => o !== e);
     e.aura?.destroy();
+    e.badge?.destroy();
+    if (!sweep && e.muts.includes("split")) {
+      // a splitter breaks into two smaller monsters
+      for (const side of [-1, 1]) {
+        const c = this.addEnemy(e.type, clampX(e.img.x + side * 50), e.img.y, false, false, 0.7);
+        c.hp = c.maxHp = Math.max(1, Math.round(e.maxHp * 0.3));
+        c.huntHero = true;
+      }
+    }
+    if (!sweep && e.muts.includes("bomb")) {
+      // an exploder blows up: stay away!
+      this.boom(e.img.x, e.img.y - 40, 1.8);
+      this.cameras.main.shake(120, 0.005);
+      if (Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y) < 220) this.hurt(e.dmg * 1.2);
+    }
     const cy = e.img.y - e.img.displayHeight * 0.4;
     this.puff.setParticleTint(e.type.fx);
     this.puff.explode(e.type.boss ? 60 : sweep ? 6 : 14, e.img.x, cy);

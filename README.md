@@ -88,6 +88,32 @@ player needs per stage.
 
     Boosts you own are shown above the BATTLE button.
   - **Shelves**: dice, potions, money and gems (real-money gems are "coming soon").
+- **Monster mutations**: from stage 2 on, some monsters spawn mutated, with a badge over their head.
+  Deeper stages have more mutated monsters, and they can stack 2 or 3 mutations.
+
+  | Mutation | First stage | What it does |
+  |---|---|---|
+  | Swift | 2 | Runs much faster |
+  | Extra Life | 4 | Gets back up once |
+  | Blink | 7 | Teleports toward you |
+  | Armored | 12 | Takes half damage |
+  | Regrowing | 18 | Heals over time |
+  | Giant | 25 | Huge, with triple health |
+  | Splitter | 35 | Splits in two when beaten |
+  | Ghost | 45 | Fades out and can't be hit |
+  | Vampire | 60 | Heals when it bites you |
+  | Exploder | 75 | Blows up when beaten |
+
+  Bosses get mutations from stage 20. The first time you meet a mutation, a warning explains it. The
+  lobby lists the mutations of the current stage, and mutated monsters pay more.
+- **Lobby**: small round shortcuts (Map, Quests, Daily, Hero), your **total DPS** (hero plus pets) and
+  your luck. Tapping DPS or Hero opens **My Hero**: your character up close, total damage per second
+  split between the hero and each pet, health, speed and crits.
+- **Upgrades**:
+  - One chip per path at the top shows what it is for and how much you own. Tap a chip to jump there.
+  - A legend explains the states: owned, can buy, need money, locked.
+  - Every open hexagon shows its price (green when affordable).
+  - A bouncing **NEXT** marker and the **Best next upgrade** bar (with BUY) say what to get next.
 - **The Battle tab is a lobby**: the fight only starts when you press **BATTLE**. During a fight the tab bar
   and shops are gone; you only get **Pause** (resume, sound, music, give up) and **Stats**.
 - **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself. The camera is
@@ -154,6 +180,8 @@ player needs per stage.
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |
 | `src/data/boosts.ts` | The four Battle Boosts |
+| `src/data/mutations.ts` | Monster mutations and how often they appear per stage |
+| `src/systems/power.ts` | Damage per second of the hero and team (lobby and My Hero) |
 | `src/ui/mapScreen.ts` | The 100-stage journey map |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |
