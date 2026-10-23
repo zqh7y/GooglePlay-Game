@@ -10,6 +10,7 @@ import {
   AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, CRYSTAL_DIE_MS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
+import { BOOSTS, BoostDef } from "../data/boosts";
 import { GunDef, STARTER_GUN, gunDps, gunKey, gunsOfTier } from "../data/guns";
 import { ITEMS, ItemDef, levelMult } from "../data/items";
 import { REGIONS, Region, regionForStage } from "../data/regions";
@@ -272,6 +273,8 @@ export class BattleScene extends Phaser.Scene {
   private pendingLevels = 0;
   private skills: Partial<Record<SkillId, number>> = {};
   private revived = false;
+  /** a Second Chance boost: get back up once without gems */
+  private freeRevive = false;
   private reviveState: "fight" | "boss" = "fight";
   private stats = freshStats();
   private frozenUntil = 0;
@@ -341,7 +344,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
-      revived: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0, gun: STARTER_GUN, fireTimer: 0, reloadLeft: 0, idleGun: 0,
+      revived: false, freeRevive: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0, gun: STARTER_GUN, fireTimer: 0, reloadLeft: 0, idleGun: 0,
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(),
     });
@@ -432,12 +435,39 @@ export class BattleScene extends Phaser.Scene {
     this.placePickups();
     sfx.alarm();
     this.banner(`STAGE ${save.stage}`, "peach", 900);
+    const boosts = this.useBoosts();
     this.time.delayedCall(1500, () => {
       this.banner("SURVIVE 5:00!", "red", 900);
       this.state = "fight";
       music.play("battle");
       this.game.events.emit("stage-start");
+      if (boosts.length) this.toast(`Boosts on: ${boosts.map((b) => b.name).join(", ")}`, "#9ae6ff");
+      if (boosts.some((b) => b.id === "start")) {
+        this.pendingLevels += 2;
+        this.time.delayedCall(1400, () => this.offerSkill());
+      }
     });
+  }
+
+  /** Battle Boosts bought in the shop: each owned one is used up by this fight. */
+  private useBoosts(): BoostDef[] {
+    const used: BoostDef[] = [];
+    for (const b of BOOSTS) {
+      if (!save.boosts[b.id]) continue;
+      save.boosts[b.id]--;
+      used.push(b);
+      if (b.id === "gun") {
+        const guns = gunsOfTier("C");
+        this.setGun(guns[Math.floor(Math.random() * guns.length)]);
+      } else if (b.id === "revive") {
+        this.freeRevive = true;
+      } else if (b.id === "armor") {
+        this.crystalMax *= 1.5;
+        this.crystalHp = this.crystalMax;
+      }
+    }
+    if (used.length) persist();
+    return used;
   }
 
   private banner(str: string, color: string, ms: number): void {
@@ -1531,6 +1561,14 @@ export class BattleScene extends Phaser.Scene {
       this.boom(this.crystal.x, this.crystal.y - 100, 2.5);
     }
     this.banner(reason === "hero" ? "YOU FELL!" : reason === "crystal" ? "CRYSTAL BROKE!" : "YOU GAVE UP", "red", 1100);
+    if (this.freeRevive && reason !== "quit") {
+      this.freeRevive = false;
+      this.time.delayedCall(1300, () => {
+        this.banner("SECOND CHANCE!", "green", 900);
+        this.revive(true);
+      });
+      return;
+    }
     this.time.delayedCall(reason === "quit" ? 300 : 1300, () => {
       const result: StageResult = {
         stage: save.stage, reason, time: this.elapsed, stats: this.stats, canRevive: !this.revived && reason !== "quit", reviveGems: REVIVE_GEMS,
@@ -1543,12 +1581,18 @@ export class BattleScene extends Phaser.Scene {
     this.stageLost("quit");
   }
 
-  /** Spend gems to get back up once per stage: full health and a blast that clears the area. */
-  private revive(): void {
-    if (this.state !== "lost" || this.revived || save.gems < REVIVE_GEMS) return;
-    save.gems -= REVIVE_GEMS;
-    persist();
-    this.revived = true;
+  /**
+   * Spend gems to get back up once per stage (or a free Second Chance): full health and a
+   * blast that clears the area.
+   */
+  private revive(free = false): void {
+    if (this.state !== "lost") return;
+    if (!free) {
+      if (this.revived || save.gems < REVIVE_GEMS) return;
+      save.gems -= REVIVE_GEMS;
+      persist();
+      this.revived = true;
+    }
     this.state = this.reviveState;
     battle.mode = "run";
     this.heroHp = this.heroMax;
@@ -1563,7 +1607,7 @@ export class BattleScene extends Phaser.Scene {
     for (const e of [...this.enemies]) {
       if (Math.hypot(e.img.x - this.hero.x, e.img.y - this.hero.y) < 1200 && !e.type.boss) this.hit(e, e.maxHp * 10);
     }
-    this.banner("REVIVED!", "green", 900);
+    if (!free) this.banner("REVIVED!", "green", 900);
   }
 
   private retry(start: boolean): void {

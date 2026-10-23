@@ -4,6 +4,7 @@ import { petTexture } from "../art/pets";
 import { btnTexture, panelTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
+import { BOOSTS, BoostDef } from "../data/boosts";
 import { gunKey } from "../data/guns";
 import { PET_LIST } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
@@ -91,6 +92,9 @@ export class UIScene extends Phaser.Scene implements Host {
   private crystalIcon!: Phaser.GameObjects.Image;
   private luckPill!: Pill;
   private dicePill!: Pill;
+  /** Battle Boosts waiting for the next fight */
+  private boostRow!: Phaser.GameObjects.Container;
+  private boostKey = "";
   private potionPill!: Pill;
   private skillBar!: Phaser.GameObjects.Container;
   private picker: Phaser.GameObjects.Container | null = null;
@@ -447,7 +451,8 @@ export class UIScene extends Phaser.Scene implements Host {
       this.game.events.emit("battle-start");
     }, { icon: "icon_sword", iconSize: 90, size: 80, sub: "Survive 5:00 and beat the boss" });
     this.tweens.add({ targets: go, scale: 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.lobby.add([this.luckPill, this.dicePill, this.potionPill, go]);
+    this.boostRow = this.add.container(W / 2, bottom - 432);
+    this.lobby.add([this.luckPill, this.dicePill, this.potionPill, this.boostRow, go]);
     // quest tracker
     const qw = 400;
     this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
@@ -510,10 +515,34 @@ export class UIScene extends Phaser.Scene implements Host {
     this.badges.push({ obj, show });
   }
 
+  /** "Boosts: [gun] x1 [heart] x2" above the BATTLE button; tap it to buy more in the shop. */
+  private drawBoostRow(owned: BoostDef[]): void {
+    const row = this.boostRow;
+    row.removeAll(true);
+    if (!owned.length) return;
+    const w = 190 + owned.length * 150;
+    row.add([this.add.image(0, 0, panelTexture(this, "glass", w, 92)), text(this, -w / 2 + 90, 0, "BOOSTS", 28, "#9ae6ff")]);
+    owned.forEach((b, i) => {
+      const x = -w / 2 + 230 + i * 150;
+      const icon = this.add.image(x - 22, 0, b.icon);
+      icon.setScale(62 / Math.max(icon.width, icon.height));
+      row.add([icon, text(this, x + 36, 4, `x${save.boosts[b.id]}`, 30)]);
+    });
+    row.setSize(w, 92).setInteractive({ useHandCursor: true }).off("pointerup").on("pointerup", () => this.setTab("shop"));
+    row.setScale(0.6);
+    this.tweens.add({ targets: row, scale: 1, duration: 300, ease: "Back.out" });
+  }
+
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(luck())}`);
       this.dicePill.setValue(`${fmt(totalDice())} dice`);
+      const owned = BOOSTS.filter((b) => save.boosts[b.id]);
+      const key = owned.map((b) => `${b.id}${save.boosts[b.id]}`).join();
+      if (key !== this.boostKey) {
+        this.boostKey = key;
+        this.drawBoostRow(owned);
+      }
       const active = potionActive();
       this.potionPill.setVisible(active);
       if (active) {

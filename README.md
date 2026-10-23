@@ -33,11 +33,26 @@ player needs per stage.
   Every 10th roll is a Lucky Roll (x2 luck).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
-- **Screens** (bottom tab bar): **Shop** (free gift every 10 minutes, daily reward, potions, dice, lucky
-  rolls, money packs), **Pets** (team, levels, Index), **Battle**, **Roll** (luck, the big die, reels, auto/fast,
+- **Screens** (bottom tab bar): **Shop** (see below), **Pets** (team, levels, Index), **Battle**, **Roll** (luck, the big die, reels, auto/fast,
   quick upgrades) and **Upgrades** (the honeycomb tree). The **Map** (from Battle) shows the 100-stage journey.
 - **Lands**: five big open fields (you can walk everywhere), 20 stages each: Sunny Meadow (1-20), Golden
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
+- **The Shop**:
+  - **Deal of the Day**: a different bundle every day at about half price. It can be bought once and shows a
+    countdown to midnight.
+  - **Free**: a gift every 10 minutes (gems, dice and money) and the daily reward.
+  - **Lucky Wheel**: one free spin every 4 hours, then 8 gems a spin. Prizes are dice, money, gems, a
+    potion, or the rare MEGA jackpot.
+  - **Treasure Chests**: Wooden (money), Silver and Golden (gems). Each one shakes, pops open and throws out
+    dice rolled for your stage plus bonus gems, money and potions.
+  - **Battle Boosts**, bought with money and used up by your next fight:
+    - Golden Start: a C-tier toy gun.
+    - Second Chance: a free revive.
+    - Head Start: 2 skills right away.
+    - Crystal Armor: +50% crystal health.
+
+    Boosts you own are shown above the BATTLE button.
+  - **Shelves**: dice, potions, money and gems (real-money gems are "coming soon").
 - **The Battle tab is a lobby**: the fight only starts when you press **BATTLE**. During a fight the tab bar
   and shops are gone; you only get **Pause** (resume, sound, music, give up) and **Stats**.
 - **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself. The camera is
@@ -101,7 +116,8 @@ player needs per stage.
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gun panel), pause, stats, skill picker, defeat screen, rolling, popups |
 | `src/ui/rollScreen.ts` | The Roll screen and its reel animation |
 | `src/ui/petsScreen.ts` | My Pets, Index and the pet popup with levelling |
-| `src/ui/shopScreen.ts` | The Shop screen |
+| `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |
+| `src/data/boosts.ts` | The four Battle Boosts |
 | `src/ui/mapScreen.ts` | The 100-stage journey map |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |

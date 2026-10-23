@@ -263,31 +263,32 @@ function skull(ctx: Ctx): void {
 
 
 
-function chest(open: boolean): (ctx: Ctx) => void {
+/** A treasure chest: wood with gold bands, or silver / gold for the shop's better chests. */
+function chest(open: boolean, body = 0xb0703a, lid = 0xc98a4a, band = 0xffcf3a, inside = 0x8a5428): (ctx: Ctx) => void {
   return (ctx) => {
     const t = toon(ctx, OL, 5);
     shadow(t, 55, 96, 46);
     if (open) t.paint(radial(ctx, 55, 40, 50, [[0, "rgba(255,240,140,0.9)"], [1, "rgba(255,220,80,0)"]]), () => t.C(55, 40, 50));
-    t.part(() => t.rect(55, 70, 84, 48, 8), 0xb0703a, () => {
-      t.paint(rgba(0xffcf3a), () => {
+    t.part(() => t.rect(55, 70, 84, 48, 8), body, () => {
+      t.paint(rgba(band), () => {
         ctx.rect(13, 62, 84, 8);
         ctx.rect(30, 46, 8, 48);
         ctx.rect(72, 46, 8, 48);
       });
     });
     if (open) {
-      t.part(() => t.poly([[13, 46], [20, 10], [90, 10], [97, 46]], 8), 0x8a5428);
+      t.part(() => t.poly([[13, 46], [20, 10], [90, 10], [97, 46]], 8), inside);
       for (const [x, y] of [[40, 44], [56, 40], [70, 46]]) t.part(() => t.C(x, y, 8), 0xffd23f, undefined, 3);
     } else {
       t.part(() => {
         ctx.moveTo(13, 50);
         ctx.bezierCurveTo(13, 14, 97, 14, 97, 50);
         ctx.closePath();
-      }, 0xc98a4a, () => t.paint(rgba(0xffcf3a), () => {
+      }, lid, () => t.paint(rgba(band), () => {
         ctx.rect(30, 14, 8, 40);
         ctx.rect(72, 14, 8, 40);
       }));
-      t.part(() => t.rect(55, 52, 18, 20, 4), 0xffcf3a, () => t.paint("#3a2a22", () => t.C(55, 52, 3)), 3);
+      t.part(() => t.rect(55, 52, 18, 20, 4), band, () => t.paint("#3a2a22", () => t.C(55, 52, 3)), 3);
     }
   };
 }
@@ -412,6 +413,10 @@ const ART: Record<string, [number, number, (ctx: Ctx) => void]> = {
   ice_spike: [90, 100, iceSpike],
   chest: [110, 100, chest(false)],
   chest_open: [110, 100, chest(true)],
+  chest_silver: [110, 100, chest(false, 0x8a9ab4, 0xb8c8e0, 0xf2f6ff, 0x5a6a84)],
+  chest_silver_open: [110, 100, chest(true, 0x8a9ab4, 0xb8c8e0, 0xf2f6ff, 0x5a6a84)],
+  chest_gold: [110, 100, chest(false, 0xe0a820, 0xffcf3a, 0xff5a8a, 0xa87010)],
+  chest_gold_open: [110, 100, chest(true, 0xe0a820, 0xffcf3a, 0xff5a8a, 0xa87010)],
 };
 
 export const crystalKey = (id: string) => `crystal_${id}`;

@@ -53,6 +53,12 @@ export interface SaveData {
   speedUntil: number;
   /** lucky rolls bought in the shop: this many upcoming rolls are lucky rolls */
   luckyBoost: number;
+  /** when the shop's lucky wheel has a free spin again */
+  wheelAt: number;
+  /** day number of the last bought Deal of the Day */
+  dealDay: number;
+  /** battle boosts waiting for the next fight: id -> count */
+  boosts: Record<string, number>;
 }
 
 const STORAGE_KEY = "dice-idle-save-v3";
@@ -89,6 +95,9 @@ function fresh(): SaveData {
     freeGiftAt: 0,
     speedUntil: 0,
     luckyBoost: 0,
+    wheelAt: 0,
+    dealDay: -1,
+    boosts: {},
   };
 }
 
