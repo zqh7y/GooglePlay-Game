@@ -128,7 +128,7 @@ export const sfx = {
     burst(0.3, 0.12, 700);
     tone(140, 0.25, "sine", 0.1, 50);
   },
-  /** Light guns tick, heavy ones thump. */
+  /** Light gadgets swish, heavy ones thump. */
   shoot: (heavy = false) => {
     if (throttle("shoot", heavy ? 110 : 70)) return;
     if (heavy) {

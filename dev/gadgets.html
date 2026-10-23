@@ -1,20 +1,22 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Guns</title>
+<html><head><meta charset="utf-8"><title>Gadgets</title>
 <style>body{margin:0;background:#9fd36a;font:14px sans-serif} #g{display:flex;flex-wrap:wrap;gap:10px;padding:10px;align-items:flex-end} .c{text-align:center;background:rgba(255,255,255,.25);padding:6px;border-radius:8px}</style></head>
 <body><div id="g"></div><script type="module">
-import { makeGunTextures } from "/src/art/guns.ts";
+import { makeGadgetTextures } from "/src/art/gadgets.ts";
 import { makePickupTextures } from "/src/art/pickups.ts";
-import { GUNS, gunKey, gunDps } from "/src/data/guns.ts";
+import { makeMutationTextures } from "/src/art/mutations.ts";
+import { GADGETS, GADGET_KINDS, gadgetDps } from "/src/data/gadgets.ts";
 // draw straight onto canvases through a tiny fake scene
 const made = {};
 const scene = { textures: { exists: (k) => !!made[k], createCanvas: (k, w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; made[k] = c; return { getContext: () => c.getContext("2d"), refresh() {} }; } } };
-makeGunTextures(scene);
+makeGadgetTextures(scene);
 makePickupTextures(scene);
+makeMutationTextures(scene);
 const g = document.getElementById("g");
-for (const gun of GUNS) {
-  const d = document.createElement("div"); d.className = "c"; d.append(made[gunKey(gun.id)], document.createElement("br"), `${gun.tier} ${gun.name} (${gunDps(gun).toFixed(1)})`); g.append(d);
+for (const k of GADGET_KINDS) {
+  const d = document.createElement("div"); d.className = "c"; d.append(made[`gd_${k}`], document.createElement("br"), `${GADGETS[k].name} (A ${gadgetDps(k, "A", 1).toFixed(1)} / SSS ${gadgetDps(k, "SSS", 1).toFixed(1)})`); g.append(d);
 }
-for (const k of Object.keys(made).filter((k) => !k.startsWith("gun_"))) {
+for (const k of Object.keys(made).filter((k) => !GADGET_KINDS.some((g) => k === `gd_${g}`))) {
   const d = document.createElement("div"); d.className = "c"; d.append(made[k], document.createElement("br"), k); g.append(d);
 }
 </script></body></html>

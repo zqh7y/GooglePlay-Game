@@ -17,7 +17,7 @@ npm run build    # production build into dist/
 
 Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets (`?frame=1` / `2` for the walk
 frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, plant, rock and crystal,
-`/dev/guns.html` every gun, pickup and skill icon.
+`/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run with the real numbers and prints how many hours (and failed runs) a steady
@@ -48,7 +48,7 @@ player needs per stage.
   - Rare pulls bring rays, flashes, confetti, a **NEW RECORD!** stamp when it is your rarest pet ever,
     and "LEVEL UP READY!" when a copy completes a level.
   - **Next to find** shows the three easiest pets you are missing, with your own chance per roll.
-- **Pet classes**: every pet has a class from **A** to **uSSS**, like dice and guns:
+- **Pet classes**: every pet has a class from **A** to **uSSS**, like dice and gadgets:
 
   | Class | A | B | C | D | E | S | SSS | uSSS |
   |---|---|---|---|---|---|---|---|---|
@@ -81,7 +81,7 @@ player needs per stage.
   - **Treasure Chests**: Wooden (money), Silver and Golden (gems). Each one shakes, pops open and throws out
     dice rolled for your stage plus bonus gems, money and potions.
   - **Battle Boosts**, bought with money and used up by your next fight:
-    - Golden Start: a C-tier toy gun.
+    - Golden Start: an extra C-tier gadget.
     - Second Chance: a free revive.
     - Head Start: 2 skills right away.
     - Crystal Armor: +50% crystal health.
@@ -131,20 +131,35 @@ player needs per stage.
 - **The crystal shield**: the crystal is open for 45 s, then shielded for 45 s, and so on. While it is open,
   monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
   shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
-- **Toy guns**: every stage starts with a Water Pistol. **Airdrops** parachute in about every 40 s with a
-  gun of tier A (Common), B (Rare), C (Super Rare), D (Epic), E (Legendary), S (Mythic) or SSS (Titanic,
-  almost impossible); the longer you survive the better the odds. A light beam shows the tier before you open
-  it. Better guns are equipped right away, worse ones are scrapped for money. 14 toys, each with its own
-  ammo: Water Pistol, Cork Popper, Foam Blaster, Bubble Blaster, Confetti Cannon, Candy Shooter, Paintball
-  Rifle, Snowball Rifle, Pea Shooter, Firework Blaster, Gumball Gatling, Water Balloon Launcher, Dragon
-  Breath and Rainbow Star Blaster (damage, fire rate, magazine, reload, spread, range, pierce, splash).
+- **The hero**: something living in a cardboard box. You only see its glowing eyes through a dark slot,
+  plus two little legs.
+- **Gadgets** (the weapons): they all fire on their own, and you carry up to **3** at once (shown top right
+  in a fight). Every stage starts with a Shuriken.
+
+  | Gadget | What it does |
+  |---|---|
+  | Shuriken | Spinning stars that cut through monsters |
+  | Saw Blades | Blades that circle you |
+  | Rockets | Homing, they explode |
+  | Mines | Dropped at your feet, they go off when stepped on |
+  | Bomber Drone | Hovers over you and bombs monsters |
+  | Boomerang | Flies out and back, hitting both ways |
+  | Bouncy Ball | Hops from monster to monster |
+  | Grenade | Lobbed into crowds; at S tier and up it becomes a Black Hole that pulls monsters in, then bursts |
+
+  **Airdrops** parachute in about every 40 s with a gadget of tier A (Common), B (Rare), C (Super Rare),
+  D (Epic), E (Legendary), S (Mythic) or SSS (Titanic, almost impossible). The longer you survive, the better
+  the odds, and a light beam shows the tier before you open it. What the airdrop does:
+  - A new kind fills a free slot, or replaces your weakest gadget if it is stronger.
+  - The same kind moves up to the better tier, or gains a level (up to 5).
+  - Anything else is scrapped for money.
 - **Crystal dice**: every 30 s you survive, the crystal pops out a die that lands nearby. It is an A die on
   stages 1-20, B on 21-40, C on 41-60, D on 61-80 and E on 81-100.
 - **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
 - **Skills**: monsters drop small glowing bones and meat (XP). Every level up freezes the fight and offers 3
   skills. You carry at most **4 different skills** per stage, each up to level 5, and a good run levels high
-  enough (about 22) to max all four. They reset every stage: Big Mag, Quick Reload, Hollow Points, Hair
-  Trigger, Long Barrel, Boom Rounds, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick
+  enough (about 22) to max all four. They reset every stage: Multi-Throw, Bigger Booms, Power Up, Overclock,
+  Long Reach, Boom Throws, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick
   Cardboard, Crystal Shards (the crystal shoots shards at monsters around it), Box Fort (stand still to dig
   in) and Pack Leader (pets).
 - **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and airdrops.
@@ -163,7 +178,7 @@ player needs per stage.
 | `src/data/tree.ts` | Every upgrade hexagon: position, price, effect |
 | `src/data/balance.ts` | Stage length, monster health / speed / money per stage and minute, spawn rate, XP (shared with the simulator) |
 | `src/data/skills.ts` | The 14 in-run skills |
-| `src/data/guns.ts` | The 14 guns and their stats |
+| `src/data/gadgets.ts` | The 8 gadgets, their tiers, levels and stats |
 | `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
 | `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
 | `src/data/rarity.ts` | The 10 rarity tiers and their colours |
@@ -173,8 +188,8 @@ player needs per stage.
 | `src/systems/goals.ts` | Quests, daily rewards and Index milestones |
 | `src/systems/sound.ts` | Synthesized sound effects, the music sequencer and vibration |
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
-| `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, guns and bullets, airdrops, pets, skills, pickups, boss, win / lose |
-| `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gun panel), pause, stats, skill picker, defeat screen, rolling, popups |
+| `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose |
+| `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget panel), pause, stats, skill picker, defeat screen, rolling, popups |
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, charge-up and reel reveal, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
@@ -185,11 +200,12 @@ player needs per stage.
 | `src/ui/mapScreen.ts` | The 100-stage journey map |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |
-| `src/art/characters.ts` | The box survivor hero, the blaster, monsters and effects |
+| `src/art/characters.ts` | The Box Ghost hero, monsters and effects |
 | `src/art/world.ts` | Trees, plants, rocks, chests and each land's crystal |
 | `src/art/ground.ts` | Paints each land's seamless floor tile, ground patches, the stone circle and the minimap |
 | `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups, skill icons |
-| `src/art/guns.ts` | The cartoon guns and bullets |
+| `src/art/gadgets.ts` | The gadgets (icons and the things they throw) and the black hole |
+| `src/art/mutations.ts` | The mutation badges over monsters |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
 

@@ -1,9 +1,9 @@
 /**
- * Rarity tiers shared by guns (A to SSS) and dice (A to uSSS). A is the most common.
+ * Rarity tiers shared by gadgets (A to SSS), pet classes and dice (A to uSSS). A is the most common.
  */
 export const DICE_TIERS = ["A", "B", "C", "D", "E", "S", "SSS", "uSSS"] as const;
 export type Tier = (typeof DICE_TIERS)[number];
-export const GUN_TIERS: Tier[] = ["A", "B", "C", "D", "E", "S", "SSS"];
+export const GADGET_TIERS: Tier[] = ["A", "B", "C", "D", "E", "S", "SSS"];
 
 export const TIER_INFO: Record<Tier, { name: string; color: number; css: string }> = {
   A: { name: "Common", color: 0xb8c2cc, css: "#d8e0e8" },
@@ -57,12 +57,12 @@ export const rollDiceTier = (stage: number): Tier => DICE_TIERS[pickWeighted(dic
 /** Rolling with a rarer die multiplies your luck for that roll. */
 export const DICE_LUCK: Record<Tier, number> = { A: 1, B: 2, C: 5, D: 15, E: 50, S: 250, SSS: 2500, uSSS: 50000 };
 
-// ───────────────────────── guns ─────────────────────────
+// ───────────────────────── gadget airdrops ─────────────────────────
 
-const GUN_STEPS = [0.7, 0.5, 0.35, 0.2, 0.06, 0.01];
+const GADGET_STEPS = [0.7, 0.5, 0.35, 0.2, 0.06, 0.01];
 
 /** Airdrops get better the longer you survive (and with the Lucky Drops skill). */
-export function gunTierWeights(minutes: number, luckLevel: number): number[] {
-  return stepWeights(GUN_STEPS, (0.15 + 0.17 * minutes) * (1 + 0.25 * luckLevel));
+export function gadgetTierWeights(minutes: number, luckLevel: number): number[] {
+  return stepWeights(GADGET_STEPS, (0.15 + 0.17 * minutes) * (1 + 0.25 * luckLevel));
 }
-export const rollGunTier = (minutes: number, luckLevel: number): Tier => GUN_TIERS[pickWeighted(gunTierWeights(minutes, luckLevel))];
+export const rollGadgetTier = (minutes: number, luckLevel: number): Tier => GADGET_TIERS[pickWeighted(gadgetTierWeights(minutes, luckLevel))];

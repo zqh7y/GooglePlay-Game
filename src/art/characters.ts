@@ -11,73 +11,97 @@ const EYE = "#24161e";
 
 export const HERO_W = 120;
 export const HERO_H = 160;
-/** Where the blaster is held, relative to the hero's feet (origin 0.5, 0.95). */
-export const HERO_HAND = { x: 36, y: -50 };
+/** Where the hero holds its main gadget, relative to its feet (origin 0.5, 0.95). */
+export const HERO_HAND = { x: 44, y: -48 };
 
-const BOX = 0xff9a3c;
-const RED = 0xe8453f;
+const CARD_TOP = "#e6b97c";
+const CARD_BOTTOM = "#a8743a";
+const HERO_INK = "#2a1c1c";
 
 /**
- * The hero: a small, simple orange box (2:3) with a face, a red headband and tiny feet.
- * step 0 = standing, 1 and 2 = walking.
+ * The hero: something lives in a cardboard box. You only ever see its glowing eyes through
+ * a dark slot, the flaps on top, and two little legs. step 0 = standing, 1 and 2 = walking.
  */
 function drawHero(ctx: Ctx, step: number): void {
-  const t = toon(ctx, "#2a1c1c", 4.5);
-  const { E, C, poly, rect, part, paint, gloss } = t;
-  const b = step ? -2 : 0;
-  paint("rgba(42,26,30,0.22)", () => E(60, 152, 36, 6));
-  // feet
-  const lift = [0, -5, 5][step];
-  for (const [x, dy] of [[46, lift], [74, -lift]] as [number, number][]) {
-    part(() => rect(x, 144 + Math.min(0, dy), 22, 14, 6), 0x4a3a44);
-  }
-  // headband tails behind
-  part(() => poly([[30, 52 + b], [8, 44 + b], [14, 56 + b], [6, 66 + b], [30, 62 + b]], 3), RED, undefined, 3.5);
-  // the box
-  part(() => rect(60, 84 + b, 76, 112, 14), BOX, () => {
-    paint(rgba(lighten(BOX, 0.25)), () => rect(60, 34 + b, 76, 14, 6));
-  });
-  gloss(36, 40 + b, 7, 4);
-  // headband
-  part(() => rect(60, 56 + b, 80, 13, 4), RED, () => paint("rgba(255,255,255,0.7)", () => {
-    C(44, 56 + b, 2);
-    C(60, 56 + b, 2);
-    C(76, 56 + b, 2);
-  }), 3.5);
-  // face
-  for (const x of [48, 72]) {
-    paint(EYE, () => E(x, 82 + b, 5.5, 7));
-    paint("#ffffff", () => C(x - 1.8, 79 + b, 2.2));
-  }
-  paint("rgba(255,90,110,0.45)", () => {
-    E(38, 95 + b, 6, 3.5);
-    E(82, 95 + b, 6, 3.5);
-  });
-  ctx.lineWidth = 3.5;
+  const b = step ? -3 : 0;
+  const shape = (path: () => void, paint: string | CanvasGradient, lw = 4.5) => {
+    ctx.beginPath();
+    path();
+    ctx.fillStyle = paint;
+    ctx.fill();
+    ctx.lineWidth = lw;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = HERO_INK;
+    ctx.stroke();
+  };
+  const card = () => {
+    const g = ctx.createLinearGradient(0, 40 + b, 0, 130 + b);
+    g.addColorStop(0, CARD_TOP);
+    g.addColorStop(1, CARD_BOTTOM);
+    return g;
+  };
+  ellipse(ctx, 60, 152, 34, 6);
+  fill(ctx, "rgba(42,26,30,0.22)");
+  // legs: thin and dark, swinging when it walks
+  const swing = [0, 7, -7][step];
   ctx.lineCap = "round";
-  ctx.strokeStyle = EYE;
-  ctx.beginPath();
-  ctx.moveTo(54, 96 + b);
-  ctx.quadraticCurveTo(60, 101 + b, 66, 96 + b);
-  ctx.stroke();
-  // little arm reaching for the blaster
-  part(() => rect(96, 104 + b, 14, 22, 6), darken(BOX, 0.12), undefined, 3.5);
-}
-
-/** The blaster: a separate sprite so it can aim. Points right; the grip is at x=20. */
-function drawGun(ctx: Ctx): void {
-  const t = toon(ctx, "#1e1a22", 3.5);
-  const { C, poly, rect, part, paint } = t;
-  part(() => poly([[14, 22], [28, 22], [24, 36], [14, 36]], 3), 0x4a3a30);
-  part(() => poly([[6, 10], [62, 8], [68, 14], [68, 24], [8, 26]], 5), 0x5a6488, () => paint("#ff9a3c", () => ctx.rect(14, 12, 36, 4)));
-  part(() => rect(76, 17, 14, 9, 3), 0x3a3a44, undefined, 3);
-  ctx.save();
-  ctx.shadowColor = "#5ff0ff";
-  ctx.shadowBlur = 8;
-  circle(ctx, 84, 17, 4);
-  fillOutline(ctx, "#bffbff", 2.5);
-  ctx.restore();
-  part(() => C(20, 28, 8), 0x3a3a44);
+  for (const [x, dir] of [[46, 1], [74, -1]] as [number, number][]) {
+    const fx = x + swing * dir;
+    ctx.beginPath();
+    ctx.moveTo(x, 122 + b);
+    ctx.lineTo(fx, 145);
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = HERO_INK;
+    ctx.stroke();
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = "#4a3a44";
+    ctx.stroke();
+    shape(() => ellipse(ctx, fx + 3, 148, 11, 6), "#4a3a44", 3.5);
+  }
+  // the flaps, open on top
+  shape(() => {
+    ctx.moveTo(20, 52 + b);
+    ctx.lineTo(4, 28 + b);
+    ctx.lineTo(48, 24 + b);
+    ctx.lineTo(58, 52 + b);
+    ctx.closePath();
+  }, card());
+  shape(() => {
+    ctx.moveTo(100, 52 + b);
+    ctx.lineTo(116, 32 + b);
+    ctx.lineTo(74, 27 + b);
+    ctx.lineTo(62, 52 + b);
+    ctx.closePath();
+  }, card());
+  // the box
+  shape(() => ctx.roundRect(18, 48 + b, 84, 80, 6), card());
+  ctx.fillStyle = "rgba(90,50,20,0.28)";
+  ctx.fillRect(53, 50 + b, 14, 76);
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  ctx.fillRect(22, 52 + b, 28, 5);
+  // "this side up" arrows
+  ctx.strokeStyle = "rgba(70,36,12,0.5)";
+  ctx.lineWidth = 3;
+  for (const x of [32, 88]) {
+    ctx.beginPath();
+    ctx.moveTo(x, 120 + b);
+    ctx.lineTo(x, 104 + b);
+    ctx.moveTo(x - 5, 109 + b);
+    ctx.lineTo(x, 103 + b);
+    ctx.lineTo(x + 5, 109 + b);
+    ctx.stroke();
+  }
+  // the dark slot and the eyes glowing inside
+  shape(() => ctx.roundRect(26, 62 + b, 68, 22, 7), "#0a0614", 3.5);
+  for (const x of [45, 75]) {
+    const g = radial(ctx, x, 73 + b, 11, [[0, "rgba(255,255,255,0.95)"], [0.4, "rgba(255,250,200,0.5)"], [1, "rgba(255,250,200,0)"]]);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 11, 62 + b, 22, 22);
+    ellipse(ctx, x, 73 + b, 4, 5);
+    fill(ctx, "#ffffff");
+  }
+  // a hand pokes out to hold the gadget
+  shape(() => circle(ctx, 101, 104 + b, 8), "#4a3a44", 3.5);
 }
 
 // ───────────────────────── monsters ─────────────────────────
@@ -459,7 +483,6 @@ export function makeCharacterTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "hero", HERO_W, HERO_H, (ctx) => drawHero(ctx, 0));
   canvasTexture(scene, "hero_w1", HERO_W, HERO_H, (ctx) => drawHero(ctx, 1));
   canvasTexture(scene, "hero_w2", HERO_W, HERO_H, (ctx) => drawHero(ctx, 2));
-  canvasTexture(scene, "gun", 96, 40, drawGun);
   for (const [key, [w, h, draw]] of Object.entries(MONSTER_ART)) canvasTexture(scene, key, w, h, draw);
 
 

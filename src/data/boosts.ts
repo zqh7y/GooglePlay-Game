@@ -11,7 +11,7 @@ export interface BoostDef {
 }
 
 export const BOOSTS: BoostDef[] = [
-  { id: "gun", name: "Golden Start", icon: "gun_deagle", desc: "Start the next fight with a C-tier toy gun", minutes: 15 },
+  { id: "gun", name: "Golden Start", icon: "gd_rocket", desc: "Start the next fight with an extra C-tier gadget", minutes: 15 },
   { id: "revive", name: "Second Chance", icon: "pk_heart", desc: "Get back up once for free in the next fight", minutes: 20 },
   { id: "start", name: "Head Start", icon: "skill_orb", desc: "Start the next fight with 2 free skills", minutes: 10 },
   { id: "armor", name: "Crystal Armor", icon: "icon_shield", desc: "The crystal has +50% health next fight", minutes: 10 },

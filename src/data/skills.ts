@@ -20,19 +20,19 @@ export const MAX_SKILL = 5;
 export const SKILL_SLOTS = 4;
 
 export const SKILLS: SkillDef[] = [
-  { id: "mag", name: "Big Mag", icon: "sk_mag", color: 0xffc93a, text: () => "+40% bullets per magazine" },
-  { id: "reload", name: "Quick Reload", icon: "sk_reload", color: 0x7ad651, text: () => "Reload 20% faster" },
-  { id: "damage", name: "Hollow Points", icon: "sk_damage", color: 0xff8a3a, text: () => "+30% gun damage" },
-  { id: "firerate", name: "Hair Trigger", icon: "sk_firerate", color: 0xffe066, text: () => "Shoot 15% faster" },
-  { id: "range", name: "Long Barrel", icon: "sk_range", color: 0x5ac8ff, text: () => "+20% shooting distance" },
-  { id: "boom", name: "Boom Rounds", icon: "sk_boom", color: 0xff5a4a, text: (l) => (l === 0 ? "Bullets explode on hit" : "Bigger, stronger blasts") },
+  { id: "mag", name: "Multi-Throw", icon: "sk_mag", color: 0xffc93a, text: (l) => (l % 2 === 0 ? "Every gadget throws one more" : "+15% gadget damage") },
+  { id: "reload", name: "Bigger Booms", icon: "sk_reload", color: 0x7ad651, text: () => "+25% explosion size (rockets, mines, bombs, grenades)" },
+  { id: "damage", name: "Power Up", icon: "sk_damage", color: 0xff8a3a, text: () => "+30% gadget damage" },
+  { id: "firerate", name: "Overclock", icon: "sk_firerate", color: 0xffe066, text: () => "Gadgets fire 15% faster" },
+  { id: "range", name: "Long Reach", icon: "sk_range", color: 0x5ac8ff, text: () => "+20% gadget reach" },
+  { id: "boom", name: "Boom Throws", icon: "sk_boom", color: 0xff5a4a, text: (l) => (l === 0 ? "Shuriken and balls explode on hit" : "Bigger, stronger blasts") },
   { id: "speed", name: "Swift Boots", icon: "icon_boot", color: 0x4fd0b0, text: () => "+12% move speed" },
   { id: "magnet", name: "Magnet", icon: "pk_magnet", color: 0x8a9aff, text: () => "Grab bones and meat from 50% farther" },
   { id: "mend", name: "Crystal Mend", icon: "sk_mend", color: 0x67c3ff, text: () => "Crystal heals 35% and slowly regrows" },
-  { id: "luck", name: "Lucky Drops", icon: "sk_luck", color: 0x3fd08a, text: () => "Better guns in airdrops, and more often" },
+  { id: "luck", name: "Lucky Drops", icon: "sk_luck", color: 0x3fd08a, text: () => "Better gadgets in airdrops, and more often" },
   { id: "tough", name: "Thick Cardboard", icon: "pk_heart", color: 0xff6a8a, text: () => "+25% max health, heal 30%" },
   { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xb98aff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
-  { id: "fort", name: "Box Fort", icon: "sk_fort", color: 0xc8935a, text: () => "Stand still: take 12% less damage, shoot 10% faster" },
+  { id: "fort", name: "Box Fort", icon: "sk_fort", color: 0xc8935a, text: () => "Stand still: take 12% less damage, gadgets 10% faster" },
   { id: "pack", name: "Pack Leader", icon: "icon_paw", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
 ];
 

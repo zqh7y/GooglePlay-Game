@@ -5,7 +5,7 @@ import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
-import { STARTER_GUN, gunKey } from "../data/guns";
+import { GADGETS, GADGET_SLOTS, STARTER_GADGET, gadgetKey, gadgetName } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
@@ -35,7 +35,7 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
-import { BattleMode, BattleScene, GunFound, RunStats, StageResult, battle, mmss } from "./Battle";
+import { BattleMode, BattleScene, GadgetFound, RunStats, StageResult, battle, mmss } from "./Battle";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -86,11 +86,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private petals!: Phaser.GameObjects.Particles.ParticleEmitter;
   private overlayTimer = 0;
   private shieldText!: Phaser.GameObjects.Text;
-  private gunIcon!: Phaser.GameObjects.Image;
-  private gunName!: Phaser.GameObjects.Text;
-  private gunTier!: Phaser.GameObjects.Text;
-  private gunBadge!: Phaser.GameObjects.Arc;
-  private ammoText!: Phaser.GameObjects.Text;
+  /** the gadget panel: one slot per gadget you carry */
+  private gadgetSlots: { icon: Phaser.GameObjects.Image; badge: Phaser.GameObjects.Arc; tier: Phaser.GameObjects.Text; lv: Phaser.GameObjects.Text; key: string }[] = [];
   private hudBars!: Phaser.GameObjects.Graphics;
   private progressText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
@@ -160,7 +157,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["dice", this.onDice],
       ["banner", this.onBanner],
       ["cash-fly", this.onCashFly],
-      ["gun-found", this.gunFound],
+      ["gadget-found", this.gadgetFound],
       ["battle-ready", this.onBattleReady],
       ["boss-warning", this.bossWarning],
       ["boss-intro", this.bossIntro],
@@ -529,14 +526,19 @@ export class UIScene extends Phaser.Scene implements Host {
     this.stageText = text(this, 220, 192, "", 32).setOrigin(0, 0.5);
     this.crystalIcon = this.add.image(240, 248, crystalKey(regionForStage(save.stage).id)).setScale(0.24);
     this.shieldText = text(this, 457, 248, "", 24);
-    this.gunBadge = this.add.circle(-140, -30, 30, 0xb8c2cc).setStrokeStyle(6, INK_N);
-    this.gunTier = text(this, -140, -32, "", 30);
-    this.gunIcon = this.add.image(-60, 0, gunKey("glock"));
-    this.gunName = text(this, 70, -26, "", 28).setOrigin(0.5);
-    this.ammoText = text(this, 70, 20, "", 36);
-    const gunPanel = this.add.container(W - 190, 300, [
-      this.add.image(0, 0, panelTexture(this, "glass", 340, 120)), this.gunIcon, this.gunBadge, this.gunTier, this.gunName, this.ammoText,
-    ]).setSize(340, 120).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
+    // your gadgets: three slots with icon, tier and level
+    const gunPanel = this.add.container(W - 190, 300, [this.add.image(0, 0, panelTexture(this, "glass", 340, 120))]);
+    this.gadgetSlots = [];
+    for (let i = 0; i < GADGET_SLOTS; i++) {
+      const x = (i - 1) * 108;
+      const icon = this.add.image(x, -4, "gd_shuriken").setVisible(false);
+      const badge = this.add.circle(x - 34, -36, 18, 0xb8c2cc).setStrokeStyle(4, INK_N).setVisible(false);
+      const tier = text(this, x - 34, -38, "", 20);
+      const lv = text(this, x + 22, 36, "", 20);
+      gunPanel.add([this.add.circle(x, 0, 46, 0x000000, 0.25), icon, badge, tier, lv]);
+      this.gadgetSlots.push({ icon, badge, tier, lv, key: "" });
+    }
+    gunPanel.setSize(340, 120).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
     this.skillBar = this.add.container(0, H - 80);
     this.run.add([
       band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar,
@@ -621,17 +623,23 @@ export class UIScene extends Phaser.Scene implements Host {
     fitText(this.shieldText, 340);
     this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
     this.progressText.setColor(c < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
-    // the gun in your hands
-    const gun = battle.gun;
-    if (this.gunName.text !== gun.name) {
-      const info = TIER_INFO[gun.tier];
-      this.gunIcon.setTexture(gunKey(gun.id));
-      this.gunIcon.setScale(Math.min(150 / gun.w, 74 / gun.h));
-      this.gunBadge.setFillStyle(info.color);
-      this.gunTier.setText(gun.tier).setFontSize(gun.tier.length > 2 ? 22 : 30);
-      fitText(this.gunName.setText(gun.name).setColor(info.css), 170);
-    }
-    this.ammoText.setText(battle.reload >= 0 ? "RELOAD" : `${battle.ammo}/${battle.mag}`).setColor(battle.reload >= 0 ? "#ffd23f" : battle.ammo <= battle.mag * 0.2 ? "#ff9a9a" : "#ffffff");
+    // your gadgets
+    this.gadgetSlots.forEach((slot, i) => {
+      const g = battle.gadgets[i];
+      const key = g ? `${g.kind}${g.tier}${g.level}` : "";
+      if (key === slot.key) return;
+      slot.key = key;
+      slot.icon.setVisible(!!g);
+      slot.badge.setVisible(!!g);
+      slot.tier.setText(g ? g.tier : "");
+      slot.lv.setText(g ? `Lv${g.level}` : "");
+      if (!g) return;
+      slot.icon.setTexture(gadgetKey(g.kind));
+      slot.icon.setScale(70 / Math.max(slot.icon.width, slot.icon.height));
+      slot.badge.setFillStyle(TIER_INFO[g.tier].color);
+      slot.tier.setFontSize(g.tier.length > 2 ? 14 : 20);
+      this.tweens.add({ targets: slot.icon, scale: slot.icon.scale * 1.3, duration: 140, yoyo: true });
+    });
   }
 
   /** The skills you picked this stage, along the bottom of the field. */
@@ -791,24 +799,30 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(quit);
   }
 
-  /** Everything about the current fight: numbers, your gun, skills and dice found. */
+  /** Everything about the current fight: numbers, your gadgets, skills and dice found. */
   private showStats(): void {
     if (battle.mode === "lobby") return;
     sfx.click();
     const h = 1360;
     const m = this.showModal(modal(this, 940, h, "STATS", "blue", () => (this.openModal = null)));
-    const gun = battle.gun;
-    const info = TIER_INFO[gun.tier];
     const top = -h / 2 + 170;
     m.body.add([
       this.add.image(0, top, panelTexture(this, "row", 840, 170)),
-      this.add.image(-200, top, gunKey(gun.id)).setScale(Math.min(300 / gun.w, 130 / gun.h)),
-      this.add.circle(-370, top - 50, 34, info.color).setStrokeStyle(6, INK_N),
-      text(this, -370, top - 52, gun.tier, gun.tier.length > 2 ? 24 : 34),
-      label(this, 60, top - 40, gun.name, 44, rgba(darken(info.color, 0.3))).setOrigin(0, 0.5),
-      label(this, 60, top + 4, `${info.name}  •  ammo ${battle.ammo}/${battle.mag}`, 28, "#7a5236").setOrigin(0, 0.5),
-      label(this, 60, top + 44, `Lv ${battle.level}  •  ${fmt(battle.dps)} DPS`, 28, "#7a5236").setOrigin(0, 0.5),
+      label(this, 0, top - 62, `Lv ${battle.level}  •  ${fmt(battle.dps)} DPS`, 28, "#7a5236"),
     ]);
+    battle.gadgets.forEach((g, i) => {
+      const x = (i - 1) * 270;
+      const info = TIER_INFO[g.tier];
+      const icon = this.add.image(x - 70, top + 14, gadgetKey(g.kind));
+      icon.setScale(84 / Math.max(icon.width, icon.height));
+      m.body.add([
+        icon,
+        this.add.circle(x - 104, top - 22, 22, info.color).setStrokeStyle(4, INK_N),
+        text(this, x - 104, top - 24, g.tier, g.tier.length > 2 ? 16 : 24),
+        fitText(label(this, x + 50, top - 2, gadgetName(g.kind, g.tier), 26, rgba(darken(info.color, 0.3))), 150),
+        label(this, x + 50, top + 32, `Lv ${g.level}`, 24, "#7a5236"),
+      ]);
+    });
     let y = this.statRows(m, battle.stats, battle.time, top + 160, true);
     m.body.add(label(this, -330, y, "Skills:", 34, "#c9663a").setOrigin(0, 0.5));
     const picked = Object.entries(battle.skills) as [SkillId, number][];
@@ -827,11 +841,11 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(button(this, 0, Math.min(h / 2 - 90, y + 40), 460, 120, "green", "BACK TO FIGHT", () => m.close(), { size: 40 }));
   }
 
-  /** An airdrop opened: show the gun, its tier and whether you took it. */
-  private gunFound(f: GunFound): void {
+  /** An airdrop opened: show the gadget, its tier and what happened (new, upgraded, level, scrapped). */
+  private gadgetFound(f: GadgetFound): void {
     const { W } = this;
-    const info = TIER_INFO[f.gun.tier];
-    const rank = tierIndex(f.gun.tier);
+    const info = TIER_INFO[f.tier];
+    const rank = tierIndex(f.tier);
     const y = this.L.hudBottom + 360;
     const parts: Phaser.GameObjects.GameObject[] = [];
     if (rank >= 3) {
@@ -839,19 +853,27 @@ export class UIScene extends Phaser.Scene implements Host {
       this.tweens.add({ targets: rays, angle: 180, duration: 2600 });
       parts.push(rays);
     }
+    const icon = this.add.image(-200, 10, gadgetKey(f.kind));
+    icon.setScale(170 / Math.max(icon.width, icon.height));
+    const what = {
+      new: ["NEW GADGET!", "#8af06a"],
+      tier: [`UPGRADED TO ${f.tier}!`, "#8af06a"],
+      level: [`LEVEL ${f.level}!`, "#8af06a"],
+      replace: [`Swapped out the ${f.replaced ? GADGETS[f.replaced].name : ""}`, "#ffe066"],
+      scrap: [`Scrapped: +${fmt(f.scrap)} money`, "#e8e0d0"],
+    }[f.result];
     parts.push(
-      this.add.image(0, 0, panelTexture(this, "glass", 820, 270)),
-      this.add.image(-150, 10, gunKey(f.gun.id)).setScale(Math.min(360 / f.gun.w, 150 / f.gun.h)),
+      this.add.image(0, 0, panelTexture(this, "glass", 820, 270)), icon,
       this.add.circle(-350, -80, 44, info.color).setStrokeStyle(7, INK_N),
-      text(this, -350, -82, f.gun.tier, f.gun.tier.length > 2 ? 30 : 44),
-      fitText(text(this, 200, -70, f.gun.name, 50, info.css), 380),
-      text(this, 200, -14, info.name.toUpperCase(), 32, info.css),
-      fitText(text(this, 200, 56, f.equipped ? "EQUIPPED!" : `Scrapped: +${fmt(f.scrap)} money`, f.equipped ? 46 : 32, f.equipped ? "#8af06a" : "#e8e0d0"), 380),
+      text(this, -350, -82, f.tier, f.tier.length > 2 ? 30 : 44),
+      fitText(text(this, 160, -76, gadgetName(f.kind, f.tier), 50, info.css), 420),
+      fitText(label(this, 160, -22, GADGETS[f.kind].desc, 24, "#fff3dc", 440), 440),
+      fitText(text(this, 160, 66, what[0], f.result === "scrap" ? 32 : 44, what[1]), 420),
     );
     const c = this.add.container(W / 2, y, parts).setDepth(5100).setScale(0.3).setAlpha(0);
     this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 300, ease: "Back.out" });
-    this.tweens.add({ targets: c, alpha: 0, y: y - 60, delay: rank >= 3 ? 2600 : 1800, duration: 350, onComplete: () => c.destroy() });
-    if (f.equipped && rank >= 4) this.onBanner(`${info.name.toUpperCase()} GUN!`, "gold", 1200);
+    this.tweens.add({ targets: c, alpha: 0, y: y - 60, delay: rank >= 3 ? 2600 : 2000, duration: 350, onComplete: () => c.destroy() });
+    if (f.result !== "scrap" && rank >= 4) this.onBanner(`${info.name.toUpperCase()} GADGET!`, "gold", 1200);
   }
 
   /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */
@@ -1214,7 +1236,7 @@ export class UIScene extends Phaser.Scene implements Host {
       text(this, 0, top + 535, fmt(dps.total), 84, "#ffcf3a"),
     ]);
     // where the damage comes from
-    const rows: [string, string, number][] = [["hero", `Hero  (${STARTER_GUN.name})`, dps.hero]];
+    const rows: [string, string, number][] = [["hero", `Hero  (${GADGETS[STARTER_GADGET].name})`, dps.hero]];
     for (const [id, v] of Object.entries(dps.perPet)) rows.push([petTexture(this, id), ITEMS[id].name, v]);
     const g = this.add.graphics();
     b.add(g);

@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
 import { INK_N, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
-import { makeGunTextures } from "../art/guns";
+import { makeGadgetTextures } from "../art/gadgets";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
@@ -11,13 +11,15 @@ import {
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
-import { GunDef, STARTER_GUN, gunDps, gunKey, gunsOfTier } from "../data/guns";
+import {
+  GADGET_KINDS, GADGET_SLOTS, GadgetBase, GadgetKind, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetDps, gadgetKey, gadgetStats,
+} from "../data/gadgets";
 import { ITEMS, ItemDef, levelMult } from "../data/items";
 import { REGIONS, Region, regionForStage } from "../data/regions";
 import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
-import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGunTier, tierIndex } from "../data/tiers";
+import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
@@ -77,11 +79,8 @@ export const battle = {
   shielded: false,
   /** ms until the shield goes up or down */
   shieldLeft: SHIELD_MS,
-  gun: STARTER_GUN as GunDef,
-  ammo: 0,
-  mag: 0,
-  /** reload progress 0..1, or -1 when not reloading */
-  reload: -1,
+  /** the gadgets you carry (up to three) */
+  gadgets: [] as GadgetSlot[],
   skills: {} as Partial<Record<SkillId, number>>,
   stats: freshStats(),
   /** the boss has taken the crystal: it is just you, your pets and the boss */
@@ -97,9 +96,21 @@ export interface StageResult {
   reviveGems: number;
 }
 
-export interface GunFound {
-  gun: GunDef;
-  equipped: boolean;
+/** A gadget you carry: its kind, tier and level, and when it fires next. */
+export interface GadgetSlot {
+  kind: GadgetKind;
+  tier: Tier;
+  level: number;
+  timer: number;
+}
+
+/** What an airdrop gave: a new gadget, a better tier, a level, a swap, or scrap. */
+export interface GadgetFound {
+  kind: GadgetKind;
+  tier: Tier;
+  level: number;
+  result: "new" | "tier" | "level" | "replace" | "scrap";
+  replaced?: GadgetKind;
   scrap: number;
 }
 
@@ -177,7 +188,7 @@ interface Shot {
   splash: number;
 }
 
-/** Gun bullets fly straight and hit whatever they touch. */
+/** Thrown gadgets (shuriken, pet stars) fly straight and hit whatever they touch. */
 interface Bullet {
   img: Phaser.GameObjects.Image;
   vx: number;
@@ -216,7 +227,7 @@ interface Pickup {
   /** dropped items vanish after a while; placed ones stay */
   until: number;
   tier?: Tier;
-  gun?: GunDef;
+  gadget?: { kind: GadgetKind; tier: Tier };
   /** airdrops can be opened once they have landed */
   ready: boolean;
   extra: Phaser.GameObjects.GameObject[];
@@ -260,7 +271,8 @@ export class BattleScene extends Phaser.Scene {
   private land!: Region;
   private arena!: Arena;
   private hero!: Phaser.GameObjects.Image;
-  private gunImg!: Phaser.GameObjects.Image;
+  /** the main gadget, held in the hero's hand */
+  private handImg!: Phaser.GameObjects.Image;
   private crystal!: Phaser.GameObjects.Image;
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
@@ -291,12 +303,15 @@ export class BattleScene extends Phaser.Scene {
   private frozenUntil = 0;
   private warnedAt = 0;
 
-  private gun: GunDef = STARTER_GUN;
-  private ammo = 0;
-  private fireTimer = 0;
-  private reloadLeft = 0;
-  private reloadTotal = 1;
-  private idleGun = 0;
+  private gadgets: GadgetSlot[] = [];
+  private saws: { img: Phaser.GameObjects.Image; a: number }[] = [];
+  private sawHits = new Map<Enemy, number>();
+  private mines: { img: Phaser.GameObjects.Image; x: number; y: number; armAt: number; until: number; dmg: number; r: number }[] = [];
+  private drone: Phaser.GameObjects.Image | null = null;
+  private droneT = 0;
+  private rangs: { img: Phaser.GameObjects.Image; dx: number; dy: number; speed: number; went: number; max: number; back: boolean; dmg: number; hit: Set<Enemy> }[] = [];
+  private balls: { img: Phaser.GameObjects.Image; target: Enemy; left: number; dmg: number; speed: number; last: Enemy | null }[] = [];
+  private holes: { img: Phaser.GameObjects.Image; x: number; y: number; r: number; until: number; dmg: number }[] = [];
 
   private pets: Pet[] = [];
   private enemies: Enemy[] = [];
@@ -349,14 +364,15 @@ export class BattleScene extends Phaser.Scene {
     this.L = layoutFor(this.scale.height);
     makeWorldTextures(this, REGIONS);
     makePickupTextures(this);
-    makeGunTextures(this);
+    makeGadgetTextures(this);
     makeMutationTextures(this);
     this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
-      revived: false, freeRevive: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0, gun: STARTER_GUN, fireTimer: 0, reloadLeft: 0, idleGun: 0,
+      revived: false, freeRevive: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
+      gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], saws: [], sawHits: new Map(), mines: [], drone: null, droneT: 0, rangs: [], balls: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(),
     });
@@ -365,10 +381,9 @@ export class BattleScene extends Phaser.Scene {
     this.heroHp = this.heroMax;
     this.crystalMax = CRYSTAL_HP * villageHpMult();
     this.crystalHp = this.crystalMax;
-    this.ammo = this.magSize();
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, combo: 0, choosing: false,
-      shielded: false, shieldLeft: SHIELD_MS, gun: this.gun, ammo: this.ammo, mag: this.ammo, reload: -1, skills: this.skills, stats: this.stats,
+      shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
       bossFight: false,
     });
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -376,8 +391,8 @@ export class BattleScene extends Phaser.Scene {
 
     const [cx, cy] = this.arena.center;
     this.hero = this.add.image(cx, cy + 260, "hero").setOrigin(0.5, 0.95);
-    this.gunImg = this.add.image(0, 0, gunKey(this.gun.id));
-    this.setGun(this.gun);
+    this.handImg = this.add.image(0, 0, gadgetKey(STARTER_GADGET));
+    this.refreshHand();
     this.fortImg = this.add.image(0, 0, "ring").setTint(0xffd08a).setAlpha(0).setScale(1.4, 0.7);
     const cam = this.cameras.main;
     cam.setBounds(0, 0, ARENA, ARENA).setZoom(LOBBY_ZOOM);
@@ -469,8 +484,8 @@ export class BattleScene extends Phaser.Scene {
       save.boosts[b.id]--;
       used.push(b);
       if (b.id === "gun") {
-        const guns = gunsOfTier("C");
-        this.setGun(guns[Math.floor(Math.random() * guns.length)]);
+        const kinds = GADGET_KINDS.filter((k) => k !== STARTER_GADGET);
+        this.addGadget(kinds[Math.floor(Math.random() * kinds.length)], "C");
       } else if (b.id === "revive") {
         this.freeRevive = true;
       } else if (b.id === "armor") {
@@ -682,15 +697,14 @@ export class BattleScene extends Phaser.Scene {
     this.toast(`The crystal dropped a ${tier} die!`, TIER_INFO[tier].css);
   }
 
-  /** A gun crate parachutes down near you. The longer you survive, the better the gun inside. */
+  /** A gadget crate parachutes down near you. The longer you survive, the better the gadget inside. */
   private airdrop(): void {
-    const tier = rollGunTier(this.elapsed / 60000, this.lv("luck"));
-    const options = gunsOfTier(tier);
-    const gun = options[Math.floor(Math.random() * options.length)];
+    const tier = rollGadgetTier(this.elapsed / 60000, this.lv("luck"));
+    const kind = GADGET_KINDS[Math.floor(Math.random() * GADGET_KINDS.length)];
     const [x, y] = this.randomSpot(500, 1200, [this.hero.x, this.hero.y]);
     const p = this.addPickup("airdrop", x, y, 60000);
     p.tier = tier;
-    p.gun = gun;
+    p.gadget = { kind, tier };
     p.ready = false;
     const color = TIER_INFO[tier].color;
     p.glow.setTint(color).setAlpha(0);
@@ -711,7 +725,7 @@ export class BattleScene extends Phaser.Scene {
         sfx.boom();
         this.tweens.add({ targets: chute, alpha: 0, y: chute.y - 60, duration: 600, onComplete: () => chute.destroy() });
         p.glow.setAlpha(0.9);
-        // a light beam in the gun's tier colour, so you know what is waiting
+        // a light beam in the gadget's tier colour, so you know what is waiting
         const beam = this.add.rectangle(x, y - 320, 56, 640, color, 0.35).setDepth(y - 2);
         this.tweens.add({ targets: beam, alpha: 0.12, duration: 500, yoyo: true, repeat: -1 });
         p.extra.push(beam);
@@ -767,31 +781,56 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: p.img, y: y - 80, scale: 1.4, alpha: 0, duration: 350, onComplete: () => p.img.destroy() });
   }
 
-  /** Better guns are equipped right away; worse ones are scrapped for money and XP. */
+  /**
+   * A new kind of gadget fills a free slot (or replaces your weakest one if it is stronger);
+   * the same kind moves up to the better tier or gains a level; anything else is scrapped
+   * for money and XP.
+   */
   private openAirdrop(p: Pickup): void {
-    const gun = p.gun!;
+    const { kind, tier } = p.gadget!;
     this.stats.airdrops++;
-    const better = tierIndex(gun.tier) > tierIndex(this.gun.tier) || (gun.tier === this.gun.tier && gunDps(gun) > gunDps(this.gun));
-    let scrap = 0;
-    if (better) {
-      this.setGun(gun);
+    const own = this.gadgets.find((g) => g.kind === kind);
+    let result: GadgetFound["result"] = "scrap";
+    let replaced: GadgetKind | undefined;
+    if (own) {
+      if (tierIndex(tier) > tierIndex(own.tier)) {
+        own.tier = tier;
+        result = "tier";
+      } else if (own.level < MAX_GADGET_LEVEL) {
+        own.level++;
+        result = "level";
+      }
+    } else if (this.gadgets.length < GADGET_SLOTS) {
+      this.addGadget(kind, tier);
+      result = "new";
     } else {
-      scrap = monsterCash(25, save.stage) * (1 + tierIndex(gun.tier)) * cashMult();
+      const weakest = [...this.gadgets].sort((a, b) => gadgetDps(a.kind, a.tier, a.level) - gadgetDps(b.kind, b.tier, b.level))[0];
+      if (gadgetDps(kind, tier, 1) > gadgetDps(weakest.kind, weakest.tier, weakest.level)) {
+        this.removeGadget(weakest);
+        this.addGadget(kind, tier);
+        result = "replace";
+        replaced = weakest.kind;
+      }
+    }
+    let scrap = 0;
+    if (result === "scrap") {
+      scrap = monsterCash(25, save.stage) * (1 + tierIndex(tier)) * cashMult();
       save.cash += scrap;
       this.stats.earned += scrap;
       this.gainXp(4);
     }
-    const rank = tierIndex(gun.tier);
+    this.refreshHand();
+    const rank = tierIndex(tier);
     if (rank >= 3) {
       this.cameras.main.flash(250, 255, 245, 220);
       buzz(120);
     }
     sfx.reveal(Math.min(8, Math.round(rank * 1.4)));
-    this.puff.setParticleTint(TIER_INFO[gun.tier].color);
+    this.puff.setParticleTint(TIER_INFO[tier].color);
     this.puff.explode(24, p.x, p.y - 50);
     this.tweens.add({ targets: p.img, scaleX: 1.3, scaleY: 0.7, alpha: 0, duration: 260, onComplete: () => p.img.destroy() });
-    const found: GunFound = { gun, equipped: better, scrap };
-    this.game.events.emit("gun-found", found);
+    const found: GadgetFound = { kind, tier, level: own?.level ?? 1, result, replaced, scrap };
+    this.game.events.emit("gadget-found", found);
   }
 
   private addDice(tier: Tier, n: number): void {
@@ -908,7 +947,6 @@ export class BattleScene extends Phaser.Scene {
       this.heal(0.3);
     }
     if (id === "mend") this.crystalHp = Math.min(this.crystalMax, this.crystalHp + this.crystalMax * 0.35);
-    if (id === "mag") this.ammo = Math.min(this.magSize(), this.ammo + Math.round(this.gun.mag * 0.4));
     if (id === "pack") this.pets.forEach((p) => (p.timer = 0));
     this.sparks.setParticleTint(SKILL_BY_ID[id].color);
     this.sparks.explode(24, this.hero.x, this.hero.y - 80);
@@ -942,106 +980,330 @@ export class BattleScene extends Phaser.Scene {
     this.shardTimer = 1300 - 120 * lv;
     const [cx, cy] = this.crystalHome;
     const targets = this.nearestEnemies(cx, cy, 700 + 80 * lv, 1 + lv);
-    const dmg = this.bulletDamage() * (0.8 + 0.3 * lv);
+    const dmg = this.heroDamage() * (0.8 + 0.3 * lv);
     targets.forEach((t, i) => this.time.delayedCall(i * 70, () => this.fire(cx, cy - 160, t, dmg, "shard", this.land.crystal, 0, 1.1, 1500)));
   }
 
-  // ───────────────────────── guns ─────────────────────────
+  // ───────────────────────── gadgets ─────────────────────────
 
-  private setGun(gun: GunDef): void {
-    this.gun = gun;
-    battle.gun = gun;
-    this.gunImg.setTexture(gunKey(gun.id)).setOrigin(gun.grip[0] / gun.w, gun.grip[1] / gun.h).setScale(gun.hold);
-    this.ammo = this.magSize();
-    this.reloadLeft = 0;
-    this.fireTimer = 200;
+  private addGadget(kind: GadgetKind, tier: Tier, level = 1): void {
+    this.gadgets.push({ kind, tier, level, timer: 300 });
+    this.refreshHand();
   }
 
-  private magSize(): number {
-    return Math.round(this.gun.mag * (1 + 0.4 * this.lv("mag")));
-  }
-
-  private reloadMs(): number {
-    return this.gun.reloadMs * 0.8 ** this.lv("reload");
-  }
-
-  private fireMs(): number {
-    return this.gun.fireMs / (1 + 0.15 * this.lv("firerate")) / (this.fortified ? 1 + 0.1 * this.lv("fort") : 1);
-  }
-
-  private gunRange(): number {
-    return this.gun.range * rangeMult() * (1 + 0.2 * this.lv("range"));
-  }
-
-  private bulletDamage(): number {
-    return this.heroDamage() * this.gun.dmg;
-  }
-
-  /** Where bullets leave the barrel right now. */
-  private muzzle(): [number, number] {
-    const g = this.gun;
-    const flip = this.gunImg.flipY ? -1 : 1;
-    const dx = (g.muzzle[0] - g.grip[0]) * g.hold;
-    const dy = (g.muzzle[1] - g.grip[1]) * g.hold * flip;
-    const r = this.gunImg.rotation;
-    return [this.gunImg.x + dx * Math.cos(r) - dy * Math.sin(r), this.gunImg.y + dx * Math.sin(r) + dy * Math.cos(r)];
-  }
-
-  private startReload(): void {
-    if (this.reloadLeft > 0) return;
-    this.reloadTotal = this.reloadMs();
-    this.reloadLeft = this.reloadTotal;
-    sfx.reload();
-  }
-
-  /** Aim at the closest monster and fire; reload when the magazine runs dry. */
-  private heroAttack(delta: number): void {
-    const target = this.nearestEnemies(this.hero.x, this.hero.y, this.gunRange(), 1)[0];
-    const aim = target
-      ? Math.atan2(target.img.y - target.img.displayHeight * 0.4 - this.gunImg.y, target.img.x - this.gunImg.x)
-      : this.hero.flipX ? Math.PI : 0;
-    this.gunImg.setRotation(Phaser.Math.Angle.RotateTo(this.gunImg.rotation, aim, target ? 0.35 : 0.15));
-    this.gunImg.setFlipY(Math.abs(this.gunImg.rotation) > Math.PI / 2);
-    this.fireTimer -= delta;
-    if (this.reloadLeft > 0) {
-      this.reloadLeft -= delta;
-      if (this.reloadLeft <= 0) {
-        this.ammo = this.magSize();
-        sfx.click();
-      }
-      return;
+  private removeGadget(g: GadgetSlot): void {
+    this.gadgets = battle.gadgets = this.gadgets.filter((o) => o !== g);
+    if (g.kind === "saw") {
+      this.saws.forEach((w) => w.img.destroy());
+      this.saws = [];
     }
-    if (!target) {
-      // nothing to shoot: top up the magazine
-      this.idleGun += delta;
-      if (this.idleGun > 1200 && this.ammo < this.magSize()) this.startReload();
-      return;
+    if (g.kind === "drone") {
+      this.drone?.destroy();
+      this.drone = null;
     }
-    this.idleGun = 0;
-    if (this.fireTimer > 0) return;
-    this.fireTimer = this.fireMs();
-    const g = this.gun;
-    const [mx, my] = this.muzzle();
-    const dmg = this.bulletDamage();
+    if (g.kind === "mine") this.mines.forEach((m) => m.img.destroy()), (this.mines = []);
+  }
+
+  /** The first gadget is held in the hand. */
+  private refreshHand(): void {
+    battle.gadgets = this.gadgets;
+    const g = this.gadgets[0];
+    if (!g) return;
+    this.handImg.setTexture(gadgetKey(g.kind));
+    this.handImg.setScale(46 / Math.max(this.handImg.width, this.handImg.height));
+  }
+
+  /** A gadget's numbers right now, with this run's skills. */
+  private gStats(g: GadgetSlot): GadgetBase {
+    const s = gadgetStats(g.kind, g.tier, g.level);
+    const quick = (1 + 0.15 * this.lv("firerate")) * (this.fortified ? 1 + 0.1 * this.lv("fort") : 1);
+    // Multi-Throw: odd levels throw one more, even levels hit harder
+    const multi = this.lv("mag");
+    return {
+      ...s,
+      dmg: s.dmg * (1 + 0.15 * Math.floor(multi / 2)),
+      cd: s.cd / quick,
+      count: s.count + Math.ceil(multi / 2),
+      range: s.range * rangeMult() * (1 + 0.2 * this.lv("range")),
+      radius: s.radius * (1 + 0.25 * this.lv("reload")),
+      speed: g.kind === "saw" ? s.speed * quick : s.speed,
+    };
+  }
+
+  /** Thrown gadgets can explode on hit with the Boom skill. */
+  private boomOf(): { explode: number; splash: number } {
     const boom = this.lv("boom");
-    for (let i = 0; i < g.pellets; i++) {
-      const a = this.gunImg.rotation + (Math.random() - 0.5) * 2 * g.spread;
-      const img = this.add.image(mx, my, `ammo_${g.ammo}`).setRotation(a).setDepth(9000).setScale(g.dmg >= 5 ? 1.5 : 1.2);
-      if (g.tints) img.setTint(g.tints[Math.floor(Math.random() * g.tints.length)]);
-      const speed = g.speed * (0.92 + Math.random() * 0.16);
-      this.bullets.push({
-        img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: (this.gunRange() / speed) * 1000, dmg, pierce: g.pierce + 1,
-        explode: g.explode + (boom ? 60 + 20 * boom : 0), splash: g.explode ? 1 : boom ? 0.35 + 0.1 * boom : 0, hit: [], spin: g.spin ?? 0, burst: g.id === "launcher",
-      });
+    return { explode: boom ? 60 + 20 * boom : 0, splash: boom ? 0.35 + 0.1 * boom : 0 };
+  }
+
+  /** Every gadget fires on its own when it is ready and something is in reach. */
+  private gadgetsTick(delta: number): void {
+    const hx = this.hero.x;
+    const hy = this.hero.y - 60;
+    const first = this.nearestEnemies(hx, hy, 1000, 1)[0];
+    const aim = first ? Math.atan2(first.img.y - first.img.displayHeight * 0.4 - this.handImg.y, first.img.x - this.handImg.x) : this.hero.flipX ? Math.PI : 0;
+    this.handImg.setRotation(Phaser.Math.Angle.RotateTo(this.handImg.rotation, aim, 0.25));
+    const base = this.heroDamage();
+    for (const g of this.gadgets) {
+      if (g.kind === "saw") continue;
+      g.timer -= delta;
+      if (g.timer > 0) continue;
+      const st = this.gStats(g);
+      const dmg = base * st.dmg;
+      if (g.kind === "mine") {
+        if (this.mines.length < st.count) this.dropMine(dmg, st.radius);
+        g.timer = st.cd;
+        continue;
+      }
+      const targets = this.nearestEnemies(hx, hy, st.range, Math.max(1, st.count));
+      if (!targets.length) continue;
+      g.timer = st.cd;
+      this.stats.shots++;
+      switch (g.kind) {
+        case "shuriken": {
+          const { explode, splash } = this.boomOf();
+          for (let i = 0; i < st.count; i++) {
+            const t = targets[i % targets.length];
+            const a = Math.atan2(t.img.y - t.img.displayHeight * 0.4 - hy, t.img.x - hx) + (i >= targets.length ? (Math.random() - 0.5) * 0.4 : 0);
+            const img = this.add.image(hx, hy, "gd_shuriken").setDepth(9000).setScale(1.05);
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode, splash, hit: [], spin: 20 });
+          }
+          sfx.shoot(false);
+          break;
+        }
+        case "rocket":
+          for (let i = 0; i < st.count; i++) {
+            const t = targets[Math.floor(Math.random() * targets.length)];
+            this.time.delayedCall(i * 90, () => this.fire(hx, hy - 20, t, dmg, "gd_rocket", 0xffffff, st.radius, 1, st.speed));
+          }
+          sfx.shoot(true);
+          break;
+        case "drone":
+          this.droneDrop(st, dmg);
+          break;
+        case "boomerang":
+          for (let i = 0; i < st.count; i++) {
+            const t = targets[0];
+            const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i - (st.count - 1) / 2) * 0.35;
+            const img = this.add.image(hx, hy, "gd_boomerang").setDepth(9000).setScale(1.25);
+            this.rangs.push({ img, dx: Math.cos(a), dy: Math.sin(a), speed: st.speed, went: 0, max: st.range, back: false, dmg, hit: new Set() });
+          }
+          sfx.shoot(false);
+          break;
+        case "ball":
+          for (let i = 0; i < st.count; i++) {
+            const img = this.add.image(hx, hy, "gd_ball").setDepth(9000).setScale(1.2);
+            this.balls.push({ img, target: targets[i % targets.length], left: st.pierce, dmg, speed: st.speed, last: null });
+          }
+          sfx.shoot(false);
+          break;
+        case "grenade":
+          for (let i = 0; i < st.count; i++) this.lobGrenade(targets[i % targets.length], dmg, st.radius, tierIndex(g.tier) >= 5);
+          sfx.shoot(true);
+          break;
+      }
     }
-    this.stats.shots++;
-    this.ammo--;
-    sfx.shoot(g.dmg * g.pellets >= 5);
-    // recoil and a muzzle flash
-    this.gunImg.x -= Math.cos(this.gunImg.rotation) * (4 + Math.min(10, g.dmg));
-    const flash = this.add.image(mx, my, "flash").setDepth(9050).setScale(0.45 + Math.min(0.6, g.dmg * 0.05)).setTint(g.color);
-    this.tweens.add({ targets: flash, scale: flash.scale * 1.8, alpha: 0, duration: 90, onComplete: () => flash.destroy() });
-    if (this.ammo <= 0) this.startReload();
+  }
+
+  /** Mines go down at your feet and arm after a moment. */
+  private dropMine(dmg: number, r: number): void {
+    const x = this.hero.x;
+    const y = this.hero.y;
+    const img = this.add.image(x, y - 14, "gd_mine").setDepth(y - 5).setScale(0.3);
+    this.tweens.add({ targets: img, scale: 1.15, duration: 200, ease: "Back.out" });
+    this.mines.push({ img, x, y, armAt: this.time.now + 400, until: this.time.now + 15000, dmg, r });
+  }
+
+  /** The drone drops bombs on monsters below it. */
+  private droneDrop(st: GadgetBase, dmg: number): void {
+    if (!this.drone) return;
+    const d = this.drone;
+    const targets = this.nearestEnemies(d.x, d.y + 200, st.range, st.count);
+    targets.forEach((t, i) => {
+      const tx = t.img.x;
+      const ty = t.img.y;
+      const bomb = this.add.image(d.x, d.y + 20, "pk_bomb").setDepth(9200).setScale(0.95);
+      this.tweens.add({
+        targets: bomb, x: tx, y: ty - 20, angle: 200, duration: 380, delay: i * 120, ease: "Quad.in",
+        onComplete: () => {
+          bomb.destroy();
+          this.blast(tx, ty - 20, st.radius, dmg, null);
+        },
+      });
+    });
+  }
+
+  /** Grenades fly in an arc; S tier and up open a black hole that pulls monsters in before it bursts. */
+  private lobGrenade(t: Enemy, dmg: number, r: number, hole: boolean): void {
+    const sx = this.hero.x;
+    const sy = this.hero.y - 70;
+    const tx = t.img.x;
+    const ty = t.img.y - 10;
+    const img = this.add.image(sx, sy, "gd_grenade").setDepth(9200).setScale(1.1);
+    const k = { t: 0 };
+    this.tweens.add({
+      targets: k, t: 1, duration: 600, ease: "Linear",
+      onUpdate: () => img.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 260).setAngle(k.t * 540),
+      onComplete: () => {
+        img.destroy();
+        if (!hole) {
+          this.blast(tx, ty, r, dmg, null);
+          return;
+        }
+        const h = this.add.image(tx, ty - 30, "gd_hole").setDepth(ty - 3).setScale(0.2);
+        this.tweens.add({ targets: h, scale: (r / 75) * 1.1, duration: 250, ease: "Back.out" });
+        this.tweens.add({ targets: h, angle: -720, duration: 1000 });
+        this.holes.push({ img: h, x: tx, y: ty, r: r * 1.5, until: this.time.now + 950, dmg: dmg * 1.6 });
+        sfx.thunder();
+      },
+    });
+  }
+
+  /** Everything gadgets leave behind: saws, mines, the drone, boomerangs, balls and black holes. */
+  private moveGadgets(time: number, delta: number): void {
+    const dt = delta / 1000;
+    const fighting = this.fighting;
+    const base = this.heroDamage();
+    // saw blades circle you
+    const saw = this.gadgets.find((g) => g.kind === "saw");
+    if (saw) {
+      const st = this.gStats(saw);
+      while (this.saws.length < st.count) this.saws.push({ img: this.add.image(this.hero.x, this.hero.y, "gd_saw").setScale(1.3), a: 0 });
+      while (this.saws.length > st.count) this.saws.pop()!.img.destroy();
+      const R = st.range * (1 + 0.2 * this.lv("range"));
+      this.saws.forEach((w, i) => {
+        w.a = time / 1000 * st.speed + (i / this.saws.length) * Math.PI * 2;
+        const x = this.hero.x + Math.cos(w.a) * R;
+        const y = this.hero.y - 50 + Math.sin(w.a) * R * 0.7;
+        w.img.setPosition(x, y).setDepth(y + 50).setRotation(time / 40);
+        if (!fighting) return;
+        for (const e of this.near(x, y + 40, 90)) {
+          if (time - (this.sawHits.get(e) ?? -1e9) < st.cd) continue;
+          this.sawHits.set(e, time);
+          this.hit(e, base * st.dmg, true);
+          this.sparks.setParticleTint(0xffcf3a);
+          this.sparks.explode(2, e.img.x, e.img.y - 40);
+        }
+      });
+      if (this.sawHits.size > 600) this.sawHits.clear();
+    }
+    // the drone hovers over your shoulder
+    if (this.gadgets.some((g) => g.kind === "drone")) {
+      if (!this.drone) this.drone = this.add.image(this.hero.x, this.hero.y - 220, "gd_drone").setScale(1.3);
+      this.droneT += dt;
+      const x = this.hero.x + Math.cos(this.droneT * 1.3) * 130;
+      const y = this.hero.y - 230 + Math.sin(this.droneT * 2.6) * 18;
+      this.drone.setPosition(this.drone.x + (x - this.drone.x) * 0.1, this.drone.y + (y - this.drone.y) * 0.1).setDepth(this.hero.y + 300);
+    }
+    // mines go off when a monster steps close
+    this.mines = this.mines.filter((m) => {
+      if (time > m.until) {
+        this.tweens.add({ targets: m.img, alpha: 0, duration: 200, onComplete: () => m.img.destroy() });
+        return false;
+      }
+      if (!fighting || time < m.armAt) return true;
+      m.img.setTint(Math.floor(time / 250) % 2 ? 0xffffff : 0xffb0b0);
+      if (!this.near(m.x, m.y, 80).length) return true;
+      m.img.destroy();
+      this.blast(m.x, m.y - 20, m.r, m.dmg, null);
+      return false;
+    });
+    // boomerangs fly out, then home back to you
+    this.rangs = this.rangs.filter((b) => {
+      const step = b.speed * dt;
+      if (!b.back) {
+        b.img.x += b.dx * step;
+        b.img.y += b.dy * step;
+        b.went += step;
+        if (b.went >= b.max) {
+          b.back = true;
+          b.hit.clear();
+        }
+      } else {
+        const dx = this.hero.x - b.img.x;
+        const dy = this.hero.y - 60 - b.img.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 50) {
+          b.img.destroy();
+          return false;
+        }
+        b.img.x += (dx / d) * step * 1.1;
+        b.img.y += (dy / d) * step * 1.1;
+      }
+      b.img.rotation += dt * 16;
+      if (fighting) for (const e of this.near(b.img.x, b.img.y + 40, 70)) {
+        if (b.hit.has(e)) continue;
+        b.hit.add(e);
+        this.hit(e, b.dmg);
+      }
+      return true;
+    });
+    // bouncy balls hop from monster to monster
+    this.balls = this.balls.filter((b) => {
+      if (!this.enemies.includes(b.target)) {
+        const next = this.nearestEnemies(b.img.x, b.img.y, 500, 3).find((e) => e !== b.last);
+        if (!next) {
+          b.img.destroy();
+          return false;
+        }
+        b.target = next;
+      }
+      const tx = b.target.img.x;
+      const ty = b.target.img.y - b.target.img.displayHeight * 0.4;
+      const dx = tx - b.img.x;
+      const dy = ty - b.img.y;
+      const d = Math.hypot(dx, dy);
+      const step = b.speed * dt;
+      b.img.rotation += dt * 10;
+      if (d > step + 20) {
+        b.img.x += (dx / d) * step;
+        b.img.y += (dy / d) * step;
+        return true;
+      }
+      this.hit(b.target, b.dmg);
+      const { explode, splash } = this.boomOf();
+      if (explode) this.blast(tx, ty, explode, b.dmg * splash, b.target);
+      this.tweens.add({ targets: b.img, scaleY: 0.5, duration: 60, yoyo: true });
+      b.last = b.target;
+      if (b.left-- <= 0) {
+        b.img.destroy();
+        return false;
+      }
+      const next = this.nearestEnemies(tx, ty, 520, 4).find((e) => e !== b.last);
+      if (!next) {
+        b.img.destroy();
+        return false;
+      }
+      b.target = next;
+      return true;
+    });
+    // black holes pull monsters in, then burst
+    this.holes = this.holes.filter((h) => {
+      for (const e of this.near(h.x, h.y, h.r)) {
+        if (e.type.boss) continue;
+        const dx = h.x - e.img.x;
+        const dy = h.y - e.img.y;
+        const d = Math.hypot(dx, dy) || 1;
+        e.img.x += (dx / d) * Math.min(d, 520 * dt);
+        e.img.y += (dy / d) * Math.min(d, 520 * dt);
+      }
+      if (time < h.until) return true;
+      this.tweens.add({ targets: h.img, scale: 0, alpha: 0, duration: 200, onComplete: () => h.img.destroy() });
+      this.blast(h.x, h.y - 20, h.r, h.dmg, null);
+      this.cameras.main.shake(140, 0.005);
+      return false;
+    });
+  }
+
+  /** Clear thrown things (the boss is coming). */
+  private clearThrown(): void {
+    [...this.rangs, ...this.balls].forEach((b) => b.img.destroy());
+    this.mines.forEach((m) => m.img.destroy());
+    this.holes.forEach((h) => h.img.destroy());
+    this.rangs = [];
+    this.balls = [];
+    this.mines = [];
+    this.holes = [];
   }
 
   private moveBullets(delta: number): void {
@@ -1162,8 +1424,7 @@ export class BattleScene extends Phaser.Scene {
     const dir = this.hero.flipX ? -1 : 1;
     const gx = this.hero.x + HERO_HAND.x * dir;
     const gy = this.hero.y + HERO_HAND.y;
-    // recoil springs back
-    this.gunImg.setPosition(this.gunImg.x + (gx - this.gunImg.x) * 0.4, gy).setDepth(this.hero.y + 1);
+    this.handImg.setPosition(gx, gy).setDepth(this.hero.y + 1);
     const fort = this.fortified;
     this.fortImg.setPosition(this.hero.x, this.hero.y - 10).setDepth(this.hero.y - 1).setAlpha(fort ? 0.6 + Math.sin(time / 150) * 0.2 : 0);
   }
@@ -1468,6 +1729,7 @@ export class BattleScene extends Phaser.Scene {
     for (const e of [...this.enemies]) this.kill(e, true);
     this.bullets.forEach((b) => b.img.destroy());
     this.bullets = [];
+    this.clearThrown();
     this.shielded = battle.shielded = false;
     this.tweens.killTweensOf(this.shieldImg);
     this.tweens.add({ targets: this.shieldImg, scale: 0, duration: 300 });
@@ -1684,9 +1946,6 @@ export class BattleScene extends Phaser.Scene {
     }
     battle.hp = this.heroHp / this.heroMax;
     battle.crystal = this.crystalHp / this.crystalMax;
-    battle.ammo = this.ammo;
-    battle.mag = this.magSize();
-    battle.reload = this.reloadLeft > 0 ? 1 - this.reloadLeft / this.reloadTotal : -1;
     const boss = this.enemies.find((e) => e.type.boss);
     battle.bossFrac = boss ? boss.hp / boss.maxHp : -1;
 
@@ -1701,12 +1960,13 @@ export class BattleScene extends Phaser.Scene {
 
     this.moveEnemies(time, delta);
     if (fighting) {
-      this.heroAttack(delta);
+      this.gadgetsTick(delta);
       this.petAttacks(delta);
       this.crystalShards(delta);
     }
     this.moveRocks(delta);
     this.moveBullets(delta);
+    this.moveGadgets(time, delta);
     this.moveShots(delta);
     this.drawFx(time);
     this.cullTimer -= delta;
@@ -2239,7 +2499,6 @@ export class BattleScene extends Phaser.Scene {
     // your health (and reload) under your feet, the crystal's health above it
     const hf = this.heroHp / this.heroMax;
     drawBar(this.bars, this.hero.x - 80, this.hero.y + 16, 160, 20, hf, hf > 0.35 ? 0x7ad651 : 0xf26464);
-    if (this.reloadLeft > 0) drawBar(this.bars, this.hero.x - 80, this.hero.y + 50, 160, 14, 1 - this.reloadLeft / this.reloadTotal, 0xffd23f);
     if (battle.bossFight) return;
     const [hx, hy] = this.arena.center;
     const f = this.crystalHp / this.crystalMax;
