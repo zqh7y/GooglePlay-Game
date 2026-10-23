@@ -5,6 +5,14 @@ import { INK, Ctx, canvasTexture, circle, darken, ellipse, fill, fillOutline, li
 
 /** Bones and meat (XP), dice of every tier, airdrops, map power-ups and skill icons. */
 
+/** XP glows: a soft green light with a twinkle, so bones and meat read as experience. */
+function xpGlow(ctx: Ctx, x: number, y: number, r: number): void {
+  circle(ctx, x, y, r);
+  fill(ctx, radial(ctx, x, y, r, [[0, "rgba(150,255,200,0.8)"], [0.5, "rgba(120,255,180,0.35)"], [1, "rgba(120,255,180,0)"]]));
+  starPath(ctx, x + r * 0.55, y - r * 0.5, r * 0.2, 0.3, 4, 0);
+  fill(ctx, "rgba(255,255,255,0.95)");
+}
+
 /** A little bone (small XP). Thick outline so it reads on any ground. */
 function bone(ctx: Ctx): void {
   ctx.save();
@@ -474,9 +482,21 @@ const GLYPHS: Record<string, (ctx: Ctx) => void> = {
 };
 
 export function makePickupTextures(scene: Phaser.Scene): void {
-  canvasTexture(scene, "xp_bone", 64, 44, bone);
-  canvasTexture(scene, "xp_meat", 62, 50, meat(false));
-  canvasTexture(scene, "xp_ham", 84, 66, meat(true));
+  canvasTexture(scene, "xp_bone", 100, 84, (ctx) => {
+    xpGlow(ctx, 50, 42, 46);
+    ctx.translate(18, 20);
+    bone(ctx);
+  });
+  canvasTexture(scene, "xp_meat", 100, 88, (ctx) => {
+    xpGlow(ctx, 50, 44, 48);
+    ctx.translate(19, 19);
+    meat(false)(ctx);
+  });
+  canvasTexture(scene, "xp_ham", 134, 114, (ctx) => {
+    xpGlow(ctx, 67, 57, 64);
+    ctx.translate(25, 24);
+    meat(true)(ctx);
+  });
   canvasTexture(scene, "sky_claw", 240, 520, claw(false));
   canvasTexture(scene, "sky_claw_shut", 240, 520, claw(true));
   canvasTexture(scene, "storm", 590, 270, storm);

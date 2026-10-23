@@ -159,7 +159,7 @@ branch("team", "SW", [
   ["slot2", "Pet Slot II", "slots", 150e3, "slot", 1],
   ["boots", "Running Shoes", "boot", 600e3, "moveSpeed", 0.2],
   ["walls2", "Stone Walls", "shield", 15e6, "villageHp", 0.5],
-  ["slot3", "Pet Slot III", "slots", 800e6, "slot", 1],
+  ["slot3", "Pet Power", "paw", 800e6, "dmg", 2],
   ["bond", "Pet Bond", "paw", 30e9, "dmg", 2],
   ["fortress", "Fortress", "shield", 1e12, "villageHp", 1],
 ], {

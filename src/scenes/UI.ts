@@ -124,6 +124,11 @@ export class UIScene extends Phaser.Scene implements Host {
     this.L = layoutFor(this.H);
     Object.assign(this, { openModal: null, celebrating: false, picker: null, badges: [], tab: "battle", mapOpen: false, nav: {}, mode: "" });
     ensureQuests();
+    // teams are at most three pets now
+    if (save.equipped.length > petSlots()) {
+      save.equipped = save.equipped.slice(0, petSlots());
+      persist();
+    }
     this.buildHud();
     this.rollScreen = new RollScreen(this, this);
     this.screens = { roll: this.rollScreen, pets: new PetsScreen(this, this), shop: new ShopScreen(this, this) };

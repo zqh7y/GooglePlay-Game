@@ -42,7 +42,7 @@ function teamDps(): { dps: number; best: number } {
     if (d.kind === "buff") return d.damage * levelMult(pets[i].level) * 0.05 * (1 + d.index);
     return ((d.damage * levelMult(pets[i].level) * d.count) / (d.cooldown / 1000)) * (d.kind === "splash" || d.kind === "pierce" ? 1.4 : 1);
   };
-  const team = ids.sort((a, b) => score(b) - score(a)).slice(0, 3 + sum("slot"));
+  const team = ids.sort((a, b) => score(b) - score(a)).slice(0, Math.min(3, 1 + sum("slot")));
   let buff = 0;
   let petDps = 0;
   let perHit = 0;

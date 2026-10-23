@@ -39,7 +39,9 @@ export const autoUnlocked = () => sum("auto") > 0;
 export const cashMult = () => product("cash");
 export const dmgMult = () => product("dmg");
 export const heroDmgMult = () => product("heroDmg");
-export const petSlots = () => 3 + sum("slot");
+/** You start with one pet in your team and can unlock up to three. */
+export const MAX_PETS = 3;
+export const petSlots = () => Math.min(MAX_PETS, 1 + sum("slot"));
 export const critChance = () => 0.05 + sum("crit");
 export const critDamage = () => 3 + sum("critDmg");
 export const offlineRate = () => 0.25 + sum("offline");

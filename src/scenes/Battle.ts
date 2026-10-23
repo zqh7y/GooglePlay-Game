@@ -7,7 +7,7 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, CRYSTAL_DIE_MS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { GunDef, STARTER_GUN, gunDps, gunKey, gunsOfTier } from "../data/guns";
@@ -21,9 +21,9 @@ import { questEvent } from "../systems/goals";
 import { persist, save } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
 import {
-  cashMult, chestMult, critChance, critDamage, dmgMult, gemsPerBoss, heroDmgMult, moveSpeedMult, rangeMult, villageHpMult,
+  cashMult, chestMult, critChance, critDamage, dmgMult, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
 } from "../systems/stats";
-import { RARITY_INFO } from "../data/rarity";
+import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { fmt, oneIn } from "../ui/format";
 import { drawBar, text } from "../ui/widgets";
 
@@ -145,8 +145,13 @@ interface Pet {
   /** the monster this pet is running after */
   target: Enemy | null;
   retarget: number;
-  /** "1 in N" over its head */
+  /** "Name 1 in N" over its head */
   odds: Phaser.GameObjects.Text;
+  hp: number;
+  maxHp: number;
+  hurtAt: number;
+  /** knocked out: ms until it gets back up */
+  down: number;
 }
 
 /** Homing things: pet orbs and bombs, crystal shards. */
@@ -174,6 +179,8 @@ interface Bullet {
   hit: Enemy[];
   /** thrown stars spin */
   spin: number;
+  /** water balloons pop where they land even if they hit nothing */
+  burst?: boolean;
 }
 
 /** Rocks the boss throws at you. */
@@ -210,7 +217,9 @@ interface Food {
   speed: number;
 }
 
-const PET_SPOTS = [[-150, 30], [150, 30], [-95, 125], [95, 125], [-245, 100], [245, 100]];
+const PET_SPOTS = [[-150, 30], [150, 30], [0, 140]];
+/** Pets get knocked out for this long when their health runs out. */
+const PET_DOWN_MS = 8000;
 const PET_SCALE = 0.7;
 const NO_JOY = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
 const BUCKET = 600;
@@ -287,6 +296,7 @@ export class BattleScene extends Phaser.Scene {
   private chestTimer = 0;
   private dropTimer = 0;
   private shardTimer = 0;
+  private crystalDieAt = CRYSTAL_DIE_MS;
   private crystalHome: [number, number] = [0, 0];
   private crystalGlow!: Phaser.GameObjects.Image;
   private crystalSparkle!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -332,7 +342,7 @@ export class BattleScene extends Phaser.Scene {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
       revived: false, stats: freshStats(), frozenUntil: 0, warnedAt: 0, gun: STARTER_GUN, fireTimer: 0, reloadLeft: 0, idleGun: 0,
-      spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0,
+      spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(),
     });
     this.joy = { ...NO_JOY };
@@ -603,6 +613,31 @@ export class BattleScene extends Phaser.Scene {
       }
       return true;
     });
+  }
+
+  /** Every 30 s alive the crystal pops out a die that lands nearby; it gets a tier rarer every 20 stages. */
+  private crystalDie(): void {
+    const tier = DICE_TIERS[Math.min(DICE_TIERS.length - 1, Math.floor((save.stage - 1) / 20))];
+    const [cx, cy] = this.crystalHome;
+    const a = Math.random() * Math.PI * 2;
+    const d = 230 + Math.random() * 160;
+    const [x, y] = [clampX(cx + Math.cos(a) * d), clampY(cy + Math.sin(a) * d * 0.7)];
+    const img = this.add.image(cx, cy - 220, `die_${tier}`).setScale(0).setDepth(9000);
+    const shadow = this.add.ellipse(x, y, 40, 14, 0x000000, 0.25).setDepth(y - 1).setScale(0.3);
+    this.sparks.setParticleTint(TIER_INFO[tier].color);
+    this.sparks.explode(16, cx, cy - 220);
+    sfx.lucky();
+    this.tweens.add({ targets: img, scale: 1.2, duration: 250, ease: "Back.out" });
+    this.tweens.add({ targets: img, x, duration: 750, delay: 200 });
+    this.tweens.add({ targets: img, y: cy - 420, duration: 300, delay: 200, ease: "Quad.out" });
+    this.tweens.add({ targets: img, y, angle: 360, duration: 450, delay: 500, ease: "Bounce.out" });
+    this.tweens.add({ targets: shadow, scale: 1, duration: 750, delay: 200 });
+    this.time.delayedCall(980, () => {
+      img.destroy();
+      shadow.destroy();
+      this.addDie(tier, x, y, 0);
+    });
+    this.toast(`The crystal dropped a ${tier} die!`, TIER_INFO[tier].css);
   }
 
   /** A gun crate parachutes down near you. The longer you survive, the better the gun inside. */
@@ -947,15 +982,14 @@ export class BattleScene extends Phaser.Scene {
     const [mx, my] = this.muzzle();
     const dmg = this.bulletDamage();
     const boom = this.lv("boom");
-    const grenade = g.id === "launcher";
     for (let i = 0; i < g.pellets; i++) {
       const a = this.gunImg.rotation + (Math.random() - 0.5) * 2 * g.spread;
-      const tex = grenade ? "grenade" : g.id === "plasma" ? "plasma" : "bullet";
-      const img = this.add.image(mx, my, tex).setRotation(a).setDepth(9000).setScale(g.dmg >= 5 ? 1.5 : 1.15);
+      const img = this.add.image(mx, my, `ammo_${g.ammo}`).setRotation(a).setDepth(9000).setScale(g.dmg >= 5 ? 1.5 : 1.2);
+      if (g.tints) img.setTint(g.tints[Math.floor(Math.random() * g.tints.length)]);
       const speed = g.speed * (0.92 + Math.random() * 0.16);
       this.bullets.push({
         img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: (this.gunRange() / speed) * 1000, dmg, pierce: g.pierce + 1,
-        explode: g.explode + (boom ? 60 + 20 * boom : 0), splash: g.explode ? 1 : boom ? 0.35 + 0.1 * boom : 0, hit: [], spin: 0,
+        explode: g.explode + (boom ? 60 + 20 * boom : 0), splash: g.explode ? 1 : boom ? 0.35 + 0.1 * boom : 0, hit: [], spin: g.spin ?? 0, burst: g.id === "launcher",
       });
     }
     this.stats.shots++;
@@ -988,7 +1022,7 @@ export class BattleScene extends Phaser.Scene {
             if (Math.hypot(e.img.x - b.img.x, ey - b.img.y) > e.r + 18) continue;
             b.hit.push(e);
             this.hit(e, b.dmg);
-            if (b.explode) this.blast(b.img.x, b.img.y, b.explode, b.dmg * b.splash, e);
+            if (b.explode) this.blast(b.img.x, b.img.y, b.explode, b.dmg * b.splash, e, b.burst ? b.img.tintTopLeft : 0);
             if (b.pierce-- <= 0) {
               alive = false;
               break outer;
@@ -997,15 +1031,23 @@ export class BattleScene extends Phaser.Scene {
         }
       }
       // grenades that reach the end of their flight go off anyway
-      if (b.life <= 0 && !b.hit.length && b.img.texture.key === "grenade") this.blast(b.img.x, b.img.y, b.explode, b.dmg, null);
+      if (b.life <= 0 && !b.hit.length && b.burst) this.blast(b.img.x, b.img.y, b.explode, b.dmg, null, b.img.tintTopLeft);
       if (!alive) b.img.destroy();
       return alive;
     });
   }
 
-  /** An explosion that hurts everything around (except the monster already hit). */
-  private blast(x: number, y: number, r: number, dmg: number, skip: Enemy | null): void {
-    this.boom(x, y, r / 120);
+  /** An explosion (or a water balloon splash) that hurts everything around (except the monster already hit). */
+  private blast(x: number, y: number, r: number, dmg: number, skip: Enemy | null, splash = 0): void {
+    if (splash) {
+      sfx.boom();
+      const s = this.add.image(x, y, "ring").setTint(splash).setScale(0.3).setDepth(8990);
+      this.tweens.add({ targets: s, scale: r / 70, alpha: 0, duration: 300, onComplete: () => s.destroy() });
+      this.puff.setParticleTint(splash);
+      this.puff.explode(12, x, y);
+    } else {
+      this.boom(x, y, r / 120);
+    }
     for (const e of this.near(x, y + 40, r)) if (e !== skip) this.hit(e, dmg, true);
   }
 
@@ -1088,16 +1130,50 @@ export class BattleScene extends Phaser.Scene {
 
   private buildPets(): void {
     this.pets.forEach((p) => (p.img.destroy(), p.odds.destroy()));
-    this.pets = save.equipped.slice(0, PET_SPOTS.length).map((id, i) => {
+    this.pets = save.equipped.slice(0, Math.min(PET_SPOTS.length, petSlots())).map((id, i) => {
       const def = ITEMS[id];
       const [ox, oy] = PET_SPOTS[i];
       petTexture(this, id, 1);
       petTexture(this, id, 2);
       const img = this.add.image(this.hero.x + ox, this.hero.y + oy, petTexture(this, id)).setOrigin(0.5, 0.95).setScale(0);
       this.tweens.add({ targets: img, scale: PET_SCALE, duration: 300, ease: "Back.out" });
-      const odds = text(this, img.x, img.y, oneIn(def.oneIn), 38, RARITY_INFO[def.rarity].css).setDepth(9200);
-      return { def, id, level: save.pets[id]?.level ?? 1, img, timer: Math.random() * def.cooldown, ox, oy, frame: 0, frameT: Math.random() * 150, target: null, retarget: 0, odds };
+      const odds = text(this, img.x, img.y, `${def.name}  ${oneIn(def.oneIn)}`, 30, RARITY_INFO[def.rarity].css).setDepth(9200);
+      const level = save.pets[id]?.level ?? 1;
+      const maxHp = this.heroMax * (0.6 + 0.08 * rarityRank(def.rarity)) * Math.sqrt(levelMult(level));
+      return {
+        def, id, level, img, timer: Math.random() * def.cooldown, ox, oy, frame: 0, frameT: Math.random() * 150, target: null, retarget: 0, odds,
+        hp: maxHp, maxHp, hurtAt: 0, down: 0,
+      };
     });
+  }
+
+  /** A monster bit a pet. At zero health it is knocked out for a while. */
+  private hurtPet(p: Pet, dmg: number): void {
+    if (p.down > 0) return;
+    p.hp -= dmg;
+    p.hurtAt = this.time.now;
+    p.img.setTintFill(0xff6a6a);
+    this.time.delayedCall(90, () => p.down <= 0 && p.img.clearTint());
+    if (p.hp > 0) return;
+    p.hp = 0;
+    p.down = PET_DOWN_MS;
+    p.target = null;
+    this.tweens.killTweensOf(p.img);
+    p.img.setTexture(petTexture(this, p.id)).setTint(0x9a9aa8).setAlpha(0.6).setAngle(p.img.flipX ? -80 : 80).setScale(PET_SCALE);
+    p.odds.setAlpha(0.5);
+    this.puff.setParticleTint(0xffffff);
+    this.puff.explode(10, p.img.x, p.img.y - 40);
+    this.toast(`${p.def.name} is knocked out!`, "#ffb3b3");
+  }
+
+  /** A knocked-out pet gets back up next to you with half its health. */
+  private petUp(p: Pet): void {
+    p.down = 0;
+    p.hp = p.maxHp * 0.5;
+    p.img.clearTint().setAlpha(1).setAngle(0).setPosition(this.hero.x + p.ox * 0.5, this.hero.y + p.oy * 0.5);
+    p.odds.setAlpha(1);
+    this.puff.setParticleTint(0xffffff);
+    this.puff.explode(10, p.img.x, p.img.y - 40);
   }
 
   /** How close a pet has to be to attack (pouncers bite, the rest throw things). */
@@ -1112,6 +1188,13 @@ export class BattleScene extends Phaser.Scene {
   private movePets(time: number, delta: number): void {
     const k = 1 - Math.exp((-delta / 1000) * 6);
     this.pets.forEach((p, i) => {
+      p.odds.setPosition(p.img.x, p.img.y - 150);
+      if (p.down > 0) {
+        p.down -= delta;
+        if (p.down <= 0) this.petUp(p);
+        return;
+      }
+      if (time - p.hurtAt > 3000) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.03 * (delta / 1000));
       const hunter = p.def.kind !== "buff" && this.fighting;
       if (hunter) {
         p.retarget -= delta;
@@ -1163,7 +1246,6 @@ export class BattleScene extends Phaser.Scene {
       const bob = moving ? 0 : Math.sin(time / 400 + i) * 0.03;
       if (p.img.scaleX > 0.5 && !this.tweens.isTweening(p.img)) p.img.setScale(PET_SCALE * (1 + bob * 0.6), PET_SCALE * (1 - bob));
       p.img.setDepth(p.img.y);
-      p.odds.setPosition(p.img.x, p.img.y - 140);
     });
   }
 
@@ -1202,6 +1284,10 @@ export class BattleScene extends Phaser.Scene {
         this.swarm(30 + minute * 12);
       }
     }
+    if (this.state === "fight" && this.elapsed >= this.crystalDieAt) {
+      this.crystalDieAt += CRYSTAL_DIE_MS;
+      this.crystalDie();
+    }
     if (this.state === "fight" && this.elapsed >= STAGE_MS) this.bossCutscene();
   }
 
@@ -1226,7 +1312,8 @@ export class BattleScene extends Phaser.Scene {
     if (this.state !== "fight") return;
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0) {
-      this.spawnTimer = spawnGap(this.minute);
+      // the first stages go a little easier on new players
+      this.spawnTimer = spawnGap(this.minute) * (1 + Math.max(0, 4 - save.stage) / 6);
       const group = 1 + (save.stage > 40 ? 1 : 0);
       for (let i = 0; i < group && this.enemies.length < MAX_MONSTERS; i++) {
         // while the crystal is open many monsters march on it from far away
@@ -1467,6 +1554,7 @@ export class BattleScene extends Phaser.Scene {
     this.heroHp = this.heroMax;
     this.crystalHp = Math.max(this.crystalHp, this.crystalMax * 0.5);
     this.hero.clearTint().setAngle(0);
+    this.pets.forEach((p) => (p.down > 0 ? this.petUp(p) : (p.hp = p.maxHp)));
     this.crystal.clearTint();
     this.frozenUntil = this.time.now + 2500;
     music.play(this.state === "boss" ? "boss" : "battle");
@@ -1611,6 +1699,15 @@ export class BattleScene extends Phaser.Scene {
         this.hurt(e.dmg * hurtMult);
         if (!this.fighting) return;
       }
+      // ...and so does bumping into a pet
+      if (e.atkTimer <= 0) {
+        for (const p of this.pets) {
+          if (p.down > 0 || Math.abs(p.img.x - e.img.x) > e.r + 40 || Math.abs(p.img.y - e.img.y) > e.r + 40) continue;
+          e.atkTimer = 800;
+          this.hurtPet(p, e.dmg);
+          break;
+        }
+      }
       // at the open crystal they chip away at it
       if (e.toCrystal && d <= stop + 10 && e.atkTimer <= 0) {
         e.atkTimer = 2000;
@@ -1680,6 +1777,7 @@ export class BattleScene extends Phaser.Scene {
           this.tweens.add({ targets: ring, scaleX: 4.6, scaleY: 2.3, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
           this.boom(e.img.x, e.img.y - 30, 1.6);
           this.cameras.main.shake(350, 0.014);
+          for (const p of this.pets) if (Math.hypot(p.img.x - e.img.x, (p.img.y - e.img.y) * 1.4) < 360) this.hurtPet(p, e.dmg * 1.5);
           if (Math.hypot(this.hero.x - e.img.x, (this.hero.y - e.img.y) * 1.4) < 360) this.hurt(e.dmg * 1.5);
           this.bossRest(e);
         }
@@ -1759,6 +1857,7 @@ export class BattleScene extends Phaser.Scene {
     const mult = this.damageMult();
     const speed = 1 + 0.2 * this.lv("pack");
     for (const p of this.pets) {
+      if (p.down > 0) continue;
       p.timer -= delta * speed;
       if (p.def.kind === "buff") {
         if (p.timer <= 0) {
@@ -1983,6 +2082,9 @@ export class BattleScene extends Phaser.Scene {
       const w = e.type.boss ? 300 : e.elite ? 170 : 120;
       const y = e.img.y - e.img.displayHeight * (e.type.flying ? 0.5 : 0.95) - 24;
       drawBar(this.bars, e.img.x - w / 2, y, w, e.type.boss ? 30 : 18, e.hp / e.maxHp, e.type.boss || e.elite ? 0xf26464 : 0x7ad651);
+    }
+    for (const p of this.pets) {
+      drawBar(this.bars, p.img.x - 55, p.img.y - 128, 110, 12, p.hp / p.maxHp, p.down > 0 ? 0x9a9aa8 : p.hp / p.maxHp > 0.35 ? 0x7ad651 : 0xf26464);
     }
     if (battle.mode === "lobby") return;
     // your health (and reload) under your feet, the crystal's health above it

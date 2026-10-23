@@ -1,28 +1,32 @@
 import Phaser from "phaser";
 import { GUNS, GunDef, gunKey } from "../data/guns";
-import { Ctx, canvasTexture, darken, lighten, rgba } from "./draw";
+import { Ctx, canvasTexture, darken, lighten, rgba, starPath } from "./draw";
 
 /**
- * Cartoon guns: every part has a thick dark outline, a top-lit metal / wood / plastic
- * gradient and a soft shine stripe, so they read well both tiny in the hero's hand and
- * big on the airdrop card. All guns point right; data/guns.ts says where the grip and
- * muzzle are.
+ * Toy guns: bright plastic in thick dark outlines with a top-lit gradient and a shine
+ * stripe. Each one shoots its own silly ammo (water, corks, foam darts, bubbles, confetti,
+ * candy, paintballs, snowballs, peas, fireworks, gumballs, water balloons, fire, stars).
+ * All point right; data/guns.ts says where the grip and the muzzle are.
  */
 const OL = "#1b1720";
 const LW = 4;
 
-const METAL = 0x4c5361;
-const DARK = 0x2e323c;
-const STEEL = 0xa4adbc;
-const WOOD = 0xb8662c;
-const WOOD2 = 0x8c4a20;
-const TAN = 0xc9a46c;
-const GREEN = 0x5f7744;
-const OLIVE = 0x434d38;
+const DARK = 0x3a3550;
+const BLUE = 0x3ab0ff;
+const ORANGE = 0xff8a2a;
+const YELLOW = 0xffd23f;
+const RED = 0xff5a5a;
+const PINK = 0xff7ab8;
+const PURPLE = 0xb46aff;
+const LIME = 0x7ad651;
+const TEAL = 0x2fd0c0;
+const WHITE = 0xf2f6fb;
+const ICE = 0x9ae0ff;
+const GREEN = 0x5ac84a;
+const LEAF = 0x3a9a3a;
 const GOLD = 0xf2c23a;
-const RED = 0xc8262e;
-const WHITE = 0xe9eef6;
-const CYAN = 0x45f0ff;
+const DRAGON = 0xd8323a;
+const BROWN = 0xb8743a;
 
 let ctx: Ctx;
 
@@ -53,6 +57,11 @@ const C = (x: number, y: number, r: number): Path => () => {
   ctx.arc(x, y, r, 0, Math.PI * 2);
 };
 
+const E = (x: number, y: number, rx: number, ry: number): Path => () => {
+  ctx.moveTo(x + rx, y);
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+};
+
 /** An outlined part with a top-lit gradient and a shine stripe. */
 function part(path: Path, color: number, y0: number, y1: number, shine = 0.3, lw = LW): void {
   ctx.beginPath();
@@ -63,9 +72,9 @@ function part(path: Path, color: number, y0: number, y1: number, shine = 0.3, lw
   ctx.strokeStyle = OL;
   ctx.stroke();
   const g = ctx.createLinearGradient(0, y0, 0, y1);
-  g.addColorStop(0, rgba(lighten(color, 0.28)));
+  g.addColorStop(0, rgba(lighten(color, 0.3)));
   g.addColorStop(0.45, rgba(color));
-  g.addColorStop(1, rgba(darken(color, 0.32)));
+  g.addColorStop(1, rgba(darken(color, 0.25)));
   ctx.fillStyle = g;
   ctx.fill();
   if (shine > 0) {
@@ -77,7 +86,29 @@ function part(path: Path, color: number, y0: number, y1: number, shine = 0.3, lw
   }
 }
 
-/** A line detail (grooves, seams) drawn on top of a part. */
+/** Plain fill, no outline (decals, liquid, things inside glass). */
+function paint(path: Path, color: string): void {
+  ctx.beginPath();
+  path();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+/** Paint stripes / decals clipped to a part, then redraw its outline on top. */
+function clipped(path: Path, draw: () => void, lw = LW): void {
+  ctx.save();
+  ctx.beginPath();
+  path();
+  ctx.clip();
+  draw();
+  ctx.restore();
+  ctx.beginPath();
+  path();
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = OL;
+  ctx.stroke();
+}
+
 function line(pts: [number, number][], w: number, color: string): void {
   ctx.beginPath();
   pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -87,7 +118,7 @@ function line(pts: [number, number][], w: number, color: string): void {
   ctx.stroke();
 }
 
-/** Outlined thick stroke (trigger guards, handles, wire stocks). */
+/** Outlined thick stroke (handles, guards, strings). */
 function tube(path: Path, w: number, color: number): void {
   ctx.beginPath();
   path();
@@ -101,53 +132,11 @@ function tube(path: Path, w: number, color: number): void {
   ctx.stroke();
 }
 
-const screw = (x: number, y: number, r = 3) => {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(20,16,24,0.55)";
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.fill();
-};
+const guard = (cx: number, cy: number, r: number, color: number) => tube(() => ctx.arc(cx, cy, r, 0.1, Math.PI - 0.1), 5, color);
 
-const grooves = (x0: number, x1: number, y0: number, y1: number, step: number, color = "rgba(20,16,24,0.35)") => {
-  for (let x = x0; x <= x1; x += step) line([[x, y0], [x, y1]], 2.5, color);
-};
+const star = (x: number, y: number, r: number, color: number) => part(() => starPath(ctx, x, y, r), color, y - r, y + r, 0.3, 2.5);
 
-const guard = (cx: number, cy: number, r: number) => tube(() => ctx.arc(cx, cy, r, 0.1, Math.PI - 0.1), 4, DARK);
-
-const trigger = (x: number, y: number) => tube(() => {
-  ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(x + 2, y + 8, x - 3, y + 12);
-}, 3, METAL);
-
-/** Wood grain lines inside the last part. */
-function grain(path: Path, x0: number, x1: number, y0: number, y1: number): void {
-  ctx.save();
-  ctx.beginPath();
-  path();
-  ctx.clip();
-  for (let i = 0; i < 4; i++) {
-    const y = y0 + ((y1 - y0) * (i + 1)) / 5;
-    line([[x0, y], [x0 + (x1 - x0) * 0.4, y + 3], [x1, y - 2]], 2, "rgba(90,40,10,0.35)");
-  }
-  ctx.restore();
-}
-
-/** Diamond knurling for grips. */
-function knurl(path: Path, x0: number, x1: number, y0: number, y1: number): void {
-  ctx.save();
-  ctx.beginPath();
-  path();
-  ctx.clip();
-  for (let k = -60; k < 60; k += 8) {
-    line([[x0 + k, y0], [x0 + k + (y1 - y0) * 0.5, y1]], 1.5, "rgba(255,255,255,0.16)");
-    line([[x1 + k, y0], [x1 + k - (y1 - y0) * 0.5, y1]], 1.5, "rgba(0,0,0,0.25)");
-  }
-  ctx.restore();
-}
+const dots = (pts: [number, number, number][], color: string) => pts.forEach(([x, y, r]) => paint(C(x, y, r), color));
 
 function glow(x: number, y: number, r: number, color: string): void {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
@@ -159,333 +148,273 @@ function glow(x: number, y: number, r: number, color: string): void {
   ctx.fill();
 }
 
+const stripes = (x0: number, x1: number, y0: number, y1: number, w: number, colors: string[]) => {
+  let k = 0;
+  for (let x = x0 - (y1 - y0); x < x1; x += w) {
+    ctx.fillStyle = colors[k++ % colors.length];
+    ctx.beginPath();
+    ctx.moveTo(x, y1);
+    ctx.lineTo(x + w / 2, y1);
+    ctx.lineTo(x + w / 2 + (y1 - y0), y0);
+    ctx.lineTo(x + (y1 - y0), y0);
+    ctx.closePath();
+    ctx.fill();
+  }
+};
+
 // ───────────────────────── the guns ─────────────────────────
 
 const ART: Record<string, () => void> = {
+  /** A: a squirt gun with a water tank on top. */
   glock() {
-    part(R(126, 27, 12, 14, 3), DARK, 27, 41, 0);
-    const slide = R(16, 20, 116, 28, 6);
-    part(slide, METAL, 20, 48);
-    grooves(26, 44, 25, 43, 5);
-    part(R(82, 25, 24, 9, 2), DARK, 25, 34, 0);
-    part(R(20, 13, 9, 8, 2), DARK, 13, 21, 0);
-    part(R(120, 13, 7, 8, 2), DARK, 13, 21, 0);
-    part(P([[30, 46], [124, 46], [124, 58], [74, 58], [70, 64], [34, 64]], 4), DARK, 46, 64, 0.15);
-    guard(84, 60, 11);
-    trigger(84, 56);
-    const grip = P([[34, 56], [72, 56], [66, 94], [26, 94]], 8);
-    part(grip, DARK, 56, 94, 0.15);
-    knurl(grip, 30, 70, 62, 90);
+    const tank = R(46, 6, 58, 28, 12);
+    part(tank, 0xbff4ff, 6, 34, 0.5);
+    paint(R(50, 18, 50, 13, 6), "rgba(58,200,255,0.85)");
+    dots([[60, 14, 3], [76, 12, 2], [88, 15, 2.5]], "rgba(255,255,255,0.8)");
+    part(R(66, 1, 16, 9, 3), ORANGE, 1, 10, 0.3);
+    part(P([[14, 32], [118, 28], [138, 34], [138, 50], [64, 54], [40, 56], [14, 52]], 12), BLUE, 28, 56, 0.4);
+    part(R(130, 33, 16, 12, 4), ORANGE, 33, 45, 0.35);
+    dots([[30, 42, 4], [104, 38, 3]], "rgba(255,255,255,0.55)");
+    guard(84, 60, 10, ORANGE);
+    part(P([[34, 52], [66, 52], [60, 94], [28, 94]], 12), ORANGE, 52, 94, 0.3);
   },
 
+  /** A: a pop gun that fires corks on a string. */
   revolver() {
-    part(R(72, 18, 108, 8, 3), STEEL, 18, 26);
-    part(R(70, 24, 112, 16, 5), STEEL, 24, 40);
-    part(P([[168, 18], [176, 8], [180, 18]], 2), DARK, 8, 18, 0);
-    part(P([[38, 22], [80, 22], [84, 52], [42, 58]], 6), STEEL, 22, 58);
-    const cyl = R(52, 20, 42, 36, 10);
-    part(cyl, darken(STEEL, 0.12), 20, 56);
-    for (const y of [27, 38, 49]) line([[56, y], [90, y]], 3, "rgba(30,26,40,0.45)");
-    part(P([[28, 18], [44, 13], [48, 26], [36, 28]], 3), DARK, 13, 28, 0);
-    guard(76, 60, 10);
-    trigger(76, 56);
-    const grip = P([[38, 50], [64, 50], [60, 72], [52, 96], [24, 96], [30, 70]], 10);
-    part(grip, WOOD, 50, 96);
-    grain(grip, 24, 62, 54, 94);
-    screw(46, 72, 3.5);
+    line([[44, 44], [110, 64], [180, 34]], 2.5, "#7a5236");
+    part(R(66, 22, 112, 20, 9), RED, 22, 42, 0.4);
+    paint(R(72, 28, 100, 5, 2), "rgba(255,255,255,0.45)");
+    part(R(168, 20, 20, 24, 6), 0xd8a060, 20, 44, 0.35);
+    dots([[174, 28, 1.8], [182, 34, 1.8], [175, 39, 1.5]], "rgba(110,70,30,0.6)");
+    part(P([[26, 18], [42, 12], [46, 26], [34, 28]], 4), RED, 12, 28, 0.3);
+    part(P([[36, 20], [84, 20], [88, 56], [40, 60]], 10), YELLOW, 20, 60, 0.4);
+    star(62, 38, 10, RED);
+    guard(76, 62, 10, YELLOW);
+    part(P([[38, 54], [64, 54], [58, 76], [50, 96], [24, 96], [30, 74]], 12), PURPLE, 54, 96, 0.35);
   },
 
+  /** B: a foam dart blaster. */
   uzi() {
     tube(() => {
-      ctx.moveTo(34, 38);
+      ctx.moveTo(30, 38);
       ctx.lineTo(8, 42);
       ctx.lineTo(10, 64);
-      ctx.lineTo(30, 62);
-    }, 5, DARK);
-    part(R(140, 33, 24, 14, 3), DARK, 33, 47, 0);
-    part(R(30, 26, 116, 34, 6), METAL, 26, 60);
-    grooves(118, 138, 32, 52, 6);
-    part(R(108, 17, 14, 11, 3), DARK, 17, 28, 0);
-    part(R(36, 15, 10, 12, 2), DARK, 15, 27, 0);
-    part(R(128, 15, 8, 12, 2), DARK, 15, 27, 0);
-    guard(98, 64, 10);
-    trigger(98, 60);
-    const grip = P([[60, 56], [88, 56], [86, 112], [58, 112]], 6);
-    part(grip, DARK, 56, 112, 0.15);
-    knurl(grip, 58, 88, 62, 104);
-    part(R(56, 108, 34, 10, 3), METAL, 108, 118, 0);
+      ctx.lineTo(28, 62);
+    }, 7, BLUE);
+    part(R(140, 30, 26, 22, 8), BLUE, 30, 52, 0.4);
+    part(R(160, 32, 9, 18, 3), ORANGE, 32, 50, 0.3);
+    part(R(26, 22, 120, 38, 12), ORANGE, 22, 60, 0.4);
+    paint(R(34, 38, 104, 8, 4), "rgba(58,138,255,0.75)");
+    part(R(40, 11, 90, 13, 6), BLUE, 11, 24, 0.4);
+    part(R(116, 3, 16, 12, 4), YELLOW, 3, 15, 0.3);
+    part(R(56, 56, 32, 58, 8), YELLOW, 56, 114, 0.35);
+    dots([[64, 63, 4], [72, 63, 4], [80, 63, 4]], rgba(ORANGE));
+    guard(104, 64, 9, BLUE);
+    part(P([[92, 56], [116, 56], [112, 98], [92, 98]], 10), BLUE, 56, 98, 0.3);
   },
 
+  /** B: a bubble machine with a wand at the front. */
   mp5() {
-    const stock = P([[8, 30], [62, 28], [62, 52], [30, 52], [12, 60]], 6);
-    part(stock, DARK, 28, 60, 0.15);
-    part(R(4, 28, 12, 34, 3), METAL, 28, 62, 0);
-    part(R(208, 35, 20, 10, 3), DARK, 35, 45, 0);
-    part(R(168, 28, 46, 22, 10), METAL, 28, 50);
-    grooves(176, 206, 32, 46, 6);
-    part(P([[60, 24], [172, 24], [176, 52], [60, 56]], 6), DARK, 24, 56);
-    part(R(196, 16, 10, 14, 3), DARK, 16, 30, 0);
-    part(C(80, 18, 7), DARK, 11, 25, 0);
-    part(P([[128, 52], [146, 52], [158, 96], [142, 102]], 5), DARK, 52, 102, 0.15);
-    guard(112, 58, 9);
-    trigger(112, 54);
-    const grip = P([[92, 52], [118, 52], [112, 94], [90, 94]], 8);
-    part(grip, DARK, 52, 94, 0.15);
-    knurl(grip, 90, 116, 58, 90);
-    screw(150, 40);
+    part(R(116, 54, 40, 50, 14), 0xffc8e8, 54, 104, 0.5);
+    paint(R(120, 72, 32, 28, 10), "rgba(255,122,200,0.8)");
+    part(P([[4, 30], [32, 28], [32, 56], [4, 60]], 8), TEAL, 28, 60, 0.35);
+    part(P([[24, 26], [180, 22], [196, 30], [196, 56], [24, 60]], 14), PURPLE, 22, 60, 0.4);
+    part(C(62, 41, 13), DARK, 28, 54, 0.2);
+    line([[54, 41], [70, 41]], 3, "rgba(255,255,255,0.6)");
+    line([[62, 33], [62, 49]], 3, "rgba(255,255,255,0.6)");
+    for (const [x, y, r] of [[110, 34, 6], [134, 40, 4], [156, 32, 5]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.stroke();
+    }
+    part(R(190, 34, 14, 12, 4), YELLOW, 34, 46, 0.3);
+    paint(E(214, 40, 10, 18), "rgba(200,240,255,0.55)");
+    tube(E(214, 40, 10, 18), 5, YELLOW);
+    guard(110, 62, 9, TEAL);
+    part(P([[84, 56], [110, 56], [104, 98], [82, 98]], 10), TEAL, 56, 98, 0.3);
   },
 
+  /** C: a party cannon that blasts confetti. */
   shotgun() {
-    const stock = P([[6, 36], [84, 24], [84, 50], [66, 52], [16, 68], [4, 64]], 8);
-    part(stock, WOOD, 24, 68);
-    grain(stock, 6, 84, 28, 64);
-    part(R(2, 34, 10, 32, 3), DARK, 34, 66, 0);
-    part(R(112, 38, 138, 11, 4), DARK, 38, 49, 0.15);
-    part(R(112, 24, 154, 13, 4), METAL, 24, 37);
-    part(C(258, 21, 3.5), STEEL, 17, 25, 0);
-    const pump = R(170, 33, 62, 22, 8);
-    part(pump, WOOD, 33, 55);
-    grooves(180, 222, 37, 51, 7, "rgba(90,40,10,0.45)");
-    part(P([[80, 20], [126, 20], [126, 50], [80, 52]], 5), DARK, 20, 52);
-    screw(92, 32);
-    screw(114, 32);
-    guard(100, 54, 10);
-    trigger(100, 50);
-  },
-
-  deagle() {
-    part(R(160, 28, 12, 14, 3), DARK, 28, 42, 0);
-    const slide = P([[18, 22], [168, 20], [168, 48], [18, 50]], 6);
-    part(slide, STEEL, 20, 50, 0.4);
-    line([[60, 30], [160, 29]], 3, "rgba(40,40,60,0.35)");
-    grooves(26, 46, 26, 44, 5);
-    part(R(14, 22, 10, 14, 3), DARK, 22, 36, 0);
-    part(R(156, 13, 8, 9, 2), DARK, 13, 22, 0);
-    part(P([[34, 48], [150, 48], [150, 60], [80, 60], [76, 68], [38, 68]], 4), darken(STEEL, 0.25), 48, 68, 0.2);
-    guard(92, 64, 12);
-    trigger(92, 60);
-    const grip = P([[38, 60], [78, 60], [70, 106], [28, 106]], 10);
-    part(grip, DARK, 60, 106, 0.12);
-    knurl(grip, 30, 76, 66, 100);
-    screw(54, 84, 4);
-  },
-
-  ak47() {
-    const stock = P([[6, 40], [98, 32], [100, 56], [70, 58], [16, 76], [4, 72]], 8);
-    part(stock, WOOD, 32, 76);
-    grain(stock, 6, 98, 36, 72);
-    part(R(2, 38, 10, 38, 3), DARK, 38, 76, 0);
-    part(R(238, 36, 42, 8, 2), DARK, 36, 44, 0);
-    part(R(274, 32, 14, 15, 2), DARK, 32, 47, 0);
-    part(P([[258, 36], [262, 20], [268, 20], [270, 36]], 2), DARK, 20, 36, 0);
-    part(R(194, 24, 66, 8, 3), METAL, 24, 32);
-    const hg = R(194, 32, 48, 22, 6);
-    part(hg, WOOD, 32, 54);
-    grain(hg, 194, 242, 34, 52);
-    part(P([[94, 30], [198, 30], [198, 54], [94, 58]], 5), METAL, 30, 58);
-    line([[104, 36], [186, 36]], 3, "rgba(255,255,255,0.25)");
-    part(R(174, 22, 12, 9, 2), DARK, 22, 31, 0);
-    screw(110, 46);
-    screw(184, 46);
-    // the curved banana magazine
-    const mag: Path = () => {
-      ctx.moveTo(146, 54);
-      ctx.lineTo(172, 54);
-      ctx.quadraticCurveTo(178, 84, 198, 106);
-      ctx.lineTo(178, 116);
-      ctx.quadraticCurveTo(158, 92, 146, 54);
+    const stock = P([[6, 36], [84, 24], [84, 52], [66, 54], [16, 70], [4, 66]], 10);
+    part(stock, PINK, 24, 70, 0.35);
+    star(36, 50, 7, YELLOW);
+    const bell: Path = () => {
+      ctx.moveTo(124, 26);
+      ctx.lineTo(214, 22);
+      ctx.quadraticCurveTo(250, 12, 266, 4);
+      ctx.lineTo(266, 72);
+      ctx.quadraticCurveTo(250, 64, 214, 54);
+      ctx.lineTo(124, 50);
       ctx.closePath();
     };
-    part(mag, DARK, 54, 116, 0.15);
-    line([[160, 66], [168, 64]], 2, "rgba(255,255,255,0.2)");
-    line([[166, 84], [175, 80]], 2, "rgba(255,255,255,0.2)");
-    guard(128, 62, 10);
-    trigger(128, 58);
-    const grip = P([[106, 54], [130, 54], [124, 100], [102, 98]], 8);
-    part(grip, WOOD2, 54, 100);
-    grain(grip, 102, 130, 58, 96);
-  },
-
-  m4a1() {
-    part(R(58, 40, 44, 11, 4), DARK, 40, 51, 0);
-    const stock = P([[6, 38], [72, 36], [72, 60], [22, 62], [6, 68]], 5);
-    part(stock, TAN, 36, 68);
-    part(R(2, 36, 10, 34, 3), DARK, 36, 70, 0);
-    part(R(246, 40, 32, 8, 2), DARK, 40, 48, 0);
-    part(R(274, 37, 12, 14, 2), DARK, 37, 51, 0);
-    part(P([[238, 32], [250, 14], [258, 32]], 3), DARK, 14, 32, 0);
-    const hg = R(184, 30, 66, 24, 6);
-    part(hg, TAN, 30, 54);
-    for (let x = 192; x < 244; x += 10) part(R(x, 38, 6, 8, 1), darken(TAN, 0.35), 38, 46, 0);
-    part(P([[96, 30], [188, 30], [188, 56], [96, 58]], 5), 0x34383f, 30, 58);
-    part(R(100, 18, 82, 12, 3), DARK, 18, 30, 0.2);
-    for (let x = 106; x < 178; x += 8) line([[x, 20], [x, 27]], 2, "rgba(255,255,255,0.22)");
-    part(R(104, 8, 14, 12, 3), DARK, 8, 20, 0);
-    screw(176, 44);
-    part(P([[148, 56], [170, 56], [176, 104], [152, 106]], 5), DARK, 56, 106, 0.15);
-    guard(132, 62, 10);
-    trigger(132, 58);
-    const grip = P([[108, 56], [132, 56], [128, 98], [106, 96]], 8);
-    part(grip, DARK, 56, 98, 0.12);
-    knurl(grip, 106, 130, 62, 94);
-  },
-
-  awp() {
-    const stock = P([[6, 36], [112, 32], [116, 60], [84, 64], [62, 88], [14, 88], [6, 82]], 10);
-    part(stock, GREEN, 32, 88);
-    // thumbhole
-    ctx.save();
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.ellipse(70, 62, 16, 9, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    ctx.beginPath();
-    ctx.ellipse(70, 62, 16, 9, -0.2, 0, Math.PI * 2);
-    ctx.lineWidth = LW;
-    ctx.strokeStyle = OL;
-    ctx.stroke();
-    part(R(2, 34, 10, 52, 3), DARK, 34, 86, 0);
-    part(R(196, 40, 120, 10, 4), DARK, 40, 50, 0.2);
-    part(R(310, 35, 18, 20, 3), DARK, 35, 55, 0);
-    tube(() => {
-      ctx.moveTo(214, 52);
-      ctx.lineTo(244, 74);
-      ctx.moveTo(220, 52);
-      ctx.lineTo(258, 70);
-    }, 3, METAL);
-    part(R(108, 34, 92, 26, 6), GREEN, 34, 60);
-    part(R(150, 58, 22, 24, 3), DARK, 58, 82, 0.15);
-    tube(() => {
-      ctx.moveTo(184, 56);
-      ctx.lineTo(196, 68);
-    }, 3, STEEL);
-    part(C(198, 70, 5), STEEL, 65, 75, 0);
-    part(R(138, 24, 8, 12, 2), DARK, 24, 36, 0);
-    part(R(184, 24, 8, 12, 2), DARK, 24, 36, 0);
-    part(R(118, 9, 96, 18, 9), DARK, 9, 27, 0.25);
-    part(R(110, 7, 14, 22, 4), DARK, 7, 29, 0);
-    part(R(206, 4, 18, 28, 5), DARK, 4, 32, 0);
-    const lens = ctx.createLinearGradient(212, 6, 222, 30);
-    lens.addColorStop(0, "#c8fff6");
-    lens.addColorStop(1, "#2aa8c8");
-    ctx.fillStyle = lens;
-    ctx.beginPath();
-    ctx.ellipse(219, 18, 4, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-    guard(128, 64, 9);
-    trigger(128, 60);
-  },
-
-  aa12() {
-    const stock = P([[8, 30], [74, 28], [74, 62], [22, 64], [8, 72]], 8);
-    part(stock, OLIVE, 28, 72);
-    part(R(4, 28, 10, 44, 3), DARK, 28, 72, 0);
-    part(R(218, 34, 36, 14, 4), DARK, 34, 48, 0);
-    tube(() => {
-      ctx.moveTo(110, 28);
-      ctx.lineTo(116, 12);
-      ctx.lineTo(186, 12);
-      ctx.lineTo(192, 28);
-    }, 6, DARK);
-    part(P([[70, 26], [222, 26], [226, 58], [70, 62]], 8), OLIVE, 26, 62);
-    grooves(180, 214, 32, 54, 7);
-    screw(84, 40);
-    screw(206, 40);
-    const drum = C(152, 88, 30);
-    part(drum, DARK, 58, 118, 0.2);
-    part(C(152, 88, 17), METAL, 71, 105, 0.2);
-    screw(152, 88, 5);
-    guard(114, 64, 9);
-    trigger(114, 60);
-    const grip = P([[92, 58], [118, 58], [112, 104], [90, 102]], 8);
-    part(grip, DARK, 58, 104, 0.12);
-    knurl(grip, 90, 116, 64, 98);
-  },
-
-  minigun() {
-    // ammo belt
-    for (let i = 0; i < 8; i++) {
-      const t = i / 7;
-      const x = 70 - t * 40;
-      const y = 98 + t * 36;
+    part(bell, TEAL, 4, 72, 0.4);
+    clipped(bell, () => stripes(124, 266, 4, 72, 34, ["rgba(255,122,184,0.85)", "rgba(255,210,63,0.85)"]));
+    part(E(264, 38, 6, 34), WHITE, 4, 72, 0.3, 3);
+    part(R(80, 20, 48, 34, 9), YELLOW, 20, 54, 0.4);
+    for (const [x, y, r, c] of [[236, 6, 0.4, "#ff5a8a"], [252, 70, -0.6, "#5ac8ff"], [222, 66, 0.9, "#7ad651"]] as [number, number, number, string][]) {
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(0.6 + t * 0.5);
-      part(R(-4, -9, 8, 18, 3), GOLD, -9, 9, 0.35);
+      ctx.rotate(r);
+      ctx.fillStyle = c;
+      ctx.fillRect(-5, -3, 10, 6);
       ctx.restore();
     }
-    for (const [y, w] of [[48, 160], [60, 166], [72, 160]] as [number, number][]) part(R(130, y, w, 10, 4), STEEL, y, y + 10, 0.4);
-    part(R(272, 42, 16, 44, 4), DARK, 42, 86, 0.2);
-    part(R(196, 44, 14, 40, 3), DARK, 44, 84, 0.2);
-    tube(() => {
-      ctx.moveTo(70, 40);
-      ctx.lineTo(80, 20);
-      ctx.lineTo(116, 20);
-      ctx.lineTo(124, 40);
-    }, 7, DARK);
-    const body = R(36, 38, 98, 60, 14);
-    part(body, METAL, 38, 98);
-    grooves(52, 76, 50, 86, 7);
-    part(C(108, 68, 14), DARK, 54, 82, 0.2);
-    screw(108, 68, 5);
-    const grip = P([[94, 92], [122, 92], [118, 136], [94, 134]], 8);
-    part(grip, DARK, 92, 136, 0.12);
-    knurl(grip, 94, 120, 98, 130);
+    guard(100, 56, 10, PINK);
   },
 
-  launcher() {
-    const stock = P([[6, 40], [72, 36], [76, 60], [22, 68], [6, 74]], 8);
-    part(stock, DARK, 36, 74, 0.15);
-    part(R(2, 38, 10, 38, 3), METAL, 38, 76, 0);
-    part(R(184, 30, 80, 32, 10), OLIVE, 30, 62);
-    ctx.fillStyle = "#14101a";
+  /** C: a candy-cane pistol. */
+  deagle() {
+    const slide = R(18, 20, 150, 30, 14);
+    part(slide, WHITE, 20, 50, 0.4);
+    clipped(slide, () => stripes(18, 168, 20, 50, 26, ["rgba(240,64,80,0.95)", "rgba(255,255,255,0)"]));
+    part(R(160, 23, 16, 24, 7), PINK, 23, 47, 0.35);
+    part(P([[34, 48], [150, 48], [150, 62], [80, 62], [76, 70], [38, 70]], 6), PINK, 48, 70, 0.35);
+    guard(92, 66, 11, PINK);
+    part(P([[38, 62], [78, 62], [70, 106], [28, 106]], 12), 0x7ad6c8, 62, 106, 0.35);
+    part(C(52, 86, 13), WHITE, 73, 99, 0.2, 2.5);
     ctx.beginPath();
-    ctx.ellipse(262, 46, 4, 11, 0, 0, Math.PI * 2);
-    ctx.fill();
-    grooves(196, 230, 36, 56, 9);
-    part(R(68, 34, 82, 24, 6), DARK, 34, 58, 0.2);
-    part(R(156, 18, 32, 12, 3), DARK, 18, 30, 0);
-    const cyl = R(116, 36, 74, 56, 18);
-    part(cyl, GREEN, 36, 92);
-    for (const [x, y] of [[134, 54], [160, 52], [148, 76], [174, 74]]) {
-      ctx.beginPath();
-      ctx.arc(x, y, 7, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(20,16,24,0.5)";
-      ctx.fill();
-    }
-    part(P([[210, 62], [228, 62], [226, 98], [208, 98]], 6), DARK, 62, 98, 0.12);
-    guard(96, 62, 9);
-    trigger(96, 58);
-    const grip = P([[82, 56], [108, 56], [104, 102], [80, 100]], 8);
-    part(grip, DARK, 56, 102, 0.12);
-    knurl(grip, 80, 106, 62, 96);
+    for (let a = 0; a < Math.PI * 5; a += 0.2) ctx.lineTo(52 + Math.cos(a) * a * 0.8, 86 + Math.sin(a) * a * 0.8);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ff5a8a";
+    ctx.stroke();
   },
 
+  /** D: a paintball marker with a hopper full of paint. */
+  ak47() {
+    part(P([[6, 42], [98, 34], [100, 58], [70, 60], [16, 78], [4, 74]], 10), ORANGE, 34, 78, 0.35);
+    part(R(228, 36, 52, 12, 5), DARK, 36, 48, 0.3);
+    part(R(274, 32, 14, 20, 5), LIME, 32, 52, 0.3);
+    part(R(176, 58, 54, 18, 9), BLUE, 58, 76, 0.4);
+    const body = P([[94, 30], [234, 30], [238, 56], [94, 60]], 10);
+    part(body, LIME, 30, 60, 0.4);
+    clipped(body, () => {
+      dots([[120, 50, 9], [128, 44, 4], [182, 40, 8], [190, 50, 4], [216, 52, 6]], "rgba(255,90,138,0.85)");
+      dots([[150, 36, 5], [204, 38, 4]], "rgba(90,200,255,0.9)");
+    });
+    const hopper = R(136, 0, 58, 34, 16);
+    part(hopper, 0xfff7c0, 0, 34, 0.5);
+    clipped(hopper, () => {
+      const cols = ["#ff5a8a", "#5ac8ff", "#ffd23f", "#7ad651", "#b46aff"];
+      let k = 0;
+      for (let y = 12; y < 36; y += 9) for (let x = 142; x < 194; x += 10) dots([[x + (y % 2) * 4, y, 5]], cols[k++ % cols.length]);
+    }, 3);
+    part(R(156, 30, 16, 6, 2), DARK, 30, 36, 0.2);
+    guard(130, 64, 10, DARK);
+    part(P([[106, 56], [130, 56], [124, 100], [102, 98]], 10), DARK, 56, 100, 0.25);
+  },
+
+  /** D: an icy rifle that shoots snowballs. */
+  m4a1() {
+    part(P([[6, 40], [74, 38], [74, 62], [22, 64], [6, 70]], 10), WHITE, 38, 70, 0.35);
+    part(R(234, 40, 46, 12, 5), 0x5ab0e0, 40, 52, 0.3);
+    part(R(274, 35, 14, 22, 6), WHITE, 35, 57, 0.3);
+    part(P([[70, 30], [240, 30], [244, 58], [70, 62]], 12), ICE, 30, 62, 0.4);
+    for (const x of [96, 130, 170, 210]) part(P([[x - 8, 60], [x + 8, 60], [x, 76]], 3), 0xd8f6ff, 60, 76, 0.3, 2.5);
+    part(() => {
+      for (let x = 82; x <= 232; x += 25) C(x, 32, 11)();
+    }, WHITE, 21, 43, 0.2, 3);
+    part(C(160, 14, 16), WHITE, -2, 30, 0.4, 3);
+    line([[152, 14], [168, 14]], 2.5, "#7ac8f0");
+    line([[160, 6], [160, 22]], 2.5, "#7ac8f0");
+    guard(132, 64, 10, 0x3a7ac8);
+    part(P([[108, 58], [132, 58], [128, 100], [106, 98]], 10), 0x3a7ac8, 58, 100, 0.3);
+  },
+
+  /** E: a long pea-pod sniper. */
+  awp() {
+    part(P([[6, 30], [40, 16], [70, 26], [40, 36]], 8), LEAF, 16, 36, 0.3);
+    part(P([[6, 40], [110, 34], [114, 62], [84, 66], [60, 86], [14, 86], [6, 80]], 12), LEAF, 34, 86, 0.35);
+    const pod: Path = () => {
+      ctx.moveTo(110, 30);
+      ctx.quadraticCurveTo(220, 14, 326, 38);
+      ctx.quadraticCurveTo(334, 48, 326, 58);
+      ctx.quadraticCurveTo(220, 72, 110, 62);
+      ctx.closePath();
+    };
+    part(pod, GREEN, 14, 72, 0.4);
+    line([[128, 46], [318, 47]], 18, "rgba(40,110,40,0.9)");
+    for (let x = 142; x <= 304; x += 30) part(C(x, 46, 10), 0xa8f070, 36, 56, 0.45, 2.5);
+    tube(() => {
+      ctx.moveTo(172, 30);
+      ctx.lineTo(172, 18);
+    }, 4, LEAF);
+    part(C(172, 12, 11), 0xa8f070, 1, 23, 0.45, 3);
+    part(P([[180, 8], [200, 2], [196, 14]], 4), LEAF, 2, 14, 0.3, 2.5);
+    guard(128, 64, 9, BROWN);
+    part(P([[110, 58], [132, 58], [126, 100], [104, 98]], 10), BROWN, 58, 100, 0.3);
+  },
+
+  /** E: a fireworks launcher with a bundle of rockets underneath. */
+  aa12() {
+    part(P([[8, 30], [74, 28], [74, 62], [22, 64], [8, 72]], 10), DARK, 28, 72, 0.3);
+    const cols = [PINK, BLUE, LIME];
+    cols.forEach((c, i) => {
+      const x = 124 + i * 26;
+      part(R(x, 58, 22, 54, 4), c, 58, 112, 0.35, 3);
+      line([[x + 11, 112], [x + 7, 122]], 2.5, "#4a2f1d");
+      star(x + 6, 124, 4, YELLOW);
+    });
+    part(P([[70, 26], [222, 26], [228, 58], [70, 62]], 12), RED, 26, 62, 0.4);
+    star(110, 42, 9, YELLOW);
+    star(196, 40, 7, YELLOW);
+    part(R(218, 28, 38, 28, 9), YELLOW, 28, 56, 0.4);
+    paint(E(252, 42, 4, 10), "#2a1a20");
+    guard(112, 64, 9, DARK);
+    part(P([[90, 58], [112, 58], [108, 104], [88, 102]], 10), DARK, 58, 104, 0.3);
+  },
+
+  /** S: a gumball machine on spinning barrels. */
+  minigun() {
+    for (const [y, c] of [[62, PINK], [74, YELLOW], [86, BLUE]] as [number, number][]) part(R(130, y, 160, 11, 5), c, y, y + 11, 0.45, 3);
+    part(R(272, 56, 16, 44, 5), WHITE, 56, 100, 0.3);
+    part(R(196, 58, 12, 40, 4), WHITE, 58, 98, 0.3);
+    tube(() => {
+      ctx.moveTo(40, 82);
+      ctx.lineTo(22, 82);
+      ctx.lineTo(22, 96);
+    }, 5, DARK);
+    part(C(22, 100, 6), YELLOW, 94, 106, 0.3, 3);
+    part(R(36, 56, 100, 54, 16), RED, 56, 110, 0.4);
+    part(R(74, 86, 24, 8, 3), DARK, 86, 94, 0.2, 2.5);
+    const globe = C(86, 34, 30);
+    part(globe, 0xe8f8ff, 4, 64, 0.2);
+    clipped(globe, () => {
+      const cols = ["#ff5a8a", "#5ac8ff", "#ffd23f", "#7ad651", "#b46aff", "#ff9a3a"];
+      let k = 0;
+      for (let y = 20; y < 66; y += 11) for (let x = 60; x < 114; x += 11) dots([[x + (y % 2) * 5, y, 5.5]], cols[k++ % cols.length]);
+      paint(E(74, 20, 9, 5), "rgba(255,255,255,0.7)");
+    });
+    part(R(76, 0, 20, 8, 3), RED, 0, 8, 0.3, 3);
+    part(P([[96, 104], [124, 104], [120, 138], [96, 136]], 8), DARK, 104, 138, 0.25);
+  },
+
+  /** S: a big tube that lobs water balloons. */
+  launcher() {
+    part(P([[6, 42], [72, 38], [76, 62], [22, 70], [6, 76]], 10), YELLOW, 38, 76, 0.35);
+    part(R(120, 64, 60, 36, 12), 0xbff4ff, 64, 100, 0.5);
+    paint(R(124, 80, 52, 16, 6), "rgba(58,200,255,0.85)");
+    part(R(70, 24, 180, 44, 20), BLUE, 24, 68, 0.4);
+    paint(R(120, 24, 12, 44, 2), "rgba(255,255,255,0.6)");
+    paint(R(178, 24, 12, 44, 2), "rgba(255,255,255,0.6)");
+    part(E(250, 46, 20, 24), RED, 22, 70, 0.45);
+    part(P([[226, 44], [234, 38], [234, 54]], 2), RED, 38, 54, 0.2, 2.5);
+    guard(98, 70, 9, YELLOW);
+    part(P([[86, 62], [110, 62], [104, 104], [82, 102]], 10), YELLOW, 62, 104, 0.3);
+  },
+
+  /** SSS: a golden gatling with a dragon head that breathes fire. */
   dragon() {
-    for (let i = 0; i < 9; i++) {
-      const t = i / 8;
-      ctx.save();
-      ctx.translate(74 - t * 44, 110 + t * 36);
-      ctx.rotate(0.6 + t * 0.5);
-      part(R(-4, -10, 8, 20, 3), GOLD, -10, 10, 0.4);
-      ctx.restore();
-    }
     for (const [y, w] of [[50, 150], [63, 156], [76, 150]] as [number, number][]) part(R(134, y, w, 11, 4), GOLD, y, y + 11, 0.45);
-    part(R(206, 46, 14, 44, 3), RED, 46, 90, 0.25);
-    // dragon head at the muzzle
+    part(R(206, 46, 14, 44, 3), DRAGON, 46, 90, 0.25);
     const head = P([[266, 40], [300, 44], [318, 60], [318, 74], [298, 92], [266, 94], [256, 66]], 8);
-    part(head, RED, 40, 94);
+    part(head, DRAGON, 40, 94);
     part(P([[270, 42], [262, 22], [284, 40]], 3), GOLD, 22, 42, 0.3);
     part(P([[286, 44], [290, 24], [300, 46]], 3), GOLD, 24, 46, 0.3);
-    ctx.fillStyle = "#ffe14a";
-    ctx.beginPath();
-    ctx.ellipse(292, 56, 6, 4, -0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#14101a";
-    ctx.beginPath();
-    ctx.ellipse(293, 56, 1.8, 3.6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    paint(E(292, 56, 6, 4), "#ffe14a");
+    paint(E(293, 56, 1.8, 3.6), "#14101a");
     for (const x of [296, 304, 312]) {
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
@@ -501,63 +430,127 @@ const ART: Record<string, () => void> = {
       ctx.lineTo(128, 42);
     }, 7, GOLD);
     const body = R(36, 40, 102, 64, 14);
-    part(body, RED, 40, 104);
-    // flame decal
-    ctx.save();
-    ctx.beginPath();
-    body();
-    ctx.clip();
-    ctx.fillStyle = "#ffb02e";
-    ctx.beginPath();
-    ctx.moveTo(36, 104);
-    for (let i = 0; i <= 6; i++) ctx.lineTo(40 + i * 16, i % 2 ? 70 : 86);
-    ctx.lineTo(138, 104);
-    ctx.fill();
-    ctx.fillStyle = "#ffe14a";
-    ctx.beginPath();
-    ctx.moveTo(36, 104);
-    for (let i = 0; i <= 6; i++) ctx.lineTo(44 + i * 16, i % 2 ? 84 : 94);
-    ctx.lineTo(138, 104);
-    ctx.fill();
-    ctx.restore();
+    part(body, DRAGON, 40, 104);
+    clipped(body, () => {
+      ctx.fillStyle = "#ffb02e";
+      ctx.beginPath();
+      ctx.moveTo(36, 104);
+      for (let i = 0; i <= 6; i++) ctx.lineTo(40 + i * 16, i % 2 ? 70 : 86);
+      ctx.lineTo(138, 104);
+      ctx.fill();
+      ctx.fillStyle = "#ffe14a";
+      ctx.beginPath();
+      ctx.moveTo(36, 104);
+      for (let i = 0; i <= 6; i++) ctx.lineTo(44 + i * 16, i % 2 ? 84 : 94);
+      ctx.lineTo(138, 104);
+      ctx.fill();
+    });
     part(C(110, 66, 14), GOLD, 52, 80, 0.35);
-    screw(110, 66, 5);
-    const grip = P([[96, 98], [124, 98], [120, 144], [96, 142]], 8);
-    part(grip, DARK, 98, 144, 0.12);
-    knurl(grip, 96, 122, 104, 138);
+    part(P([[96, 98], [124, 98], [120, 144], [96, 142]], 8), DARK, 98, 144, 0.2);
   },
 
+  /** SSS: a cloud-white blaster with a rainbow and a star that fires stars. */
   plasma() {
-    glow(270, 50, 46, "rgba(70,240,255,0.55)");
-    const stock = P([[6, 36], [64, 32], [64, 62], [18, 68], [6, 60]], 10);
-    part(stock, WHITE, 32, 68, 0.4);
-    line([[12, 50], [60, 46]], 4, rgba(CYAN));
-    part(R(234, 36, 52, 22, 7), DARK, 36, 58, 0.2);
-    for (let x = 242; x < 282; x += 8) line([[x, 38], [x, 56]], 3, rgba(CYAN));
-    part(R(282, 36, 14, 30, 5), CYAN, 36, 66, 0.5);
-    part(P([[150, 26], [178, 6], [204, 26]], 4), WHITE, 6, 26, 0.4);
-    part(P([[60, 30], [204, 22], [240, 34], [240, 62], [150, 68], [60, 64]], 14), WHITE, 22, 68, 0.45);
-    line([[70, 56], [230, 52]], 3, "rgba(60,80,110,0.35)");
-    // the energy core
-    const core = R(118, 34, 64, 20, 10);
-    ctx.beginPath();
-    core();
-    ctx.lineWidth = LW * 2;
-    ctx.strokeStyle = OL;
-    ctx.stroke();
-    const cg = ctx.createLinearGradient(118, 34, 118, 54);
-    cg.addColorStop(0, "#d8ffff");
-    cg.addColorStop(0.5, rgba(CYAN));
-    cg.addColorStop(1, "#1a8aa8");
-    ctx.fillStyle = cg;
-    ctx.fill();
-    glow(150, 44, 26, "rgba(200,255,255,0.7)");
-    line([[124, 44], [134, 38], [142, 48], [152, 38], [162, 48], [174, 42]], 2.5, "#ffffff");
-    const grip = P([[104, 62], [128, 62], [122, 106], [100, 104]], 8);
-    part(grip, DARK, 62, 106, 0.12);
-    knurl(grip, 100, 126, 68, 100);
-    guard(124, 66, 8);
+    glow(272, 48, 46, "rgba(255,240,150,0.6)");
+    const stock = P([[6, 36], [62, 32], [62, 62], [18, 66], [6, 60]], 12);
+    part(stock, WHITE, 32, 66, 0.4);
+    const body = P([[60, 30], [210, 22], [240, 34], [240, 62], [150, 68], [60, 64]], 16);
+    part(body, WHITE, 22, 68, 0.5);
+    clipped(body, () => {
+      ["#ff5a5a", "#ffb347", "#ffe066", "#7ad651", "#5ac8ff", "#b46aff"].forEach((c, i) => {
+        ctx.fillStyle = c;
+        ctx.fillRect(60, 40 + i * 4, 200, 4);
+      });
+    });
+    for (const [x, y] of [[90, 30], [180, 26]]) part(() => (C(x, y, 8)(), C(x + 10, y - 3, 9)(), C(x + 20, y, 7)()), WHITE, y - 12, y + 8, 0.2, 2.5);
+    star(270, 48, 28, GOLD);
+    star(270, 49, 12, WHITE);
+    part(P([[104, 62], [128, 62], [122, 106], [100, 104]], 10), PURPLE, 62, 106, 0.3);
   },
+};
+
+// ───────────────────────── ammo ─────────────────────────
+
+const AMMO: Record<string, [number, number, () => void]> = {
+  water: [36, 24, () => part(P([[33, 12], [16, 3], [4, 12], [16, 21]], 9), 0x6ad0ff, 3, 21, 0.5, 2)],
+  cork: [34, 24, () => {
+    part(R(4, 4, 26, 16, 5), 0xd8a060, 4, 20, 0.35, 2);
+    dots([[12, 10, 1.6], [22, 15, 1.6]], "rgba(110,70,30,0.6)");
+  }],
+  dart: [46, 20, () => {
+    part(R(3, 5, 30, 10, 4), BLUE, 5, 15, 0.4, 2);
+    part(R(30, 3, 13, 14, 7), ORANGE, 3, 17, 0.4, 2);
+  }],
+  bubble: [38, 38, () => {
+    const g = ctx.createRadialGradient(15, 14, 2, 19, 19, 17);
+    g.addColorStop(0, "rgba(255,255,255,0.15)");
+    g.addColorStop(0.75, "rgba(200,240,255,0.35)");
+    g.addColorStop(1, "rgba(255,170,240,0.75)");
+    ctx.beginPath();
+    C(19, 19, 16)();
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.stroke();
+    paint(E(13, 12, 5, 3), "rgba(255,255,255,0.9)");
+  }],
+  confetti: [22, 16, () => part(R(3, 3, 16, 10, 2), WHITE, 3, 13, 0.3, 1.5)],
+  candy: [46, 26, () => {
+    part(P([[2, 4], [12, 13], [2, 22]], 2), PINK, 4, 22, 0.3, 2);
+    part(P([[44, 4], [34, 13], [44, 22]], 2), PINK, 4, 22, 0.3, 2);
+    part(E(23, 13, 12, 9), WHITE, 4, 22, 0.4, 2);
+    clipped(E(23, 13, 12, 9), () => stripes(11, 35, 4, 22, 10, ["rgba(240,64,80,0.9)", "rgba(255,255,255,0)"]), 2);
+  }],
+  paint: [26, 26, () => part(C(13, 13, 10), WHITE, 3, 23, 0.5, 2)],
+  snow: [30, 30, () => {
+    part(C(15, 15, 12), WHITE, 3, 27, 0.5, 2);
+    dots([[11, 18, 2], [19, 12, 1.5]], "rgba(122,200,240,0.6)");
+  }],
+  pea: [32, 32, () => part(C(16, 16, 13), 0x8ae85a, 3, 29, 0.5, 2.5)],
+  firework: [46, 20, () => {
+    star(6, 10, 6, YELLOW);
+    part(R(10, 4, 24, 12, 3), WHITE, 4, 16, 0.4, 2);
+    part(P([[34, 4], [44, 10], [34, 16]], 2), WHITE, 4, 16, 0.4, 2);
+  }],
+  gum: [26, 26, () => {
+    part(C(13, 13, 10), WHITE, 3, 23, 0.3, 2);
+    paint(E(9, 9, 4, 2.5), "rgba(255,255,255,0.95)");
+  }],
+  balloon: [40, 34, () => {
+    part(E(18, 17, 15, 13), WHITE, 4, 30, 0.4, 2.5);
+    part(P([[33, 17], [39, 12], [39, 22]], 2), WHITE, 12, 22, 0.3, 2);
+    paint(E(12, 11, 5, 3), "rgba(255,255,255,0.9)");
+  }],
+  fire: [48, 32, () => {
+    glow(30, 16, 16, "rgba(255,180,60,0.9)");
+    ctx.beginPath();
+    ctx.moveTo(44, 16);
+    ctx.quadraticCurveTo(36, 2, 22, 6);
+    ctx.quadraticCurveTo(10, 4, 2, 16);
+    ctx.quadraticCurveTo(10, 28, 22, 26);
+    ctx.quadraticCurveTo(36, 30, 44, 16);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, 0, 44, 0);
+    g.addColorStop(0, "rgba(255,90,40,0)");
+    g.addColorStop(0.5, "#ff7a3a");
+    g.addColorStop(1, "#ffe066");
+    ctx.fillStyle = g;
+    ctx.fill();
+    paint(C(34, 16, 6), "#fff6c8");
+  }],
+  star: [38, 38, () => {
+    starPath(ctx, 19, 20, 16);
+    const g = ctx.createLinearGradient(3, 4, 35, 36);
+    ["#ff5a5a", "#ffb347", "#ffe066", "#7ad651", "#5ac8ff", "#b46aff"].forEach((c, i) => g.addColorStop(i / 5, c));
+    ctx.fillStyle = g;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = OL;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.fill();
+    paint(C(15, 15, 3), "rgba(255,255,255,0.9)");
+  }],
 };
 
 /** Draw one gun (pointing right) into a context. */
@@ -566,33 +559,13 @@ export function drawGun(c: Ctx, gun: GunDef): void {
   ART[gun.id]?.();
 }
 
-/** Make every gun texture plus the bullets. */
+/** Make every gun texture and its ammo. */
 export function makeGunTextures(scene: Phaser.Scene): void {
   for (const g of GUNS) canvasTexture(scene, gunKey(g.id), g.w, g.h, (c) => drawGun(c, g));
-  // a real-looking bullet: brass casing, copper tip, a short puff of a trail
-  canvasTexture(scene, "bullet", 44, 18, (c) => {
-    ctx = c;
-    const trail = c.createLinearGradient(0, 0, 18, 0);
-    trail.addColorStop(0, "rgba(255,240,200,0)");
-    trail.addColorStop(1, "rgba(255,240,200,0.55)");
-    c.fillStyle = trail;
-    c.beginPath();
-    c.ellipse(12, 9, 12, 3, 0, 0, Math.PI * 2);
-    c.fill();
-    part(R(16, 4, 16, 10, 2), 0xd8a03a, 4, 14, 0.4, 1.6);
-    part(P([[30, 4], [36, 5], [42, 9], [36, 13], [30, 14]], 3), 0xc86a3a, 4, 14, 0.45, 1.6);
-  });
-  // the Plasma Rifle fires glowing balls
-  canvasTexture(scene, "plasma", 40, 40, (c) => {
-    glow(20, 20, 20, "rgba(70,240,255,0.8)");
-    c.fillStyle = "#e8ffff";
-    c.beginPath();
-    c.arc(20, 20, 8, 0, Math.PI * 2);
-    c.fill();
-  });
-  canvasTexture(scene, "grenade", 34, 26, (c) => {
-    ctx = c;
-    part(R(4, 4, 26, 18, 8), GREEN, 4, 22, 0.35);
-    part(R(24, 6, 6, 14, 2), GOLD, 6, 20, 0.3);
-  });
+  for (const [id, [w, h, draw]] of Object.entries(AMMO)) {
+    canvasTexture(scene, `ammo_${id}`, w, h, (c) => {
+      ctx = c;
+      draw();
+    });
+  }
 }

@@ -4,7 +4,7 @@ import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../data/items"
 import { INDEX_STEP, indexBonus } from "../systems/goals";
 import { canLevelUp, levelUp, persist, save, toggleEquip } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
-import { petSlots } from "../systems/stats";
+import { MAX_PETS, petSlots } from "../systems/stats";
 import { fmt } from "./format";
 import { Host, Screen } from "./screens";
 import { Button, Modal, button, drawBar, label, lockedCard, modal, petCard, text } from "./widgets";
@@ -99,18 +99,18 @@ export class PetsScreen extends Screen {
       const teamY = gridTop + 110;
       this.content.add(s.add.image(W / 2, teamY, panelTexture(s, "cream", 1040, 230)));
       this.content.add(label(s, 60, teamY - 82, `TEAM ${save.equipped.length}/${slots}`, 32).setOrigin(0, 0.5));
-      for (let i = 0; i < 6; i++) {
-        const x = 110 + i * 112;
+      for (let i = 0; i < MAX_PETS; i++) {
+        const x = 150 + i * 190;
         const id = save.equipped[i];
         if (i >= slots) {
-          this.content.add(s.add.image(x, teamY + 20, slotTexture(s, 100, true)));
-          this.content.add(s.add.image(x, teamY + 20, "icon_lock").setScale(0.4));
+          this.content.add(s.add.image(x, teamY + 18, slotTexture(s, 150, true)));
+          this.content.add(s.add.image(x, teamY + 18, "icon_lock").setScale(0.55));
         } else if (id) {
-          const c = petCard(s, x, teamY + 20, id, { noOdds: true }).setScale(0.44);
+          const c = petCard(s, x, teamY + 18, id, { noOdds: true }).setScale(0.6);
           c.setInteractive({ useHandCursor: true }).on("pointerup", () => this.openPet(id));
           this.content.add(c);
         } else {
-          this.content.add(s.add.image(x, teamY + 20, slotTexture(s, 100, false)));
+          this.content.add(s.add.image(x, teamY + 18, slotTexture(s, 150, false)));
         }
       }
       this.content.add(button(s, W - 170, teamY - 48, 280, 90, "blue", "EQUIP BEST", () => this.equipBest(), { icon: "icon_star", iconSize: 42, size: 28 }));

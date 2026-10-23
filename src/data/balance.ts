@@ -42,6 +42,8 @@ export const SPAWN_SPEEDUP = 0.35;
 export const MAX_MONSTERS = 350;
 /** Share of monsters that walk in from far away towards the crystal while it is open. */
 export const CRYSTAL_SPAWN_SHARE = 0.4;
+/** The crystal drops a die this often while you survive. */
+export const CRYSTAL_DIE_MS = 30000;
 /** First airdrop, and time between airdrops. */
 export const AIRDROP_FIRST_MS = 25000;
 export const AIRDROP_MS = 40000;

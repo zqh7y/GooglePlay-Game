@@ -48,19 +48,24 @@ player needs per stage.
   crystal into the sky. The boss drops down next to you with a title card and its own music. It is just you
   and your pets against it (health of 100 normal monsters). It charges (red marks on the ground), stomps
   (a red circle) and throws rocks. Beat it and the crystal floats back down.
-- **Pets** run around the field after monsters near you: shooters throw orbs, bombers lob bombs,
-  pouncers leap and bite, star throwers throw spinning stars; support pets stay by your side. Each pet's
-  odds ("1 in N") float above its head. No lasers anywhere.
+- **Pets** (a team of up to 3: one at the start, two Pet Slot upgrades) run around the field after monsters
+  near you: shooters throw orbs, bombers lob bombs, pouncers leap and bite, star throwers throw spinning
+  stars; support pets stay by your side. Monsters that bump into a pet hurt it; at zero health it is knocked
+  out for 8 s. Over each pet: its name and odds ("Kitty 1 in 10A") and a health bar. No lasers anywhere.
 - **The crystal shield**: the crystal is open for 45 s, then shielded for 45 s, and so on. While it is open,
   monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
   shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
-- **Guns**: every stage starts with a Glock. **Airdrops** parachute in about every 40 s with a gun of tier
-  A (Common), B (Rare), C (Super Rare), D (Epic), E (Legendary), S (Mythic) or SSS (Titanic, almost
-  impossible); the longer you survive the better the odds. A light beam shows the tier before you open it.
-  Better guns are equipped right away, worse ones are scrapped for money. 14 guns: Glock, Revolver, Uzi, MP5,
-  Pump Shotgun, Desert Eagle, AK-47, M4A1, AWP Sniper, AA-12, Minigun, Grenade Launcher, Dragon Minigun and
-  Plasma Rifle, each with its own damage, fire rate, magazine, reload, spread, range, pierce or blast.
-- **Skills**: monsters drop small bones and meat (XP). Every level up freezes the fight and offers 3
+- **Toy guns**: every stage starts with a Water Pistol. **Airdrops** parachute in about every 40 s with a
+  gun of tier A (Common), B (Rare), C (Super Rare), D (Epic), E (Legendary), S (Mythic) or SSS (Titanic,
+  almost impossible); the longer you survive the better the odds. A light beam shows the tier before you open
+  it. Better guns are equipped right away, worse ones are scrapped for money. 14 toys, each with its own
+  ammo: Water Pistol, Cork Popper, Foam Blaster, Bubble Blaster, Confetti Cannon, Candy Shooter, Paintball
+  Rifle, Snowball Rifle, Pea Shooter, Firework Blaster, Gumball Gatling, Water Balloon Launcher, Dragon
+  Breath and Rainbow Star Blaster (damage, fire rate, magazine, reload, spread, range, pierce, splash).
+- **Crystal dice**: every 30 s you survive, the crystal pops out a die that lands nearby. It is an A die on
+  stages 1-20, B on 21-40, C on 41-60, D on 61-80 and E on 81-100.
+- **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
+- **Skills**: monsters drop small glowing bones and meat (XP). Every level up freezes the fight and offers 3
   skills. You carry at most **4 different skills** per stage, each up to level 5, and a good run levels high
   enough (about 22) to max all four. They reset every stage: Big Mag, Quick Reload, Hollow Points, Hair
   Trigger, Long Barrel, Boom Rounds, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick
