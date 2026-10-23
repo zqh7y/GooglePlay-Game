@@ -3,12 +3,14 @@ import { INK, canvasTexture, linear, radial, rr } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { CARD_H, CARD_W, panelTexture, slotTexture } from "../art/ui";
 import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../data/items";
-import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
+import { RARITY_INFO } from "../data/rarity";
+import { DICE_TIERS, TIER_INFO, tierIndex } from "../data/tiers";
 import { INDEX_LUCK, INDEX_STEP, indexBonus } from "../systems/goals";
 import { canLevelUp, levelUp, persist, save, toggleEquip } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { MAX_PETS, dmgMult, petSlots } from "../systems/stats";
 import { fmt, oneIn } from "./format";
+import { classBadge, classText } from "./classText";
 import { Host, Screen } from "./screens";
 import { Modal, button, drawBar, fitText, label, lockedCard, modal, petCard, text } from "./widgets";
 
@@ -185,14 +187,13 @@ export class PetsScreen extends Screen {
       const x = W / 2 + ((i % cols) - (cols - 1) / 2) * colW;
       const y = gridTop + 20 + (CARD_H * scale) / 2 + Math.floor(i / cols) * rowH;
       const owned = !!save.pets[id];
-      const rank = rarityRank(ITEMS[id].rarity);
       if (owned && canLevelUp(id)) {
         // ready to level: a green glow pulses behind the card
         const g = s.add.image(x, y, "glow").setTint(0x7aff5a).setScale(scale * 1.5, scale * 1.9).setAlpha(0.5);
         s.tweens.add({ targets: g, alpha: 1, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
         list.add(g);
-      } else if (owned && rank >= 4) {
-        list.add(s.add.image(x, y, "glow").setTint(RARITY_INFO[ITEMS[id].rarity].color).setScale(scale * 1.4, scale * 1.8).setAlpha(0.55));
+      } else if (owned && tierIndex(ITEMS[id].cls) >= 3) {
+        list.add(s.add.image(x, y, "glow").setTint(TIER_INFO[ITEMS[id].cls].color).setScale(scale * 1.4, scale * 1.8).setAlpha(0.55));
       }
       const card = owned
         ? petCard(s, x, y, id, { level: true, equipped: save.equipped.includes(id), isNew: save.newPets.includes(id) }).setScale(scale)
@@ -274,14 +275,15 @@ export class PetsScreen extends Screen {
         continue;
       }
       const def = ITEMS[id];
-      const info = RARITY_INFO[def.rarity];
+      const info = TIER_INFO[def.cls];
       const glow = s.add.image(x, by - 80, "glow").setTint(info.color).setScale(1.1).setAlpha(0.65);
       s.tweens.add({ targets: glow, alpha: 0.95, scale: 1.25, duration: 900 + i * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const ped = s.add.ellipse(x, by, 200, 50, info.color).setStrokeStyle(6, 0x4a2f1d);
       const img = s.add.image(x, by + 6, petTexture(s, id)).setOrigin(0.5, 1).setScale(0.95);
       img.setInteractive({ useHandCursor: true }).on("pointerup", () => this.openPet(id));
       s.tweens.add({ targets: img, scaleY: 0.9, scaleX: 1, duration: 260 + i * 30, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      const name = fitText(text(s, x, by + 46, `${def.name}  Lv.${save.pets[id].level}`, 26, info.css), 290);
+      const name = fitText(classText(s, x + 24, by + 46, `${def.name}  Lv.${save.pets[id].level}`, 26, def.cls), 250);
+      c.add(classBadge(s, x - name.displayWidth / 2 - 6, by + 46, def.cls, 38));
       c.add([glow, ped, img, name]);
       this.team.push({ img, id });
     }
@@ -327,19 +329,17 @@ export class PetsScreen extends Screen {
     drawBar(g, 330, cy - 46, 670, 30, done ? 1 : (found % INDEX_STEP) / INDEX_STEP, 0x5ac8ff);
     c.add(g);
     c.add(fitText(text(s, 665, cy - 32, done ? "Every pet found!" : `Luck x${indexBonus().toFixed(2)}  →  x${(indexBonus() + INDEX_LUCK).toFixed(2)} at ${next} pets`, 22), 640));
-    // one chip per rarity: found / 10, with a check when complete
-    RARITY_ORDER.forEach((r, i) => {
-      const x = W / 2 + (i - 4.5) * 100;
-      const y = cy + 38;
-      const n = PET_LIST.filter((p) => p.rarity === r && save.discovered.includes(p.id)).length;
-      const total = PET_LIST.filter((p) => p.rarity === r).length;
-      const full = n >= total;
-      const chip = s.add.container(x, y, [
-        s.add.circle(0, 0, 26, RARITY_INFO[r].color, n ? 1 : 0.35).setStrokeStyle(full ? 6 : 4, full ? 0xffcf3a : 0x4a2f1d),
-        full ? s.add.image(0, 0, "icon_check").setScale(0.4) : text(s, 0, -1, `${n}`, 24, n ? "#ffffff" : "#e9dcc6"),
-      ]);
-      if (full) s.tweens.add({ targets: chip, scale: 1.12, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      c.add(chip);
+    // one chip per class: its badge and found / total, gold when complete
+    DICE_TIERS.forEach((cls, i) => {
+      const left = W / 2 - 500 + i * 125 + 8;
+      const y = cy + 36;
+      const n = PET_LIST.filter((p) => p.cls === cls && save.discovered.includes(p.id)).length;
+      const total = PET_LIST.filter((p) => p.cls === cls).length;
+      const badge = classBadge(s, 0, y, cls, 36);
+      badge.x = left + badge.width / 2;
+      if (!n) badge.setAlpha(0.45);
+      c.add(badge);
+      c.add(text(s, left + badge.width + 4, y, `${n}/${total}`, 21, n >= total ? "#ffe066" : n ? "#ffffff" : "#e9dcc6").setOrigin(0, 0.5));
     });
   }
 
@@ -402,14 +402,16 @@ export class PetsScreen extends Screen {
       const mult = levelMult(p.level);
       const max = p.level >= MAX_LEVEL;
       const need = copiesFor(p.level);
-      const rays = s.add.image(0, -330, "rays").setTint(info.color).setAlpha(0.45).setScale(0.75);
+      const rays = s.add.image(0, -330, "rays").setTint(TIER_INFO[def.cls].color).setAlpha(0.45).setScale(0.75);
       s.tweens.add({ targets: rays, angle: 360, duration: 14000, repeat: -1 });
-      const glow = s.add.image(0, -330, "glow").setTint(info.color).setScale(1.9).setAlpha(0.7);
+      const glow = s.add.image(0, -330, "glow").setTint(TIER_INFO[def.cls].color).setScale(1.9).setAlpha(0.7);
       const card = petCard(s, 0, -330, id, { level: true }).setScale(1.1);
       content.add([rays, glow, card]);
       s.tweens.add({ targets: card, y: -338, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      content.add(text(s, 0, -142, `${info.label.toUpperCase()}  •  ${oneIn(def.oneIn)}  •  ${KIND_LABEL[def.kind]}`, 28, info.css));
-      content.add(label(s, 0, -96, def.description, 28, "#7a5236", 780));
+      const clsLine = classText(s, 36, -150, `CLASS ${def.cls}  •  ${oneIn(def.oneIn)}`, 36, def.cls);
+      content.add([clsLine, classBadge(s, 36 - clsLine.width / 2 - 52, -150, def.cls, 50)]);
+      content.add(text(s, 0, -110, `${info.label}  •  ${KIND_LABEL[def.kind]}`, 26, info.css));
+      content.add(label(s, 0, -76, def.description, 26, "#7a5236", 780));
 
       // power: now and after the next level
       content.add(s.add.image(0, 2, panelTexture(s, "inset", 780, 110)));

@@ -1,5 +1,6 @@
 import { ItemDef, PET_LIST } from "../data/items";
 import { RARITY_ORDER, rarityRank } from "../data/rarity";
+import { DICE_TIERS, tierIndex } from "../data/tiers";
 import { addPet, persist, save } from "./save";
 
 const RAREST_FIRST = [...PET_LIST].reverse();
@@ -57,6 +58,20 @@ export function tierChances(luck: number): number[] {
     if (p.index === 0) break;
     const c = Math.min(1, luck / p.oneIn);
     out[rarityRank(p.rarity)] += remaining * c;
+    remaining *= 1 - c;
+  }
+  out[0] += remaining;
+  return out;
+}
+
+/** Chance per roll of landing each pet class (A to uSSS), with the given luck. */
+export function classChances(luck: number): number[] {
+  const out = DICE_TIERS.map(() => 0);
+  let remaining = 1;
+  for (const p of RAREST_FIRST) {
+    if (p.index === 0) break;
+    const c = Math.min(1, luck / p.oneIn);
+    out[tierIndex(p.cls)] += remaining * c;
     remaining *= 1 - c;
   }
   out[0] += remaining;

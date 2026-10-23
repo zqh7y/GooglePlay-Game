@@ -48,6 +48,22 @@ player needs per stage.
   - Rare pulls bring rays, flashes, confetti, a **NEW RECORD!** stamp when it is your rarest pet ever,
     and "LEVEL UP READY!" when a copy completes a level.
   - **Next to find** shows the three easiest pets you are missing, with your own chance per roll.
+- **Pet classes**: every pet has a class from **A** to **uSSS**, like dice and guns:
+
+  | Class | A | B | C | D | E | S | SSS | uSSS |
+  |---|---|---|---|---|---|---|---|---|
+  | Pets | 18 | 16 | 15 | 14 | 12 | 11 | 9 | 5 |
+
+  The class badge and the pet's chance are drawn in the class colours, and the letters move:
+  - A stays still, and B and C gently glow.
+  - D and E shimmer.
+  - S burns red and gold.
+  - SSS cycles jewel colours.
+  - uSSS is a fast rainbow.
+
+  S and up also glow and pulse. The class shows on cards, the Index, the team stage, the
+  roll reveal ("S CLASS!"), the battlefield labels and the odds popup. The odds popup gives
+  your chance per roll for each class.
 - **The Pets screen**:
   - Your team stands on a **lit stage** with a **TEAM POWER** number that counts up when it grows.
   - The **collection** tracker shows found pets, the next luck reward, and a check per finished rarity.
@@ -134,6 +150,7 @@ player needs per stage.
 | `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, guns and bullets, airdrops, pets, skills, pickups, boss, win / lose |
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gun panel), pause, stats, skill picker, defeat screen, rolling, popups |
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, charge-up and reel reveal, next-to-find |
+| `src/ui/classText.ts` | Pet class badges and the animated class colours |
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |
 | `src/data/boosts.ts` | The four Battle Boosts |

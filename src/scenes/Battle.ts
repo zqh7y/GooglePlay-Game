@@ -24,8 +24,9 @@ import { buzz, music, sfx } from "../systems/sound";
 import {
   cashMult, chestMult, critChance, critDamage, dmgMult, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
 } from "../systems/stats";
-import { RARITY_INFO, rarityRank } from "../data/rarity";
+import { rarityRank } from "../data/rarity";
 import { fmt, oneIn } from "../ui/format";
+import { classText } from "../ui/classText";
 import { drawBar, text } from "../ui/widgets";
 
 /** The camera shows 1.66x more of the field during a fight (a bit closer in the lobby). */
@@ -1167,7 +1168,7 @@ export class BattleScene extends Phaser.Scene {
       petTexture(this, id, 2);
       const img = this.add.image(this.hero.x + ox, this.hero.y + oy, petTexture(this, id)).setOrigin(0.5, 0.95).setScale(0);
       this.tweens.add({ targets: img, scale: PET_SCALE, duration: 300, ease: "Back.out" });
-      const odds = text(this, img.x, img.y, `${def.name}  ${oneIn(def.oneIn)}`, 30, RARITY_INFO[def.rarity].css).setDepth(9200);
+      const odds = classText(this, img.x, img.y, `${def.cls}  ${def.name}  ${oneIn(def.oneIn)}`, 26, def.cls).setDepth(9200);
       const level = save.pets[id]?.level ?? 1;
       const maxHp = this.heroMax * (0.6 + 0.08 * rarityRank(def.rarity)) * Math.sqrt(levelMult(level));
       return {

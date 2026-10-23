@@ -6,8 +6,8 @@ import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
 import { gunKey } from "../data/guns";
-import { PET_LIST } from "../data/items";
-import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
+import { CLASS_SIZES, PET_LIST } from "../data/items";
+import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, rollDiceTier, tierIndex } from "../data/tiers";
@@ -17,7 +17,7 @@ import {
   DAILY, INDEX_STEP, checkIndexMilestones, claimDaily, claimQuest, dailyCash, dailyDay, ensureQuests, indexBonus, questDone, questEvent,
   questGoal, questReward, questText,
 } from "../systems/goals";
-import { RollResult, luckFloor, rollMany, tierChances } from "../systems/roll";
+import { RollResult, classChances, luckFloor, rollMany } from "../systems/roll";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import { autoUnlocked, canBuy, dicePerRoll, luck, luckyEvery, luckyMult, offlineRate, petSlots, potionActive, potionMult, rollTime } from "../systems/stats";
@@ -28,6 +28,7 @@ import { GIFT_EVERY, RollScreen, SUPER_EVERY, SUPER_MULT } from "../ui/rollScree
 import { Host, Screen, Tab } from "../ui/screens";
 import { ShopScreen, freeGiftReady } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
+import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
 import { BattleMode, BattleScene, GunFound, RunStats, StageResult, battle, mmss } from "./Battle";
@@ -244,6 +245,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   update(time: number, delta: number): void {
+    animateClassTexts(time);
     this.badgeTimer -= delta;
     if (this.badgeTimer <= 0) {
       this.badgeTimer = 400;
@@ -967,13 +969,13 @@ export class UIScene extends Phaser.Scene implements Host {
     const { x } = this.tabPos("roll");
     const baseY = this.L.navTop - 70;
     results.slice(0, 3).forEach((r, i) => {
-      const info = RARITY_INFO[r.item.rarity];
+      const cls = r.item.cls;
       const c = this.add.container(Math.min(x, this.W - 200), baseY - i * 90, [
         this.add.image(0, 0, panelTexture(this, "glass", 340, 80)),
-        this.add.circle(-130, 0, 32, info.color).setStrokeStyle(4, INK_N),
+        this.add.circle(-130, 0, 32, TIER_INFO[cls].color).setStrokeStyle(4, INK_N),
         this.add.image(-130, 4, petTexture(this, r.item.id)).setScale(0.36),
-        fitText(text(this, 20, -14, r.item.name, 28, info.css), 230),
-        text(this, 20, 18, r.isNew ? "NEW!" : `${info.label}`, 22, r.isNew ? "#ff8aa8" : "#fff3dc"),
+        fitText(classText(this, 20, -14, r.item.name, 28, cls), 230),
+        text(this, 20, 18, r.isNew ? `NEW!  Class ${cls}` : `Class ${cls}`, 22, r.isNew ? "#ff8aa8" : TIER_INFO[cls].css),
       ]).setDepth(4500).setAlpha(0).setScale(0.6);
       this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 200, ease: "Back.out" });
       this.tweens.add({ targets: c, alpha: 0, y: c.y - 40, delay: 1300, duration: 300, onComplete: () => c.destroy() });
@@ -993,9 +995,10 @@ export class UIScene extends Phaser.Scene implements Host {
     const glow = this.add.image(W / 2, cy, "glow").setScale(3.2).setTint(info.color).setAlpha(0.85);
     const title = text(this, W / 2, cy - 470, `${info.label.toUpperCase()}!`, 116, info.css);
     const card = petCard(this, W / 2, cy, res.item.id, { isNew: res.isNew }).setScale(0);
-    const odds = text(this, W / 2, cy + 345, oneIn(res.item.oneIn), 66, "#ffe680");
+    const odds = classText(this, W / 2 + 70, cy + 345, oneIn(res.item.oneIn), 66, res.item.cls);
+    const badge = classBadge(this, odds.x - odds.width / 2 - 80, cy + 345, res.item.cls, 84);
     const tap = text(this, W / 2, cy + 470, "TAP TO CONTINUE", 40);
-    const root = this.add.container(0, 0, [dim, rays, glow, card, title, odds, tap]).setDepth(6000);
+    const root = this.add.container(0, 0, [dim, rays, glow, card, title, odds, badge, tap]).setDepth(6000);
     if (record) {
       const rec = this.add.container(W / 2, cy - 360, [
         this.add.image(0, 0, ribbonTexture(this, "gold", 560, 104)), text(this, 0, -12, "NEW RECORD!", 48),
@@ -1160,19 +1163,20 @@ export class UIScene extends Phaser.Scene implements Host {
 
   showOdds(): void {
     const L = luck();
-    const chances = tierChances(L);
-    const h = 360 + RARITY_ORDER.length * 82;
+    const chances = classChances(L);
+    const h = 360 + DICE_TIERS.length * 92;
     const m = this.showModal(modal(this, 940, h, "YOUR ODDS", "green", () => (this.openModal = null)));
     m.body.add(text(this, 0, -h / 2 + 110, `Luck ${luckText(L)}`, 46, "#b6f59a"));
     m.body.add(label(this, 0, -h / 2 + 162, `Worst possible roll: ${luckFloor(L).name}`, 28));
-    RARITY_ORDER.forEach((r, i) => {
-      const y = -h / 2 + 235 + i * 82;
+    // chance per roll of each pet class
+    DICE_TIERS.forEach((c, i) => {
+      const y = -h / 2 + 240 + i * 92;
       const p = chances[i];
-      const info = RARITY_INFO[r];
       m.body.add([
-        this.add.image(0, y, panelTexture(this, "row", 840, 72)),
-        this.add.image(-380, y, btnTexture(this, "grey", 40, 40)).setTint(info.color),
-        text(this, -340, y, info.label, 34, info.css).setOrigin(0, 0.5),
+        this.add.image(0, y, panelTexture(this, "row", 840, 80)),
+        classBadge(this, -350, y, c, 58),
+        classText(this, -270, y - 2, `Class ${c}`, 36, c).setOrigin(0, 0.5),
+        label(this, 60, y, `${CLASS_SIZES[i]} pets`, 26, "#9a7a5a"),
         label(this, 390, y, p <= 0 ? "-" : p > 0.5 ? `${Math.round(p * 100)}%` : oneIn(1 / p), 32, "#4a2f1d").setOrigin(1, 0.5),
       ]);
     });

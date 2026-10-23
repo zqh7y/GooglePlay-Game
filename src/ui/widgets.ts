@@ -7,6 +7,7 @@ import { save } from "../systems/save";
 import { RARITY_INFO } from "../data/rarity";
 import { oneIn } from "./format";
 import { sfx } from "../systems/sound";
+import { classBadge, classText } from "./classText";
 
 export const FONT = "'Jua', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif";
 export const INK_CSS = "#4a2f1d";
@@ -216,7 +217,7 @@ export function petCard(scene: Phaser.Scene, x: number, y: number, id: string, o
   const rarity = RARITY_INFO[def.rarity];
   const c = scene.add.container(x, y, [
     scene.add.image(0, 0, `card_${def.rarity}`),
-    fitText(text(scene, 0, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24), CARD_W - 40),
+    fitText(text(scene, 18, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24), CARD_W - 84),
     scene.add.image(0, -12, petTexture(scene, def.id)).setScale(0.9),
     fitText(text(scene, 0, CARD_H / 2 - 27, def.name, 25), CARD_W - 36),
   ]);
@@ -240,11 +241,12 @@ export function petCard(scene: Phaser.Scene, x: number, y: number, id: string, o
       scene.tweens.add({ targets: plus, scale: 1.18, duration: 380, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     }
   }
-  // the chance of rolling this pet, at the top of the card
+  // the chance of rolling this pet, in its class colours, at the top of the card
   if (!opts.noOdds) {
     const x = opts.level && p ? 34 : 0;
-    c.add(fitText(text(scene, x, -CARD_H / 2 + 64, oneIn(def.oneIn), 22, "#fff3dc"), opts.level && p ? 120 : CARD_W - 40));
+    c.add(fitText(classText(scene, x, -CARD_H / 2 + 64, oneIn(def.oneIn), 23, def.cls), opts.level && p ? 120 : CARD_W - 40));
   }
+  c.add(classBadge(scene, -CARD_W / 2 + 6, -CARD_H / 2 + 6, def.cls, 46));
   if (opts.equipped) c.add(scene.add.image(CARD_W / 2 - 32, CARD_H / 2 - 104, "icon_check").setScale(0.48));
   if (opts.isNew) {
     const n = text(scene, CARD_W / 2 - 16, -CARD_H / 2 - 2, "NEW!", 32, "#ff6a8a").setAngle(14);
@@ -261,10 +263,11 @@ export function lockedCard(scene: Phaser.Scene, x: number, y: number, itemId: st
   const rarity = RARITY_INFO[def.rarity];
   return scene.add.container(x, y, [
     scene.add.image(0, 0, "card_locked"),
-    text(scene, 0, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24, rarity.css),
+    fitText(text(scene, 18, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24, rarity.css), CARD_W - 84),
     scene.add.image(0, -12, lockedTexture(scene, itemId)).setScale(0.9).setAlpha(0.85),
-    text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"),
+    fitText(classText(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 23, def.cls), CARD_W - 40),
     text(scene, 0, CARD_H / 2 - 27, "???", 26, "#e9dcc6"),
+    classBadge(scene, -CARD_W / 2 + 6, -CARD_H / 2 + 6, def.cls, 46),
   ]).setSize(CARD_W, CARD_H);
 }
 

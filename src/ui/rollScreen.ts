@@ -5,7 +5,7 @@ import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, btnTexture, dieTexture, panelTexture, pillTexture } from "../art/ui";
 import { ItemDef, PET_LIST } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rainbowColor, rarityRank } from "../data/rarity";
-import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier } from "../data/tiers";
+import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { Branch, TREE, TreeNode, effectText } from "../data/tree";
 import { TOP_ROW, TOP_Y } from "../layout";
 import { RollResult } from "../systems/roll";
@@ -15,6 +15,7 @@ import {
   autoUnlocked, buyNode, cashMult, dieSkin, luck, luckParts, luckyEvery, luckyMult, nodeOwned, nodeUnlocked, potionActive, rollTime, speedActive,
 } from "../systems/stats";
 import { fmt, luckText, oneIn } from "./format";
+import { classBadge, classText, setClassTint } from "./classText";
 import { Host, Screen } from "./screens";
 import { Button, button, drawBar, fitText, label, lockedCard, text } from "./widgets";
 
@@ -430,8 +431,8 @@ export class RollScreen extends Screen {
       s.tweens.add({ targets: glow, alpha: 0.9, duration: 800 + i * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       c.add([
         glow, card,
-        text(s, x + 40, -38, RARITY_INFO[def.rarity].label, 26, RARITY_INFO[def.rarity].css).setOrigin(0, 0.5),
-        text(s, x + 40, 6, oneIn(def.oneIn), 30).setOrigin(0, 0.5),
+        classBadge(s, x + 40 + (def.cls.length === 1 ? 23 : def.cls.length === 3 ? 35 : 41), -40, def.cls, 40),
+        classText(s, x + 40, 6, oneIn(def.oneIn), 30, def.cls).setOrigin(0, 0.5),
         label(s, x + 40, 50, `for you:\n${oneIn(Math.max(1, def.oneIn / mine))}`, 22, "#d9ccff").setOrigin(0, 0.5),
       ]);
     });
@@ -444,10 +445,10 @@ export class RollScreen extends Screen {
     this.history.removeAll(true);
     this.recent.forEach((def, i) => {
       const x = 196 + i * 106;
-      const rank = rarityRank(def.rarity);
       const parts: Phaser.GameObjects.GameObject[] = [];
-      if (rank >= 3) parts.push(s.add.image(0, 0, "glow").setTint(RARITY_INFO[def.rarity].color).setScale(0.5).setAlpha(0.8));
-      parts.push(s.add.circle(0, 0, 40, RARITY_INFO[def.rarity].color).setStrokeStyle(5, 0x2a1a10), s.add.image(0, 4, petTexture(s, def.id)).setScale(0.42));
+      const color = TIER_INFO[def.cls].color;
+      if (tierIndex(def.cls) >= 3) parts.push(s.add.image(0, 0, "glow").setTint(color).setScale(0.5).setAlpha(0.8));
+      parts.push(s.add.circle(0, 0, 40, color).setStrokeStyle(5, 0x2a1a10), s.add.image(0, 4, petTexture(s, def.id)).setScale(0.42));
       const c = s.add.container(x, 0, parts);
       this.history.add(c);
       if (i < results.length) {
@@ -553,17 +554,20 @@ export class RollScreen extends Screen {
       const glow = s.add.image(x, y, "glow").setAlpha(0.35).setScale(scale * 1.8);
       const rays = s.add.image(x, y, "rays").setAlpha(0).setScale(scale * 0.6);
       const frame = s.add.image(0, 0, "card_common");
-      const rar = text(s, 0, -CARD_H / 2 + 25, "", 24);
+      const rar = text(s, 18, -CARD_H / 2 + 25, "", 24);
       const pet = s.add.image(0, -12, "icon_dice").setScale(1.3);
-      const odds = text(s, 0, CARD_H / 2 - 66, "", 22, "#fff3dc");
+      const odds = classText(s, 0, CARD_H / 2 - 66, "", 23, "A");
+      const badge = classBadge(s, -CARD_W / 2 + 6, -CARD_H / 2 + 6, "A", 46);
       const name = text(s, 0, CARD_H / 2 - 27, "", 25);
-      const card = s.add.container(x, y + 200, [frame, rar, pet, odds, name]).setScale(0);
+      const card = s.add.container(x, y + 200, [frame, rar, pet, odds, name, badge]).setScale(0);
       this.root.add([rays, glow, card]);
       const show = (def: ItemDef, real: boolean) => {
         frame.setTexture(`card_${def.rarity}`);
-        fitText(rar.setText(RARITY_INFO[def.rarity].label.toUpperCase()), CARD_W - 40);
+        fitText(rar.setText(RARITY_INFO[def.rarity].label.toUpperCase()), CARD_W - 84);
+        if (badge.cls !== def.cls) badge.setClass(def.cls);
+        setClassTint(odds, def.cls);
         fitText(name.setText(def.name), CARD_W - 36);
-        odds.setText(oneIn(def.oneIn));
+        fitText(odds.setText(oneIn(def.oneIn)), CARD_W - 40);
         const key = petKey(def.id);
         if (real) pet.setTexture(petTexture(s, def.id)).setScale(0.9);
         else if (s.textures.exists(key)) pet.setTexture(key).setScale(0.9);
@@ -605,8 +609,10 @@ export class RollScreen extends Screen {
           this.burst.setParticleTint(color);
           this.burst.explode(8 + rank * 9, x, y);
         }
-        if (rank >= 2) {
-          const call = text(s, x, y - (CARD_H * scale) / 2 - 34, `${RARITY_INFO[res.item.rarity].label.toUpperCase()}!`, 34 + rank * 3, RARITY_INFO[res.item.rarity].css).setScale(0);
+        const crank = tierIndex(res.item.cls);
+        if (crank >= 1) {
+          // the class shouts out in its own animated colours
+          const call = classText(s, x, y - (CARD_H * scale) / 2 - 56, `${res.item.cls} CLASS!`, 36 + crank * 5, res.item.cls).setScale(0);
           this.root.add(call);
           s.tweens.add({ targets: call, scale: 1, duration: 200, ease: "Back.out" });
           s.tweens.add({ targets: call, alpha: 0, y: call.y - 30, delay: hold + 150, duration: 300, onComplete: () => call.destroy() });

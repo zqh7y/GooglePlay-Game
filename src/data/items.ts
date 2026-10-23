@@ -1,5 +1,6 @@
 import { PET_ROWS, Species } from "./pets";
 import { RARITY_ORDER, Rarity } from "./rarity";
+import { DICE_TIERS, Tier } from "./tiers";
 
 /**
  * How a pet attacks:
@@ -18,6 +19,8 @@ export interface ItemDef {
   /** base chance: 1 in this many rolls (before luck) */
   oneIn: number;
   rarity: Rarity;
+  /** class A (easy) to uSSS (the hardest few), shown as a coloured, animated badge */
+  cls: Tier;
   species: Species;
   color: string;
   /** secondary colour: belly, shell, inner ears ("" = automatic) */
@@ -98,6 +101,17 @@ export const PET_DMG_POWER = 0.55;
 
 const ODDS = oddsCurve(PET_ROWS.length);
 
+/** How many pets each class holds, A to uSSS: fewer and fewer up to the 5 uSSS pets. */
+export const CLASS_SIZES = [18, 16, 15, 14, 12, 11, 9, 5];
+function classFor(index: number): Tier {
+  let end = 0;
+  for (let i = 0; i < CLASS_SIZES.length; i++) {
+    end += CLASS_SIZES[i];
+    if (index < end) return DICE_TIERS[i];
+  }
+  return DICE_TIERS[DICE_TIERS.length - 1];
+}
+
 export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accent, accs, pattern, eyes], index) => {
   const accList = accs ? accs.split(",") : [];
   const tier = Math.floor(index / 10);
@@ -110,6 +124,7 @@ export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accent, 
     name,
     oneIn: ODDS[index],
     rarity: RARITY_ORDER[Math.min(tier, RARITY_ORDER.length - 1)],
+    cls: classFor(index),
     species,
     color,
     accent,
