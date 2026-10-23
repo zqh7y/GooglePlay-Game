@@ -720,6 +720,12 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     ctx.closePath();
     fill(ctx, "#b98aff");
   },
+  pause: (ctx) => {
+    for (const x of [26, 56]) {
+      rr(ctx, x, 18, 16, 60, 6);
+      fillOutline(ctx, "#fff3dc", 5);
+    }
+  },
   skull: (ctx) => {
     ctx.beginPath();
     ctx.arc(48, 42, 32, Math.PI * 0.85, Math.PI * 2.15);

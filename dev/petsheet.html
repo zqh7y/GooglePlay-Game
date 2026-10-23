@@ -5,11 +5,13 @@
 import { PET_LIST } from "/src/data/items.ts";
 import { drawPet } from "/src/art/pets.ts";
 const g = document.getElementById("g");
+// ?frame=1 or ?frame=2 shows the walk frames
+const frame = Number(new URLSearchParams(location.search).get("frame") || 0);
 
 for (const p of PET_LIST) {
   const d = document.createElement("div"); d.className = "c";
   const c = document.createElement("canvas"); c.width = 160; c.height = 178;
-  drawPet(c.getContext("2d"), p);
+  drawPet(c.getContext("2d"), p, frame);
   d.append(c, `${p.index} ${p.name}`);
   g.append(d);
 }

@@ -4,16 +4,19 @@
  *   npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js
  *
  * Model (deliberately simple):
- * - a stage is a 5 minute run; skills picked during the run multiply your damage as it goes
+ * - a stage is a 5 minute run; skills and airdropped guns multiply your damage as it goes
  * - each minute you survive if your damage keeps up with the monsters coming in (kiting covers some)
  * - the boss at 5:00 has to die within ~40 s; a failed run still pays money and the dice you found
- * - every roll costs one die; dice come from the map, elites, chests and the boss
+ * - every roll costs one die; dice come from the map, elites, chests and the boss, in tiers that
+ *   depend on the stage (a rarer die multiplies the roll's luck)
  * - the best pets are equipped and levelled up; the cheapest open tree hexagon is bought whenever affordable
  */
 import {
-  BOSS, FLYER, HERO_BASE_DMG, HERO_FIRE_MS, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, minuteMult, monsterCash,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, FLYER, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
   monsterHp, spawnGap,
 } from "../src/data/balance";
+import { GUN_TIERS, DICE_TIERS, DICE_LUCK, diceTierChances, gunTierWeights } from "../src/data/tiers";
+import { STARTER_GUN, gunDps, gunsOfTier } from "../src/data/guns";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode } from "../src/data/tree";
 
@@ -53,13 +56,35 @@ function teamDps(): { dps: number; best: number } {
     }
   }
   const mult = prod("dmg") * (1 + buff);
-  const hero = ((HERO_BASE_DMG + perHit * HERO_TEAM_SHARE) * mult * prod("heroDmg")) / (HERO_FIRE_MS / 1000);
+  const hero = (HERO_BASE_DMG + perHit * HERO_TEAM_SHARE) * mult * prod("heroDmg") * gunDps(STARTER_GUN);
   const crit = 1 + (0.05 + sum("crit")) * (3 + sum("critDmg") - 1);
   return { dps: (petDps * mult + hero) * crit, best: Math.max(...team) };
 }
 
 /** Skills picked during a run: roughly x1 at the start up to x4.5 by the boss. */
-const skillMult = (minute: number) => 1 + 0.7 * minute;
+const gunAt = (() => {
+  // expected best gun (damage relative to the Glock) after each minute, from the airdrop odds
+  const tierMult = GUN_TIERS.map((t) => gunsOfTier(t).reduce((a, g) => a + gunDps(g), 0) / gunsOfTier(t).length / gunDps(STARTER_GUN));
+  const out: number[] = [];
+  for (let m = 0; m <= MINUTES; m++) {
+    const drops: number[][] = [];
+    for (let at = AIRDROP_FIRST_MS; at <= m * 60000; at += AIRDROP_MS) {
+      const w = gunTierWeights(at / 60000, 0);
+      const tot = w.reduce((a, b) => a + b, 0);
+      drops.push(w.map((x) => x / tot));
+    }
+    let e = 0;
+    for (let t = 0; t < GUN_TIERS.length; t++) {
+      // chance the best tier so far is exactly t
+      const atMost = (k: number) => drops.reduce((p, d) => p * d.slice(0, k + 1).reduce((a, b) => a + b, 0), 1);
+      e += (atMost(t) - (t ? atMost(t - 1) : 0)) * Math.max(1, tierMult[t]);
+    }
+    out.push(e);
+  }
+  return out;
+})();
+/** Skills (about +35% a minute) and better guns from airdrops, at a point of the run. */
+const skillMult = (minute: number) => (1 + 0.35 * minute) * (0.7 + 0.3 * gunAt[Math.min(MINUTES, minute)]);
 const group = (minute: number, s: number) => 1 + Math.floor(minute / 3) + (s > 40 ? 1 : 0);
 const avgBase = (WALKER_A.hp + WALKER_B.hp + FLYER.hp) / 3;
 
@@ -123,10 +148,12 @@ while (stage <= MAX_STAGE && t < LIMIT) {
     gems -= 10;
     potionLeft = (5 + sum("potionTime")) * 60;
   }
-  // rolling: spend every die
+  // rolling: spend every die (in the tiers this stage drops)
   const rolls = Math.floor(dice) * (1 + sum("multi"));
   dice -= Math.floor(dice);
-  const ch = rollChances(luck());
+  const tiers = diceTierChances(stage);
+  const ch = PET_LIST.map(() => 0);
+  DICE_TIERS.forEach((t, k) => rollChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k])));
   for (let i = 0; i < ch.length; i++) {
     if (!ch[i]) continue;
     const got = ch[i] * rolls;
@@ -165,4 +192,4 @@ while (stage <= MAX_STAGE && t < LIMIT) {
 console.log(report.join("\n"));
 const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monsterHp(avgBase, stage, MINUTES - 1) * 0.7;
 console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
-void minuteMult;
+console.log(`best gun by minute (x Glock): ${gunAt.map((g) => g.toFixed(1)).join(" ")}`);

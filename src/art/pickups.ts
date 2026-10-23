@@ -1,42 +1,81 @@
 import Phaser from "phaser";
-import { INK, Ctx, boltPath, canvasTexture, circle, ellipse, fill, fillOutline, linear, outline, radial, rr, starPath } from "./draw";
+import { DICE_TIERS, TIER_INFO, Tier } from "../data/tiers";
+import { FONT } from "../ui/widgets";
+import { INK, Ctx, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, linear, outline, radial, rgba, rr, starPath } from "./draw";
 
-/** XP gems, dice tokens, map power-ups and skill icons. */
+/** Bones and meat (XP), dice of every tier, airdrops, map power-ups and skill icons. */
 
-function xpGem(top: string, bottom: string) {
+function bone(ctx: Ctx): void {
+  ctx.save();
+  ctx.translate(22, 14);
+  ctx.rotate(-0.35);
+  ctx.beginPath();
+  rr(ctx, -12, -3.5, 24, 7, 3);
+  for (const [x, y] of [[-13, -4], [-13, 4], [13, -4], [13, 4]]) {
+    ctx.moveTo(x + 5, y);
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+  }
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = INK;
+  ctx.stroke();
+  ctx.fillStyle = "#fff6e2";
+  ctx.fill();
+  ctx.restore();
+}
+
+function meat(big: boolean) {
   return (ctx: Ctx) => {
+    const s = big ? 1.35 : 1;
+    ctx.save();
+    ctx.scale(s, s);
+    // bone handle
     ctx.beginPath();
-    ctx.moveTo(24, 4);
-    ctx.lineTo(42, 22);
-    ctx.lineTo(24, 52);
-    ctx.lineTo(6, 22);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 4, 0, 52, [[0, top], [1, bottom]]), 4);
+    rr(ctx, 4, 16, 14, 6, 3);
+    ctx.moveTo(8, 15);
+    ctx.arc(5, 15, 4, 0, Math.PI * 2);
+    ctx.moveTo(8, 23);
+    ctx.arc(5, 23, 4, 0, Math.PI * 2);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.fillStyle = "#fff6e2";
+    ctx.fill();
+    // the meat
     ctx.beginPath();
-    ctx.moveTo(15, 20);
-    ctx.lineTo(24, 10);
-    ctx.lineTo(28, 20);
-    ctx.closePath();
-    fill(ctx, "rgba(255,255,255,0.7)");
+    ctx.ellipse(27, 18, 13, 11, -0.2, 0, Math.PI * 2);
+    fillOutline(ctx, linear(ctx, 0, 7, 0, 30, [[0, "#ff9a7a"], [1, "#b8442e"]]), 4);
+    ellipse(ctx, 24, 13, 5, 3, -0.4);
+    fill(ctx, "rgba(255,255,255,0.55)");
+    ctx.restore();
   };
 }
 
-/** A little die lying on the ground (what rolls cost). */
-function diceToken(ctx: Ctx): void {
-  ctx.save();
-  ctx.translate(40, 40);
-  ctx.rotate(-0.2);
-  rr(ctx, -28, -28, 56, 60, 14);
-  fill(ctx, INK);
-  rr(ctx, -24, -24, 48, 50, 11);
-  fill(ctx, "#ffb84a");
-  rr(ctx, -24, -24, 48, 44, 11);
-  fill(ctx, "#fff6d8");
-  for (const [x, y] of [[-11, -11], [11, -11], [0, -2], [-11, 8], [11, 8]]) {
-    circle(ctx, x, y, 5);
-    fill(ctx, x === 0 ? "#e8434f" : INK);
-  }
-  ctx.restore();
+/** A die in its tier colour with the tier letter on it. */
+function tierDie(t: Tier) {
+  return (ctx: Ctx) => {
+    const { color } = TIER_INFO[t];
+    ctx.save();
+    ctx.translate(40, 40);
+    ctx.rotate(-0.15);
+    rr(ctx, -30, -30, 60, 64, 14);
+    fill(ctx, INK);
+    rr(ctx, -26, -26, 52, 54, 11);
+    fill(ctx, rgba(darken(color, 0.3)));
+    rr(ctx, -26, -26, 52, 48, 11);
+    fill(ctx, linear(ctx, 0, -26, 0, 22, [[0, rgba(lighten(color, 0.55))], [1, rgba(color)]]));
+    ellipse(ctx, -12, -16, 9, 4, -0.4);
+    fill(ctx, "rgba(255,255,255,0.6)");
+    const size = t.length >= 4 ? 18 : t.length === 3 ? 22 : 34;
+    ctx.font = `${size}px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = INK;
+    ctx.strokeText(t, 0, 0);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(t, 0, 0);
+    ctx.restore();
+  };
 }
 
 function heart(ctx: Ctx): void {
@@ -56,17 +95,17 @@ function magnet(ctx: Ctx): void {
   ctx.lineCap = "butt";
   for (const [w, c] of [[30, INK], [20, "#e8434f"]] as [number, string][]) {
     ctx.beginPath();
-    ctx.arc(40, 36, 22, Math.PI, 0, true);
-    ctx.moveTo(18, 36);
-    ctx.lineTo(18, 64);
-    ctx.moveTo(62, 36);
-    ctx.lineTo(62, 64);
+    ctx.arc(40, 38, 22, Math.PI, 0, false);
+    ctx.moveTo(18, 38);
+    ctx.lineTo(18, 66);
+    ctx.moveTo(62, 38);
+    ctx.lineTo(62, 66);
     ctx.lineWidth = w;
     ctx.strokeStyle = c;
     ctx.stroke();
   }
   for (const x of [18, 62]) {
-    rr(ctx, x - 10, 54, 20, 14, 2);
+    rr(ctx, x - 10, 56, 20, 13, 2);
     fill(ctx, "#e8ecf2");
   }
 }
@@ -119,9 +158,102 @@ function skillOrb(ctx: Ctx): void {
   fillOutline(ctx, "#ffffff", 4);
 }
 
+/** Military supply crate. */
+function crate(ctx: Ctx): void {
+  rr(ctx, 8, 22, 104, 74, 8);
+  fillOutline(ctx, linear(ctx, 0, 22, 0, 96, [[0, "#7c9452"], [1, "#4a5e30"]]), 6);
+  rr(ctx, 8, 22, 104, 16, 6);
+  fillOutline(ctx, "#8aa45c", 5);
+  for (const x of [24, 96]) {
+    rr(ctx, x - 6, 36, 12, 60, 2);
+    fillOutline(ctx, "#5a6e3a", 4);
+  }
+  rr(ctx, 38, 52, 44, 24, 4);
+  fillOutline(ctx, "#ffd23f", 4);
+  ctx.font = `20px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = INK;
+  ctx.fillText("GUN", 60, 65);
+  ellipse(ctx, 30, 28, 12, 3, 0);
+  fill(ctx, "rgba(255,255,255,0.4)");
+}
+
+function parachute(ctx: Ctx): void {
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (const x of [22, 60, 100, 138]) {
+    ctx.moveTo(x, 58);
+    ctx.lineTo(80, 128);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(10, 62);
+  ctx.quadraticCurveTo(14, 6, 80, 6);
+  ctx.quadraticCurveTo(146, 6, 150, 62);
+  for (let i = 4; i >= 0; i--) ctx.quadraticCurveTo(10 + i * 35 + 17, 48, 10 + i * 35, 62);
+  ctx.closePath();
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.save();
+  ctx.clip();
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i % 2 ? "#ffffff" : "#ff5a5a";
+    ctx.beginPath();
+    ctx.moveTo(80, 0);
+    ctx.lineTo(i * 35 - 5, 70);
+    ctx.lineTo(i * 35 + 30, 70);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.fillRect(0, 10, 160, 10);
+  ctx.restore();
+}
+
+/** The bubble that protects the crystal. */
+function shield(ctx: Ctx): void {
+  const g = ctx.createRadialGradient(150, 150, 60, 150, 150, 146);
+  g.addColorStop(0, "rgba(120,220,255,0.05)");
+  g.addColorStop(0.8, "rgba(120,220,255,0.25)");
+  g.addColorStop(1, "rgba(200,245,255,0.75)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(150, 150, 146, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(220,250,255,0.9)";
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  // honeycomb sheen
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(150, 150, 144, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 2;
+  const r = 22;
+  for (let row = 0; row < 16; row++) {
+    for (let col = 0; col < 10; col++) {
+      const x = col * r * 1.75 + (row % 2) * r * 0.87;
+      const y = row * r * 1.5 * 0.87;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
+        ctx[k ? "lineTo" : "moveTo"](x + Math.cos(a) * r * 0.9, y + Math.sin(a) * r * 0.9);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ellipse(ctx, 100, 70, 46, 16, -0.6);
+  fill(ctx, "rgba(255,255,255,0.35)");
+}
+
 /** Skill icon glyphs (drawn on a 120 x 120 canvas, centred). */
 const GLYPHS: Record<string, (ctx: Ctx) => void> = {
-  power: (ctx) => {
+  damage: (ctx) => {
     ctx.beginPath();
     ctx.moveTo(30, 70);
     ctx.lineTo(70, 30);
@@ -135,7 +267,7 @@ const GLYPHS: Record<string, (ctx: Ctx) => void> = {
       fillOutline(ctx, "#ffd23f", 4);
     }
   },
-  rapid: (ctx) => {
+  firerate: (ctx) => {
     for (const y of [36, 60, 84]) {
       rr(ctx, 22 + (y - 36) / 3, y - 9, 56, 18, 9);
       fillOutline(ctx, "#ffd23f", 5);
@@ -147,101 +279,148 @@ const GLYPHS: Record<string, (ctx: Ctx) => void> = {
       fillOutline(ctx, "#ff8a3a", 4);
     }
   },
-  multi: (ctx) => {
-    for (const a of [-0.55, 0, 0.55]) {
-      ctx.save();
-      ctx.translate(30, 86);
-      ctx.rotate(-Math.PI / 4 + a);
-      rr(ctx, 0, -8, 64, 16, 8);
-      fillOutline(ctx, "#b6f08a", 5);
-      ctx.restore();
-    }
-  },
-  orbit: (ctx) => {
-    ctx.beginPath();
-    ctx.arc(60, 60, 34, 0, Math.PI * 2);
-    outline(ctx, 4, "rgba(74,47,29,0.4)");
-    circle(ctx, 60, 60, 12);
-    fillOutline(ctx, "#ffffff", 5);
+  mag: (ctx) => {
     for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      starPath(ctx, 60 + Math.cos(a) * 34, 60 + Math.sin(a) * 34, 15, 0.4, 4, a);
-      fillOutline(ctx, "#bfefff", 4);
+      rr(ctx, 40 + i * 14, 12, 11, 22, 5);
+      fillOutline(ctx, "#ffd23f", 3);
     }
-  },
-  lightning: (ctx) => {
-    boltPath(ctx, 60, 60, 46);
-    fillOutline(ctx, "#fff35c", 6);
-  },
-  aura: (ctx) => {
     ctx.beginPath();
-    ctx.moveTo(60, 14);
-    ctx.bezierCurveTo(96, 50, 96, 104, 60, 104);
-    ctx.bezierCurveTo(24, 104, 24, 60, 44, 40);
-    ctx.bezierCurveTo(46, 56, 52, 60, 56, 60);
-    ctx.bezierCurveTo(50, 40, 58, 24, 60, 14);
+    ctx.moveTo(36, 30);
+    ctx.lineTo(84, 30);
+    ctx.quadraticCurveTo(84, 80, 98, 106);
+    ctx.lineTo(56, 108);
+    ctx.quadraticCurveTo(40, 80, 36, 30);
     ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 14, 0, 104, [[0, "#ffe066"], [1, "#ff5a3a"]]), 6);
-    ellipse(ctx, 60, 84, 12, 16);
-    fill(ctx, "#fff3a8");
-  },
-  rocket: (ctx) => {
-    ctx.save();
-    ctx.translate(60, 60);
-    ctx.rotate(-Math.PI / 4);
-    for (const s of [-1, 1]) {
+    fillOutline(ctx, linear(ctx, 0, 30, 0, 108, [[0, "#6a7280"], [1, "#2e323c"]]), 5);
+    for (const y of [52, 72]) {
       ctx.beginPath();
-      ctx.moveTo(-20, 12 * s);
-      ctx.lineTo(-34, 26 * s);
-      ctx.lineTo(-30, 6 * s);
-      ctx.closePath();
-      fillOutline(ctx, "#e8434f", 4);
+      ctx.moveTo(48, y);
+      ctx.lineTo(80, y);
+      outline(ctx, 3, "rgba(255,255,255,0.3)");
+    }
+  },
+  reload: (ctx) => {
+    ctx.lineCap = "round";
+    for (const [w, c] of [[18, INK], [10, "#7ad651"]] as [number, string][]) {
+      ctx.beginPath();
+      ctx.arc(60, 60, 36, -0.4, Math.PI * 1.6);
+      ctx.lineWidth = w;
+      ctx.strokeStyle = c;
+      ctx.stroke();
     }
     ctx.beginPath();
-    ctx.moveTo(42, 0);
-    ctx.quadraticCurveTo(26, -16, -28, -13);
-    ctx.lineTo(-28, 13);
-    ctx.quadraticCurveTo(26, 16, 42, 0);
+    ctx.moveTo(104, 34);
+    ctx.lineTo(96, 66);
+    ctx.lineTo(70, 46);
     ctx.closePath();
-    fillOutline(ctx, "#f2f4f8", 5);
-    circle(ctx, 12, 0, 7);
-    fillOutline(ctx, "#5ac8ff", 3);
-    ellipse(ctx, -38, 0, 10, 7);
-    fill(ctx, "#ffb347");
-    ctx.restore();
+    fillOutline(ctx, "#7ad651", 5);
+    rr(ctx, 50, 44, 20, 34, 9);
+    fillOutline(ctx, "#ffd23f", 4);
+  },
+  range: (ctx) => {
+    circle(ctx, 60, 60, 38);
+    fillOutline(ctx, "rgba(90,200,255,0.35)", 6);
+    circle(ctx, 60, 60, 18);
+    outline(ctx, 5);
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of [[60, 14, 60, 40], [60, 80, 60, 106], [14, 60, 40, 60], [80, 60, 106, 60]]) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    outline(ctx, 6);
+    circle(ctx, 60, 60, 5);
+    fill(ctx, "#ff4a4a");
+  },
+  boom: (ctx) => {
+    starPath(ctx, 60, 62, 48, 0.55, 10);
+    fillOutline(ctx, linear(ctx, 0, 14, 0, 110, [[0, "#ffe066"], [1, "#ff5a3a"]]), 6);
+    starPath(ctx, 60, 62, 24, 0.55, 8);
+    fill(ctx, "#fff6c8");
+  },
+  mend: (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(48, 20);
+    ctx.lineTo(70, 20);
+    ctx.lineTo(82, 52);
+    ctx.lineTo(60, 104);
+    ctx.lineTo(36, 52);
+    ctx.closePath();
+    fillOutline(ctx, linear(ctx, 0, 20, 0, 104, [[0, "#c8f4ff"], [1, "#3a9ae8"]]), 5);
+    rr(ctx, 74, 66, 36, 12, 4);
+    fillOutline(ctx, "#7ad651", 4);
+    rr(ctx, 86, 54, 12, 36, 4);
+    fillOutline(ctx, "#7ad651", 4);
+  },
+  link: (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(18, 40);
+    ctx.lineTo(34, 40);
+    ctx.lineTo(42, 62);
+    ctx.lineTo(26, 92);
+    ctx.lineTo(10, 62);
+    ctx.closePath();
+    fillOutline(ctx, "#c8a8ff", 4);
+    rr(ctx, 80, 50, 30, 42, 6);
+    fillOutline(ctx, "#ff9a3c", 4);
+    ctx.lineCap = "round";
+    for (const [w, c] of [[12, "rgba(185,138,255,0.5)"], [5, "#ffffff"]] as [number, string][]) {
+      ctx.beginPath();
+      ctx.moveTo(40, 62);
+      ctx.lineTo(52, 52);
+      ctx.lineTo(60, 70);
+      ctx.lineTo(70, 56);
+      ctx.lineTo(80, 68);
+      ctx.lineWidth = w;
+      ctx.strokeStyle = c;
+      ctx.stroke();
+    }
+  },
+  fort: (ctx) => {
+    rr(ctx, 18, 44, 84, 62, 6);
+    fillOutline(ctx, linear(ctx, 0, 44, 0, 106, [[0, "#e0b07a"], [1, "#b07a46"]]), 5);
+    for (const x of [18, 46, 74]) {
+      rr(ctx, x, 30, 20, 20, 3);
+      fillOutline(ctx, "#d8a46c", 4);
+    }
+    rr(ctx, 54, 60, 12, 46, 2);
+    fill(ctx, "rgba(255,240,200,0.6)");
+    ctx.beginPath();
+    ctx.moveTo(60, 30);
+    ctx.lineTo(60, 8);
+    outline(ctx, 4);
+    ctx.beginPath();
+    ctx.moveTo(60, 8);
+    ctx.lineTo(84, 14);
+    ctx.lineTo(60, 20);
+    ctx.closePath();
+    fillOutline(ctx, "#ff5a5a", 3);
   },
 };
 
 export function makePickupTextures(scene: Phaser.Scene): void {
-  canvasTexture(scene, "xp_s", 48, 56, xpGem("#a8f0ff", "#2f9ae8"));
-  canvasTexture(scene, "xp_m", 48, 56, xpGem("#c8ffb0", "#3fb84a"));
-  canvasTexture(scene, "xp_l", 48, 56, xpGem("#ffd0ff", "#a24ae8"));
-  canvasTexture(scene, "dice_token", 80, 80, diceToken);
+  canvasTexture(scene, "xp_bone", 44, 30, bone);
+  canvasTexture(scene, "xp_meat", 44, 36, meat(false));
+  canvasTexture(scene, "xp_ham", 60, 48, meat(true));
+  for (const t of DICE_TIERS) canvasTexture(scene, `die_${t}`, 80, 80, tierDie(t));
   canvasTexture(scene, "pk_heart", 80, 80, heart);
   canvasTexture(scene, "pk_magnet", 80, 80, magnet);
   canvasTexture(scene, "pk_bomb", 80, 80, bomb);
   canvasTexture(scene, "pk_freeze", 80, 80, freeze);
   canvasTexture(scene, "skill_orb", 110, 110, skillOrb);
+  canvasTexture(scene, "airdrop", 120, 104, crate);
+  canvasTexture(scene, "parachute", 160, 132, parachute);
+  canvasTexture(scene, "shield", 300, 300, shield);
   for (const [id, draw] of Object.entries(GLYPHS)) canvasTexture(scene, `sk_${id}`, 120, 120, draw);
-  // an orbiting blade and a rocket for the skills in action
-  canvasTexture(scene, "blade", 64, 64, (ctx) => {
-    starPath(ctx, 32, 32, 28, 0.38, 4);
-    fillOutline(ctx, linear(ctx, 0, 0, 64, 64, [[0, "#ffffff"], [1, "#8ad8ff"]]), 4);
-    circle(ctx, 32, 32, 6);
-    fill(ctx, INK);
-  });
-  canvasTexture(scene, "rocket", 90, 40, (ctx) => {
-    ctx.translate(46, 20);
-    ctx.beginPath();
-    ctx.moveTo(38, 0);
-    ctx.quadraticCurveTo(22, -13, -26, -11);
-    ctx.lineTo(-26, 11);
-    ctx.quadraticCurveTo(22, 13, 38, 0);
-    ctx.closePath();
-    fillOutline(ctx, "#f2f4f8", 4);
-    rr(ctx, -28, -14, 12, 28, 3);
-    fillOutline(ctx, "#e8434f", 3);
-    ellipse(ctx, -36, 0, 8, 6);
-    fill(ctx, "#ffb347");
+  canvasTexture(scene, "sk_luck", 120, 120, (ctx) => {
+    ctx.save();
+    ctx.translate(14, 4);
+    ctx.scale(0.58, 0.58);
+    parachute(ctx);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(26, 62);
+    ctx.scale(0.58, 0.52);
+    crate(ctx);
+    ctx.restore();
   });
 }

@@ -1,5 +1,6 @@
 import { MAX_STAGE } from "../data/balance";
 import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor } from "../data/items";
+import { DICE_TIERS, Tier } from "../data/tiers";
 
 export interface PetState {
   level: number;
@@ -18,8 +19,10 @@ export interface SaveData {
   discovered: string[];
   stage: number;
   bestStage: number;
-  /** dice found on the battle map; every roll costs one */
-  dice: number;
+  /** dice found in battle, per rarity tier; every roll costs one */
+  dice: Record<Tier, number>;
+  /** which dice tier the Roll screen uses */
+  diceTier: Tier;
   /** upgrade tree: node id -> 1 when bought */
   tree: Record<string, number>;
   autoRoll: boolean;
@@ -64,7 +67,8 @@ function fresh(): SaveData {
     discovered: [STARTER],
     stage: 1,
     bestStage: 1,
-    dice: 10,
+    dice: noDice({ A: 10 }),
+    diceTier: "A",
     tree: {},
     autoRoll: false,
     potionUntil: 0,
@@ -88,11 +92,19 @@ function fresh(): SaveData {
   };
 }
 
+function noDice(some: Partial<Record<Tier, number>> = {}): Record<Tier, number> {
+  return Object.fromEntries(DICE_TIERS.map((t) => [t, some[t] ?? 0])) as Record<Tier, number>;
+}
+
 function load(): SaveData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = { ...fresh(), ...JSON.parse(raw) } as SaveData;
+      // older saves had one plain dice count
+      const dice = data.dice as unknown;
+      data.dice = noDice(typeof dice === "number" ? { A: dice } : (dice as Partial<Record<Tier, number>>));
+      if (!DICE_TIERS.includes(data.diceTier)) data.diceTier = "A";
       // drop anything that no longer exists
       for (const id of Object.keys(data.pets)) if (!ITEMS[id]) delete data.pets[id];
       data.equipped = data.equipped.filter((id) => data.pets[id]);
@@ -149,6 +161,8 @@ export function toggleEquip(id: string, maxSlots: number): void {
   }
   persist();
 }
+
+export const totalDice = () => DICE_TIERS.reduce((s, t) => s + save.dice[t], 0);
 
 export function resetSave(): void {
   Object.assign(save, fresh());

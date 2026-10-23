@@ -15,8 +15,9 @@ npm run dev      # open the URL it prints (add --host to try it on your phone on
 npm run build    # production build into dist/
 ```
 
-Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets, `/dev/chars.html` the hero and
-monsters, `/dev/world.html` every tree, plant, rock and crystal.
+Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets (`?frame=1` / `2` for the walk
+frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, plant, rock and crystal,
+`/dev/guns.html` every gun, pickup and skill icon.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run with the real numbers and prints how many hours (and failed runs) a steady
@@ -24,8 +25,10 @@ player needs per stage.
 
 ## How the game works
 
-- **Rolling costs one die.** Dice are found on the battle map (and in chests, on elites and from the boss),
-  or bought with gems in the Shop. Each roll checks pets from rarest to most common with a chance of
+- **Rolling costs one die.** Dice are found in battle (on the map, in chests, on elites and from the boss)
+  or bought with gems in the Shop. Dice come in tiers **A, B, C, D, E, S, SSS, uSSS**; which tiers drop
+  depends on the stage (a D die is a dream at stage 10 and normal at stage 100; uSSS stays very rare), and a
+  rarer die multiplies the roll's luck. Each roll checks pets from rarest to most common with a chance of
   `luck / N` ("1 in N"). Reels spin at the bottom of the screen; rare pulls get a slower, suspenseful reel.
   Every 10th roll is a Lucky Roll (x2 luck).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
@@ -35,14 +38,29 @@ player needs per stage.
   quick upgrades) and **Upgrades** (the honeycomb tree). The **Map** (from Battle) shows the 100-stage journey.
 - **Lands**: five big open fields (you can walk everywhere), 20 stages each: Sunny Meadow (1-20), Golden
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
-- **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero and pets shoot by themselves.
-  Survive **5:00** while monsters come faster and tougher every minute (with a swarm closing in at each
-  minute mark), then **kill the boss** (it charges, watch the red line). Most monsters hunt you; raiders go
-  for the crystal. If you fall or the crystal breaks, the run is over: revive once for gems or try again.
-- **Skills**: kills drop XP gems. Every level up freezes the fight and offers 3 of 12 skills (Power Shot,
-  Rapid Fire, Multi Shot, Orbit Blades, Lightning, Fire Aura, Rockets, Swift Boots, Magnet, Vitality,
-  Crystal Guard, Pet Fury), each up to level 5. They reset every stage.
-- **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill) and treasure chests.
+- **The Battle tab is a lobby**: the fight only starts when you press **BATTLE**. During a fight the tab bar
+  and shops are gone; you only get **Pause** (resume, sound, music, give up) and **Stats**.
+- **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself and pets help.
+  The camera is zoomed out (1.66x) so you see more of the field. Survive **5:00** while monsters come faster
+  and tougher every minute (a ring of them closes in at each minute mark), then **kill the boss** (it
+  charges, watch the red line). If you fall or the crystal breaks, the run is over: revive once for gems,
+  try again, or go back to the lobby.
+- **The crystal shield**: the crystal is open for 45 s, then shielded for 45 s, and so on. While it is open,
+  monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
+  shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
+- **Guns**: every stage starts with a Glock. **Airdrops** parachute in about every 40 s with a gun of tier
+  A (Common), B (Rare), C (Super Rare), D (Epic), E (Legendary), S (Mythic) or SSS (Titanic, almost
+  impossible); the longer you survive the better the odds. A light beam shows the tier before you open it.
+  Better guns are equipped right away, worse ones are scrapped for money. 14 guns: Glock, Revolver, Uzi, MP5,
+  Pump Shotgun, Desert Eagle, AK-47, M4A1, AWP Sniper, AA-12, Minigun, Grenade Launcher, Dragon Minigun and
+  Plasma Rifle, each with its own damage, fire rate, magazine, reload, spread, range, pierce or blast.
+- **Skills**: monsters drop tiny bones and meat (XP). Every level up freezes the fight and offers 3 of 14
+  skills, each up to level 5, reset every stage: Big Mag, Quick Reload, Hollow Points, Hair Trigger, Long
+  Barrel, Boom Rounds, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick Cardboard,
+  Crystal Link (a beam from the crystal to you that burns monsters), Box Fort (stand still to dig in) and
+  Pack Leader (pets).
+- **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and airdrops.
+- **Pets** walk next to you with a stepping animation (floating pets bob).
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.
@@ -56,7 +74,9 @@ player needs per stage.
 | `src/data/items.ts` | Turns that table into pets with odds, rarity, attack type, damage and levels |
 | `src/data/tree.ts` | Every upgrade hexagon: position, price, effect |
 | `src/data/balance.ts` | Stage length, monster health / speed / money per stage and minute, spawn rate, XP (shared with the simulator) |
-| `src/data/skills.ts` | The 12 in-run skills |
+| `src/data/skills.ts` | The 14 in-run skills |
+| `src/data/guns.ts` | The 14 guns and their stats |
+| `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
 | `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
 | `src/data/rarity.ts` | The 10 rarity tiers and their colours |
 | `src/systems/roll.ts` | The RNG roll and odds per tier |
@@ -65,8 +85,8 @@ player needs per stage.
 | `src/systems/goals.ts` | Quests, daily rewards and Index milestones |
 | `src/systems/sound.ts` | Synthesized sound effects, the music sequencer and vibration |
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
-| `src/scenes/Battle.ts` | A stage: clock, spawning, movement, camera, pets, skills, pickups, boss, win / lose |
-| `src/scenes/UI.ts` | Tab bar, top bar, battle HUD, skill picker, defeat screen, rolling, celebrations, quests and popups |
+| `src/scenes/Battle.ts` | A stage: lobby, clock, crystal shield, spawning, guns and bullets, airdrops, pets, skills, pickups, boss, win / lose |
+| `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gun panel), pause, stats, skill picker, defeat screen, rolling, popups |
 | `src/ui/rollScreen.ts` | The Roll screen and its reel animation |
 | `src/ui/petsScreen.ts` | My Pets, Index and the pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop screen |
@@ -76,7 +96,8 @@ player needs per stage.
 | `src/art/characters.ts` | The box survivor hero, the blaster, monsters and effects |
 | `src/art/world.ts` | Trees, plants, rocks, chests and each land's crystal |
 | `src/art/ground.ts` | Paints each land's seamless floor tile, ground patches, the stone circle and the minimap |
-| `src/art/pickups.ts` | XP gems, dice, power-ups, skill orbs and skill icons |
+| `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups, skill icons |
+| `src/art/guns.ts` | The cartoon guns and bullets |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
 

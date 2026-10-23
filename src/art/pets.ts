@@ -52,9 +52,17 @@ function rand(P: Pal): () => number {
 // ───────────────────────── shape helpers ─────────────────────────
 
 let ctx: Ctx;
+/** Walk frame being drawn: 0 = standing, 1 / 2 = left / right foot stepping. */
+let walk = 0;
 
 /** Ellipse sub-path (no beginPath, so several can be joined into one silhouette). */
 function E(x: number, y: number, rx: number, ry: number, rot = 0): void {
+  if (walk && y >= 138 && ry <= 11 && rx <= 16) {
+    // a foot: one lifts and steps forward, the other stays planted
+    const up = x < 80 === (walk === 1);
+    x += up ? 5 : -2;
+    y += up ? -6 : 3;
+  }
   ctx.moveTo(x + rx * Math.cos(rot), y + rx * Math.sin(rot));
   ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
 }
@@ -1161,12 +1169,22 @@ const FRONT: Record<string, Acc> = {
 
 const FLOATING: Species[] = ["bat", "fish", "ghost"];
 
-export function drawPet(c: Ctx, def: ItemDef): void {
+export function drawPet(c: Ctx, def: ItemDef, frame = 0): void {
   ctx = c;
   ctx.translate(0, HEADROOM);
   const P = palette(def);
   const float = FLOATING.includes(def.species);
   paint(rgba(0x2a1a2e, 0.2), () => E(80, 151, float ? 32 : 46, float ? 5 : 7));
+  if (frame && float) {
+    // floaters bob instead of stepping
+    ctx.translate(0, frame === 1 ? -5 : 1);
+  } else if (frame) {
+    // a little waddle: the body bobs up and tips side to side
+    ctx.translate(80, 147);
+    ctx.rotate(frame === 1 ? -0.06 : 0.06);
+    ctx.translate(-80, -150);
+    walk = frame;
+  }
   // anchors are fixed per species: draw a scratch copy to find them without painting
   const real = ctx;
   ctx = document.createElement("canvas").getContext("2d")!;
@@ -1178,11 +1196,12 @@ export function drawPet(c: Ctx, def: ItemDef): void {
   if (def.pattern === "gold") {
     for (const [x, y, r] of [[18, 34, 9], [146, 50, 7], [140, 136, 6], [14, 114, 6]]) twinkle(ctx, x, y, r, "#fff6b0");
   }
+  walk = 0;
 }
 
-/** Texture key for a pet, drawing it on first use. */
-export function petTexture(scene: Phaser.Scene, id: string): string {
-  return canvasTexture(scene, petKey(id), PET_SIZE, PET_H, (c) => drawPet(c, ITEMS[id]));
+/** Texture key for a pet (frame 1 / 2 = walking), drawing it on first use. */
+export function petTexture(scene: Phaser.Scene, id: string, frame = 0): string {
+  return canvasTexture(scene, frame ? `${petKey(id)}_w${frame}` : petKey(id), PET_SIZE, PET_H, (c) => drawPet(c, ITEMS[id], frame));
 }
 
 /** Dark silhouette for pets not discovered yet. */

@@ -17,8 +17,8 @@ export const MINUTES = 5;
  */
 export const START_HP_GROWTH = 2.0;
 export const EARLY_HP_GROWTH = 1.45;
-export const MID_HP_GROWTH = 1.25;
-export const LATE_HP_GROWTH = 1.36;
+export const MID_HP_GROWTH = 1.27;
+export const LATE_HP_GROWTH = 1.42;
 const growthAt = (s: number) => (s < 10 ? START_HP_GROWTH : s < 25 ? EARLY_HP_GROWTH : s < 80 ? MID_HP_GROWTH : LATE_HP_GROWTH);
 const HP_TABLE: number[] = [1];
 for (let s = 1; s <= MAX_STAGE + 1; s++) HP_TABLE.push(HP_TABLE[s - 1] * growthAt(s));
@@ -27,19 +27,24 @@ export const CASH_GROWTH = 1.25;
 /** Within a stage, monsters get this much tougher every minute. */
 export const MINUTE_HP_STEP = 0.3;
 
+/** Damage of one Glock bullet before upgrades (other guns multiply it). */
 export const HERO_BASE_DMG = 6;
-/** Hero adds this share of the team's pet damage to each shot. */
+/** Hero adds this share of the team's pet damage to each bullet. */
 export const HERO_TEAM_SHARE = 0.2;
-export const HERO_FIRE_MS = 420;
 export const HERO_HP = 100;
 
-export const CRYSTAL_HP = 250;
+export const CRYSTAL_HP = 400;
+/** The crystal is open for 45 s, then shielded for 45 s, and so on. */
+export const SHIELD_MS = 45000;
 /** Monsters appear this often (ms) at the start; every minute they come faster. */
 export const SPAWN_MS = 1250;
-export const SPAWN_SPEEDUP = 0.5;
+export const SPAWN_SPEEDUP = 0.35;
 export const MAX_MONSTERS = 140;
-/** Share of monsters that go for the crystal instead of you. */
-export const RAIDER_SHARE = 0.3;
+/** Share of monsters that walk in from far away towards the crystal while it is open. */
+export const CRYSTAL_SPAWN_SHARE = 0.4;
+/** First airdrop, and time between airdrops. */
+export const AIRDROP_FIRST_MS = 25000;
+export const AIRDROP_MS = 40000;
 
 export interface MonsterStats {
   hp: number;

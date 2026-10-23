@@ -1,5 +1,7 @@
 import Phaser from "phaser";
+import { makePickupTextures } from "../art/pickups";
 import { panelTexture } from "../art/ui";
+import { DICE_LUCK, TIER_INFO, Tier } from "../data/tiers";
 import { dailyDay } from "../systems/goals";
 import { persist, save } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
@@ -39,6 +41,7 @@ export class ShopScreen extends Screen {
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "shop");
     const s = scene;
+    makePickupTextures(s);
     const W = s.scale.width;
     this.top = host.L.headerBottom + 10;
     this.bottom = host.L.navTop - 10;
@@ -132,11 +135,11 @@ export class ShopScreen extends Screen {
     });
 
     y = this.section(y + 10, "DICE");
-    for (const [amount, gems] of [[10, 5], [50, 20], [200, 70]] as [number, number][]) {
+    for (const [tier, amount, gems] of [["A", 10, 5], ["A", 50, 20], ["B", 10, 25], ["C", 5, 60]] as [Tier, number, number][]) {
       y = this.card(y, {
-        icon: "icon_dice", title: `${amount} Dice`, desc: () => `${amount} more rolls (you have ${fmt(save.dice)})`,
+        icon: `die_${tier}`, title: `${amount} ${tier} Dice`, desc: () => `${TIER_INFO[tier].name}: x${DICE_LUCK[tier]} luck per roll (you have ${fmt(save.dice[tier])})`,
         price: () => `${gems}`, priceIcon: "icon_gem", color: "gold", buy: () => this.spend(gems, () => {
-          save.dice += amount;
+          save.dice[tier] += amount;
           host.afterPurchase();
         }),
       });
@@ -190,7 +193,7 @@ export class ShopScreen extends Screen {
     const cash = income(5);
     save.gems += gems;
     save.cash += cash;
-    save.dice += 3;
+    save.dice.A += 3;
     save.freeGiftAt = Date.now() + FREE_GIFT_MS;
     persist();
     sfx.fanfare();

@@ -12,7 +12,10 @@ import {
 } from "../systems/stats";
 import { fmt, luckText, oneIn } from "./format";
 import { Host, Screen } from "./screens";
-import { Button, Pill, button, drawBar, fitText, label, text } from "./widgets";
+import { makePickupTextures } from "../art/pickups";
+import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier } from "../data/tiers";
+import { totalDice } from "../systems/save";
+import { Button, button, drawBar, fitText, label, text } from "./widgets";
 
 /** Quick-buy cards: each buys the cheapest open hexagon of one tree branch. */
 const BRANCHES: { title: string; icon: string; branch: Branch; value: () => string }[] = [
@@ -39,7 +42,7 @@ export class RollScreen extends Screen {
   private burst: Phaser.GameObjects.Particles.ParticleEmitter;
   private readyAt = 0;
   private reelY: number;
-  private dicePill: Pill;
+  private tierChips: { tier: Tier; box: Phaser.GameObjects.Container; count: Phaser.GameObjects.Text; ring: Phaser.GameObjects.Arc }[] = [];
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "roll");
@@ -70,13 +73,28 @@ export class RollScreen extends Screen {
     this.die = s.add.image(W / 2, dieY, dieTexture(s, dieSkin(), 5)).setScale(2.2);
     s.tweens.add({ targets: this.die, y: dieY - 18, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     r.add([this.dieRays, ped, this.die]);
-    // every roll costs one die (found on the battle map)
-    this.dicePill = new Pill(s, W - 190, dieY - 120, 300, 76, "icon_dice", 36, "glass");
-    r.add(this.dicePill);
+    // every roll costs one die (found in battle); rarer dice multiply your luck
+    makePickupTextures(s);
+    const chipY = dieY + 290;
+    DICE_TIERS.forEach((tier, i) => {
+      const x = W / 2 + (i - 3.5) * 128;
+      const ring = s.add.circle(0, -4, 58, TIER_INFO[tier].color, 0.35).setStrokeStyle(6, 0xffe066).setVisible(false);
+      const count = text(s, 0, 46, "0", 28);
+      const box = s.add.container(x, chipY, [ring, s.add.image(0, -8, `die_${tier}`).setScale(0.82), count]).setSize(120, 130).setInteractive({ useHandCursor: true });
+      box.on("pointerup", () => {
+        save.diceTier = tier;
+        persist();
+        sfx.click();
+        const n = save.dice[tier];
+        host.toast(`${TIER_INFO[tier].name} dice: x${fmt(DICE_LUCK[tier])} luck  (${n} left)`, TIER_INFO[tier].css);
+      });
+      r.add(box);
+      this.tierChips.push({ tier, box, count, ring });
+    });
 
     // reels area
     this.reelY = (dieY + bottom - 430) / 2 + 40;
-    this.hint = text(s, W / 2, this.reelY, "Each roll costs 1 die. Find dice in battle!", 38, "#e8e0ff");
+    this.hint = text(s, W / 2, this.reelY + 70, "Each roll costs 1 die. Rarer dice = more luck!", 36, "#e8e0ff");
     s.tweens.add({ targets: this.hint, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
     r.add(this.hint);
 
@@ -183,10 +201,16 @@ export class RollScreen extends Screen {
     fitText(this.luckText, 680);
 
     const left = this.readyAt - time;
-    const none = save.dice <= 0;
-    this.dicePill.setValue(`${fmt(save.dice)} dice`);
+    const none = totalDice() <= 0;
+    const tier = save.dice[save.diceTier] > 0 ? save.diceTier : DICE_TIERS.find((t) => save.dice[t] > 0) ?? save.diceTier;
+    for (const c of this.tierChips) {
+      const n = save.dice[c.tier];
+      c.count.setText(fmt(n)).setColor(n ? "#ffffff" : "#9a8aa8");
+      c.ring.setVisible(c.tier === tier && !none);
+      c.box.setAlpha(n ? 1 : 0.4).setScale(c.tier === tier && !none ? 1.1 : 1);
+    }
     this.rollBtn.setLabel(none ? "NO DICE" : left > 0 ? `${(left / 1000).toFixed(1)}s` : "ROLL");
-    this.rollBtn.setSub(none ? "Find dice in battle!" : luckyNext ? "LUCKY ROLL!" : `Lucky in ${Math.max(1, every - save.luckyCount - 1)}`);
+    this.rollBtn.setSub(none ? "Find dice in battle!" : luckyNext ? `LUCKY ${tier} ROLL!` : `${tier} die  •  x${fmt(DICE_LUCK[tier])} luck`);
     this.rollBtn.subText?.setColor(luckyNext && !none ? "#fff27a" : "#ffffff");
     this.rollBtn.setColor(none ? "grey" : left > 0 || this.revealing ? "peach" : luckyNext ? "gold" : "orange");
     this.rollBar.clear();

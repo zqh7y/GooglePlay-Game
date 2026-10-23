@@ -116,9 +116,24 @@ export const sfx = {
     burst(0.3, 0.12, 700);
     tone(140, 0.25, "sine", 0.1, 50);
   },
-  shoot: () => {
-    if (throttle("shoot", 90)) return;
-    tone(900, 0.06, "square", 0.02, 300);
+  /** Light guns tick, heavy ones thump. */
+  shoot: (heavy = false) => {
+    if (throttle("shoot", heavy ? 110 : 70)) return;
+    if (heavy) {
+      burst(0.12, 0.08, 1200);
+      tone(220, 0.1, "square", 0.03, 90);
+    } else {
+      tone(900, 0.05, "square", 0.018, 300);
+    }
+  },
+  reload: () => {
+    tone(500, 0.05, "square", 0.03, 380);
+    tone(700, 0.05, "square", 0.03, 900, 0.12);
+  },
+  airdrop: () => [392, 523, 659, 784].forEach((f, i) => tone(f, 0.18, "triangle", 0.05, 0, i * 0.09)),
+  shield: (on: boolean) => {
+    tone(on ? 300 : 900, 0.4, "sine", 0.06, on ? 900 : 300);
+    tone(on ? 450 : 1200, 0.4, "triangle", 0.03, on ? 1350 : 450, 0.05);
   },
   buy: () => {
     tone(660, 0.08, "triangle", 0.07);
