@@ -24,7 +24,15 @@ npm run build    # production build into dist/
 - **The upgrade tree** is the main progression: luck (trunk), roll speed and multi-roll
   (left), gems and potions, money (right) and power and pet slots (far right).
   The three mint cards at the bottom are shortcuts to the next luck, speed and money node.
-- **Battle**: stages have 5 waves; wave 5 is a boss with a 30 second timer. Bosses drop gems.
+- **Rolling** shows slot-machine reels at the bottom. Every 10th roll is a Lucky Roll (x2 luck).
+- **The village**: drag anywhere to move the cat (WASD / arrows on desktop). Monsters come in
+  from the forest roads and attack the fountain; if the village's health runs out you drop back
+  a wave. Each stage has 5 waves and wave 5 is a boss. "Hunt" makes the cat chase monsters by itself.
+  Kill streaks build a combo that pays up to +100% money.
+- **Map**: travel to Harvest Farms (stage 10), Misty Woods (25) and Frost Peak (45). Tougher
+  monsters, much more money.
+- **Goals**: three quests at a time (harder and better paid as you go), a 7-day daily reward
+  streak, and +25% permanent luck for every 10 different pets in the Index.
 - **Gems** buy luck potions (x2 luck for 5 minutes, upgradable in the tree).
 - **Fusing**: 5 copies make a Golden pet (x3 power), 5 Golden make a Rainbow pet (x10).
 
@@ -39,11 +47,15 @@ npm run build    # production build into dist/
 | `src/systems/roll.ts` | The RNG roll and odds per tier |
 | `src/systems/stats.ts` | Luck, roll speed, money and damage from the tree and potions |
 | `src/systems/save.ts` | Save game, inventory, equipping, fusing |
-| `src/scenes/Battle.ts` | The battlefield: cat, pets, monsters, bosses, money drops |
+| `src/systems/goals.ts` | Quests, daily rewards and Index milestones |
+| `src/systems/sound.ts` | Synthesized sound effects and vibration |
+| `src/data/areas.ts` | The places you can travel to and their look |
+| `src/game/world.ts` | Lays out a village: roads, houses, farms, pond, forest, collisions |
+| `src/scenes/Battle.ts` | The village fight: movement, camera, pets, monsters, bosses, money drops |
 | `src/scenes/UI.ts` | HUD, side buttons, roll button, cards, tree screen, pet screens, popups |
 | `src/art/pets.ts` | Draws every pet (species + accessories + patterns) |
 | `src/art/characters.ts` | The cat gunner, its blaster, monsters and effects |
-| `src/art/background.ts` | The battle map |
+| `src/art/village.ts` | Houses, barns, windmill, fountain, trees, crops, fences, props |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons, tree nodes |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
 
