@@ -140,7 +140,14 @@ export class UIScene extends Phaser.Scene {
       this.game.events.off("toast", this.toast, this);
       this.game.events.off("cash-arrived", this.onCash, this);
     });
+    this.warmPetTextures();
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(700, () => this.showDaily());
+  }
+
+  /** Draw all pet pictures a few at a time after start, so the roll reels can flash any pet without a hitch. */
+  private warmPetTextures(): void {
+    let i = 0;
+    this.time.addEvent({ delay: 40, repeat: PET_LIST.length - 1, callback: () => petTexture(this, PET_LIST[i++].id, "normal") });
   }
 
   private onCash(): void {
@@ -604,9 +611,9 @@ export class UIScene extends Phaser.Scene {
   private reveal(results: RollResult[], lucky: boolean): void {
     this.revealing = true;
     const n = results.length;
-    const y = this.L.slotsY - 40;
-    const spacing = Math.min(200, 960 / n);
-    const scale = n <= 1 ? 0.74 : n <= 3 ? 0.66 : 0.58;
+    const y = this.L.slotsY - 70;
+    const scale = n <= 1 ? 1 : n <= 3 ? 0.86 : 0.66;
+    const spacing = Math.min(CARD_W * scale + 14, 980 / n);
     const spin = this.fast ? 300 : Phaser.Math.Clamp(rollTime() * 0.55, 520, 1100);
     const hold = this.fast ? 280 : 700;
     this.slotRow.setAlpha(0.12);
@@ -622,7 +629,8 @@ export class UIScene extends Phaser.Scene {
     results.forEach((res, i) => {
       const x = this.W / 2 + (i - (n - 1) / 2) * spacing;
       const rank = rarityRank(res.item.rarity);
-      const glow = this.add.image(x, y, "glow").setDepth(4190).setAlpha(0).setScale(scale * 1.8);
+      const glow = this.add.image(x, y, "glow").setDepth(4190).setAlpha(0.35).setScale(scale * 1.8);
+      const rays = this.add.image(x, y, "rays").setDepth(4180).setAlpha(0).setScale(scale * 0.6);
       const frame = this.add.image(0, 0, "card_common");
       const rar = text(this, 0, -CARD_H / 2 + 25, "", 24);
       const pet = this.add.image(0, -12, "icon_dice").setScale(1.3);
@@ -658,6 +666,11 @@ export class UIScene extends Phaser.Scene {
         pet.setAngle(0);
         sfx.reveal(rank);
         glow.setAlpha(0.95);
+        if (rank >= 3) {
+          rays.setTint(RARITY_INFO[res.item.rarity].color);
+          this.tweens.add({ targets: rays, alpha: 0.85, scale: scale * (0.75 + rank * 0.05), duration: 250 });
+          this.tweens.add({ targets: rays, angle: 120, duration: hold + rank * 60 + 300 });
+        }
         this.tweens.add({ targets: card, scaleX: scale * 1.18, scaleY: scale * 0.86, duration: 70, yoyo: true, ease: "Quad.out" });
         this.tweens.add({ targets: glow, scale: scale * (2.2 + rank * 0.25), alpha: 0.6, duration: 260 });
         if (rank >= 2) {
@@ -678,7 +691,7 @@ export class UIScene extends Phaser.Scene {
           this.tweens.add({ targets: tag, scale: 1.2, duration: 300, yoyo: true, repeat: 2 });
         }
         this.time.delayedCall(hold + rank * 60, () => {
-          this.tweens.add({ targets: glow, alpha: 0, duration: 200, onComplete: () => glow.destroy() });
+          this.tweens.add({ targets: [glow, rays], alpha: 0, duration: 200, onComplete: () => (glow.destroy(), rays.destroy()) });
           this.tweens.add({
             targets: card, x: 70, y: this.L.sideTop, scale: 0.06, duration: 300, ease: "Cubic.in",
             onComplete: () => {
