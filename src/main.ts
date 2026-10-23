@@ -16,6 +16,8 @@ loadFonts().then(() => {
     input: { activePointers: 2 },
     scene: [BootScene, BattleScene, UIScene],
   });
+  // handy for automated tests and debugging in the browser console
+  (window as unknown as { game: Phaser.Game }).game = game;
 
   // Rebuild the layout when the screen height changes noticeably (e.g. rotating a tablet).
   let lastH = 0;

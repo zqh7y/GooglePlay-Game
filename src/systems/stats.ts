@@ -1,3 +1,4 @@
+import { indexBonus } from "./goals";
 import { TREE, TREE_BY_ID, TreeNode, nodeCost } from "../data/tree";
 import { persist, save } from "./save";
 
@@ -21,18 +22,19 @@ export const POTION_GEMS = 10;
 
 export const dieSkin = () => TREE.filter((t) => t.effect === "die" && level(t) > 0).length;
 
-export function luckParts(): { base: number; mult: number; die: number; potion: number } {
+export function luckParts(): { base: number; mult: number; die: number; index: number; potion: number } {
   return {
     base: 1 + sum("luckAdd"),
     mult: product("luckMult"),
     die: product("die"),
+    index: indexBonus(),
     potion: potionActive() ? potionMult() : 1,
   };
 }
 
 export function luck(): number {
   const p = luckParts();
-  return p.base * p.mult * p.die * p.potion;
+  return p.base * p.mult * p.die * p.index * p.potion;
 }
 
 /** Milliseconds between rolls. */

@@ -23,6 +23,20 @@ export interface SaveData {
   bestRoll: number;
   lastSeen: number;
   cashPerSec: number;
+  /** area you are defending */
+  area: string;
+  /** hero walks to monsters by itself */
+  autoHunt: boolean;
+  quests: { type: import("./goals").QuestType; target: number; progress: number }[];
+  questTier: number;
+  questsDone: number;
+  /** date string of the last daily reward claimed */
+  dailyLast: string;
+  dailyStreak: number;
+  /** collection milestones already rewarded */
+  indexMilestones: number;
+  /** how many areas were unlocked last time the map was opened */
+  areasSeen: number;
 }
 
 const STORAGE_KEY = "dice-idle-save-v2";
@@ -46,6 +60,15 @@ function fresh(): SaveData {
     bestRoll: 2,
     lastSeen: Date.now(),
     cashPerSec: 0,
+    area: "village",
+    autoHunt: true,
+    quests: [],
+    questTier: 0,
+    questsDone: 0,
+    dailyLast: "",
+    dailyStreak: 0,
+    indexMilestones: 0,
+    areasSeen: 1,
   };
 }
 

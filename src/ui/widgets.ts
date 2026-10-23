@@ -309,13 +309,13 @@ export class Pill extends Phaser.GameObjects.Container {
 }
 
 /** Pop-in ribbon banner ("WAVE 3", "STAGE 2!"). */
-export function ribbonBanner(scene: Phaser.Scene, x: number, y: number, str: string, color: BtnColor, ms = 1000, depth = 3000): void {
+export function ribbonBanner(scene: Phaser.Scene, x: number, y: number, str: string, color: BtnColor, ms = 1000, depth = 9800): void {
   const w = 620;
   const h = 128;
   const c = scene.add.container(x, y, [
     scene.add.image(0, 0, ribbonTexture(scene, color, w, h)),
     fitText(text(scene, 0, -14, str, 56), w * 0.66),
-  ]).setDepth(depth).setScale(0.3).setAlpha(0);
+  ]).setDepth(depth).setScrollFactor(0).setScale(0.3).setAlpha(0);
   scene.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 280, ease: "Back.out" });
   scene.tweens.add({ targets: c, alpha: 0, y: y - 40, delay: ms, duration: 350, onComplete: () => c.destroy() });
 }
@@ -334,7 +334,7 @@ export function modal(scene: Phaser.Scene, w: number, h: number, title: string, 
   const H = scene.scale.height;
   const dim = scene.add.rectangle(0, 0, W, H, 0x2a1a10, 0.6).setOrigin(0).setInteractive();
   const body = scene.add.container(W / 2, cy ?? H / 2);
-  body.add(scene.add.image(0, 0, panelTexture(scene, "cream", w, h)));
+  body.add(scene.add.image(0, 0, panelTexture(scene, "cream", w, h)).setInteractive());
   const rw = Math.min(w - 40, 620);
   body.add(scene.add.container(0, -h / 2, [
     scene.add.image(0, 0, ribbonTexture(scene, color, rw, 116)),
@@ -350,6 +350,9 @@ export function modal(scene: Phaser.Scene, w: number, h: number, title: string, 
     onClose?.();
   };
   body.add(iconButton(scene, w / 2 - 24, -h / 2 + 24, "icon_close", 86, close));
+  // tapping the dark area around the panel also closes it
+  let downOutside = false;
+  dim.on("pointerdown", () => (downOutside = true)).on("pointerup", () => downOutside && close());
   body.setScale(0.8).setAlpha(0);
   dim.setAlpha(0);
   scene.tweens.add({ targets: body, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });

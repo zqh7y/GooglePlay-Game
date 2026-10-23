@@ -33,7 +33,7 @@ export function layoutFor(H: number): Layout {
     catY: Math.round(hudBottom + (cliffRight - hudBottom) * 0.76),
     cliffLeft,
     cliffRight,
-    sideTop: cliffRight + 120,
+    sideTop: H - 515 - 590,
     slotsY: H - 515,
     rollY: H - 342,
     cardsY: H - 135,
