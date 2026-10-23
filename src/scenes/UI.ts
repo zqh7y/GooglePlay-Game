@@ -3,6 +3,7 @@ import { petKey, petTexture } from "../art/pets";
 import { CARD_H, CARD_W, btnTexture, dieTexture, nodeTexture, panelTexture, pillTexture, slotTexture } from "../art/ui";
 import { INK_N } from "../art/draw";
 import { FUSE_COST, ItemDef, ItemKey, PET_LIST, VARIANT_INFO, makeKey, nextVariant, parseKey } from "../data/items";
+import { AREAS, AREA_BY_ID } from "../data/areas";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
 import { TREE, TREE_BY_ID, TreeNode, effectText, nodeCost } from "../data/tree";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -13,14 +14,17 @@ import {
   petSlots, potionActive, potionMinutes, potionMult, rollTime,
 } from "../systems/stats";
 import { WAVES_PER_STAGE, battle } from "./Battle";
-import { buzz, sfx, unlockAudio } from "../systems/sound";
+import {
+  DAILY, INDEX_STEP, checkIndexMilestones, claimDaily, claimQuest, dailyCash, dailyDay, ensureQuests, indexBonus, questDone, questEvent,
+  questGoal, questReward, questText,
+} from "../systems/goals";
+import { buzz, isMuted, setMuted, sfx, unlockAudio } from "../systems/sound";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, lockedCard, modal, petCard, text } from "../ui/widgets";
 
 const VARIANT_RANK = { normal: 0, golden: 1, rainbow: 2 };
 const KIND_LABEL = { shot: "Shooter", pierce: "Beam", splash: "Explosion", zap: "Lightning", buff: "Support" };
 const MAX_SLOTS = 6;
-const BOSS_TIME = 30000;
 const LUCKY_EVERY = 10;
 const LUCKY_MULT = 2;
 
@@ -103,6 +107,15 @@ export class UIScene extends Phaser.Scene {
   private tree: TreeView | null = null;
   private drag = { active: false, startX: 0, startY: 0, ox: 0, oy: 0, moved: false };
 
+  // goals
+  private badges: { obj: Phaser.GameObjects.Container; show: () => boolean }[] = [];
+  private badgeTimer = 0;
+  private questG!: Phaser.GameObjects.Graphics;
+  private questLabel!: Phaser.GameObjects.Text;
+  private questCount!: Phaser.GameObjects.Text;
+  private questGlow!: Phaser.GameObjects.Image;
+  private huntBtn!: Button;
+
   constructor() {
     super("UI");
   }
@@ -112,7 +125,9 @@ export class UIScene extends Phaser.Scene {
     this.L = layoutFor(this.H);
     Object.assign(this, { openModal: null, sheet: null, scroller: null, tree: null, revealing: false, celebrating: false, lastWave: "", cards: [] });
     this.buildHud();
+    ensureQuests();
     this.buildSideButtons();
+    this.buildQuestTracker();
     this.buildBottom();
     this.setupDragging();
     this.burst = this.add.particles(0, 0, "spark", {
@@ -125,14 +140,19 @@ export class UIScene extends Phaser.Scene {
       this.game.events.off("toast", this.toast, this);
       this.game.events.off("cash-arrived", this.onCash, this);
     });
-    this.offlineEarnings();
+    if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(700, () => this.showDaily());
   }
 
   private onCash(): void {
     this.cashPill.bump();
   }
 
-  update(time: number): void {
+  update(time: number, delta: number): void {
+    this.badgeTimer -= delta;
+    if (this.badgeTimer <= 0) {
+      this.badgeTimer = 400;
+      this.updateGoals();
+    }
     this.updateHud(time);
     this.updateBottom(time);
     if (save.autoRoll && autoUnlocked() && !this.tree) this.tryRoll();
@@ -185,9 +205,9 @@ export class UIScene extends Phaser.Scene {
       this.drawPath();
     }
     this.hudBars.clear();
-    if (battle.bossLeft > 0) {
-      drawBar(this.hudBars, 24, 74, this.W - 48, 30, battle.bossLeft / BOSS_TIME, 0xf26464);
-      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossLeft / 1000)}s`);
+    if (battle.bossFrac >= 0) {
+      drawBar(this.hudBars, 24, 74, this.W - 48, 30, battle.bossFrac, 0xf26464);
+      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%`);
     } else {
       drawBar(this.hudBars, 24, 74, this.W - 48, 30, battle.progress, 0xffe0a3);
       this.progressText.setText(`${Math.floor(battle.progress * 100)}%`);
@@ -207,7 +227,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private toast(str: string, color = "#ffffff"): void {
-    const t = text(this, this.W / 2, this.L.hudBottom + 60, str, 40, color).setDepth(7000);
+    const t = fitText(text(this, this.W / 2, this.L.hudBottom + 260, str, 40, color).setDepth(7000), this.W - 80);
     this.tweens.add({ targets: t, y: t.y - 60, alpha: 0, delay: 1100, duration: 500, onComplete: () => t.destroy() });
   }
 
@@ -215,13 +235,190 @@ export class UIScene extends Phaser.Scene {
 
   private buildSideButtons(): void {
     const { sideTop } = this.L;
-    const side = (left: boolean, i: number, icon: string, str: string, onClick: () => void) =>
-      button(this, left ? 70 : this.W - 70, sideTop + i * 145, 180, 134, "peach", str, onClick, { icon, iconSize: 68, stack: true, size: 30 });
-    side(true, 0, "icon_paw", "Pets", () => this.openSheet("pets"));
+    this.badges = [];
+    const side = (left: boolean, i: number, icon: string, str: string, onClick: () => void, badge?: () => boolean) => {
+      const x = left ? 70 : this.W - 70;
+      const y = sideTop + i * 145;
+      button(this, x, y, 180, 134, "peach", str, onClick, { icon, iconSize: 68, stack: true, size: 30 });
+      if (badge) this.addBadge(x + (left ? 66 : -66), y - 54, badge);
+    };
+    side(true, 0, "icon_paw", "Pets", () => this.openSheet("pets"), () => this.petsBadge());
     side(true, 1, "icon_book", "Index", () => this.openSheet("index"));
-    side(true, 2, "icon_potion", "Potion", () => this.showPotion());
-    side(false, 0, "icon_tree", "Tree", () => this.openTree());
+    side(true, 2, "icon_potion", "Potion", () => this.showPotion(), () => save.gems >= POTION_GEMS && !potionActive());
+    side(true, 3, "icon_map", "Map", () => this.showTravel(), () => this.unlockedAreas() > save.areasSeen);
+    side(false, 0, "icon_tree", "Tree", () => this.openTree(), () => TREE.some((n) => canBuy(n)));
     side(false, 1, "icon_odds", "Odds", () => this.showOdds());
+    side(false, 2, "icon_gift", "Daily", () => this.showDaily(), () => dailyDay() >= 0);
+    this.huntBtn = button(this, this.W - 100, this.L.hudBottom + 222, 172, 92, save.autoHunt ? "green" : "grey", "Hunt", () => {
+      save.autoHunt = !save.autoHunt;
+      persist();
+      this.huntBtn.setColor(save.autoHunt ? "green" : "grey");
+      this.toast(save.autoHunt ? "Auto hunt ON: the cat chases monsters" : "Auto hunt OFF: drag to move the cat", "#ffe680");
+    }, { icon: "icon_sword", iconSize: 46, size: 30 });
+  }
+
+  private addBadge(x: number, y: number, show: () => boolean): void {
+    const obj = this.add.container(x, y, [this.add.circle(0, 0, 21, 0xf03e3e).setStrokeStyle(5, INK_N), text(this, 0, -1, "!", 32)])
+      .setVisible(false).setDepth(10);
+    this.tweens.add({ targets: obj, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.badges.push({ obj, show });
+  }
+
+  private petsBadge(): boolean {
+    const keys = Object.keys(save.inventory);
+    return (save.equipped.length < petSlots() && keys.length > save.equipped.length)
+      || keys.some((k) => save.inventory[k] >= FUSE_COST && !!nextVariant(parseKey(k).variant));
+  }
+
+  private unlockedAreas(): number {
+    return AREAS.filter((a) => save.bestStage >= a.unlock).length;
+  }
+
+  // ───────────────────────── quests, daily, travel ─────────────────────────
+
+  /** Small panel under the HUD that always shows the next goal. */
+  private buildQuestTracker(): void {
+    const w = 400;
+    const h = 104;
+    this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
+    this.tweens.add({ targets: this.questGlow, alpha: { from: 0.25, to: 0.8 }, duration: 600, yoyo: true, repeat: -1 });
+    this.questG = this.add.graphics();
+    this.questLabel = text(this, -116, -18, "", 28).setOrigin(0, 0.5);
+    this.questCount = text(this, 30, 26, "", 22);
+    this.add.container(this.W - w / 2 - 16, this.L.hudBottom + 100, [
+      this.questGlow,
+      this.add.image(0, 0, panelTexture(this, "glass", w, h)),
+      this.add.image(-w / 2 + 54, 0, "icon_quest").setScale(0.74),
+      this.questLabel, this.questG, this.questCount,
+    ]).setSize(w, h).setInteractive({ useHandCursor: true }).on("pointerup", () => {
+      sfx.click();
+      this.showQuests();
+    });
+  }
+
+  private updateGoals(): void {
+    for (const b of this.badges) b.obj.setVisible(b.show());
+    const ready = save.quests.find(questDone);
+    const q = ready ?? [...save.quests].sort((a, b) => b.progress / questGoal(b) - a.progress / questGoal(a))[0];
+    if (!q) return;
+    this.questGlow.setVisible(!!ready);
+    fitText(this.questLabel.setText(ready ? "Quest done! Tap to claim" : questText(q)).setColor(ready ? "#ffe066" : "#ffffff"), 280);
+    this.questCount.setText(q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)}/${fmt(q.target)}`);
+    this.questG.clear();
+    drawBar(this.questG, -116, 14, 292, 24, q.progress / questGoal(q), ready ? 0xffd23f : 0x7ad651);
+  }
+
+  private showQuests(): void {
+    const h = 1000;
+    const m = this.showModal(modal(this, 900, h, "QUESTS", "green", () => (this.openModal = null)));
+    const content = this.add.container(0, 0);
+    m.body.add(content);
+    const draw = () => {
+      content.removeAll(true);
+      const r = questReward();
+      save.quests.forEach((q, i) => {
+        const y = -h / 2 + 240 + i * 230;
+        const done = questDone(q);
+        const frac = q.progress / questGoal(q);
+        const g = this.add.graphics();
+        drawBar(g, -370, y + 2, 400, 32, frac, done ? 0xffd23f : 0x7ad651);
+        content.add([
+          this.add.image(0, y, panelTexture(this, "row", 800, 200)),
+          this.add.image(-335, y - 50, "icon_quest").setScale(0.62),
+          fitText(label(this, -285, y - 50, questText(q), 36, "#4a2f1d").setOrigin(0, 0.5), 400),
+          g,
+          text(this, -170, y + 17, q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)}/${fmt(q.target)}`, 24),
+          label(this, -370, y + 62, `Reward: ${r.gems} gems + ${fmt(r.cash)} money`, 26, "#7a5236").setOrigin(0, 0.5),
+          button(this, 255, y, 240, 116, done ? "green" : "grey", done ? "CLAIM" : `${Math.floor(frac * 100)}%`, () => {
+            const got = claimQuest(i);
+            if (!got) return;
+            sfx.fanfare();
+            buzz(40);
+            this.cameras.main.flash(150, 255, 240, 170);
+            this.toast(`+${got.gems} gems   +${fmt(got.cash)} money`, "#8af06a");
+            draw();
+          }, { size: 40 }).setEnabled(done),
+        ]);
+      });
+      content.add(label(this, 0, h / 2 - 90, `Quests done: ${save.questsDone}. Every 3 quests the next ones get harder and pay more!`, 26, "#9a7a5a", 760));
+    };
+    draw();
+  }
+
+  /** 7-day login streak. */
+  private showDaily(): void {
+    const h = 1060;
+    const m = this.showModal(modal(this, 920, h, "DAILY REWARD", "gold", () => (this.openModal = null)));
+    const day = dailyDay();
+    DAILY.forEach((r, i) => {
+      const x = i < 4 ? -315 + i * 210 : -210 + (i - 4) * 210;
+      const y = i < 4 ? -250 : 30;
+      const claimed = day >= 0 ? i < day : i < save.dailyStreak;
+      const today = i === day;
+      const icon = r.gems ? "icon_gem" : r.potionMin ? "icon_potion" : "icon_cash";
+      const lines = [r.gems ? `${r.gems} gems` : "", r.cashMin ? `${fmt(dailyCash(r))}` : "", r.potionMin ? `${r.potionMin}m potion` : ""].filter(Boolean);
+      if (today) m.body.add(this.add.image(x, y, "glow").setTint(0xffe066).setScale(1.4));
+      m.body.add([
+        this.add.image(x, y, panelTexture(this, today ? "cream" : "inset", 190, 250)),
+        label(this, x, y - 96, `Day ${i + 1}`, 30, today ? "#c9663a" : "#7a5236"),
+        this.add.image(x, y - 18, icon).setScale(i === 6 ? 1.05 : 0.85).setAlpha(claimed ? 0.45 : 1),
+        fitText(label(this, x, y + 74, lines.join("\n"), 24, "#4a2f1d"), 176),
+      ]);
+      if (claimed) m.body.add(this.add.image(x + 58, y - 88, "icon_check").setScale(0.6));
+    });
+    m.body.add(label(this, 0, 240, day >= 0 ? "Come back every day! Missing a day restarts the streak." : "Claimed! Come back tomorrow for the next one.", 28, "#7a5236", 760));
+    m.body.add(button(this, 0, h / 2 - 140, 460, 130, day >= 0 ? "green" : "grey", day >= 0 ? "CLAIM" : "CLAIMED", () => {
+      if (!claimDaily()) return;
+      sfx.fanfare();
+      buzz(60);
+      this.cameras.main.flash(200, 255, 240, 160);
+      this.toast(`Day ${day + 1} reward collected!`, "#ffe066");
+      m.close();
+    }, { size: 46 }).setEnabled(day >= 0));
+  }
+
+  private showTravel(): void {
+    save.areasSeen = Math.max(save.areasSeen, this.unlockedAreas());
+    persist();
+    const h = 1100;
+    const m = this.showModal(modal(this, 900, h, "TRAVEL", "blue", () => (this.openModal = null)));
+    AREAS.forEach((a, i) => {
+      const y = -h / 2 + 230 + i * 205;
+      const open = save.bestStage >= a.unlock;
+      const here = save.area === a.id;
+      const swatch = this.add.graphics();
+      swatch.fillStyle(INK_N, 1).fillRoundedRect(-372, y - 72, 144, 144, 22);
+      swatch.fillStyle(a.theme.grass, 1).fillRoundedRect(-366, y - 66, 132, 132, 18);
+      swatch.fillStyle(a.theme.path, 1).fillRect(-312, y - 66, 24, 132).fillRect(-366, y - 12, 132, 24);
+      swatch.fillStyle(a.theme.roofs[0], 1).fillRoundedRect(-356, y - 56, 36, 30, 6);
+      swatch.fillStyle(a.theme.roofs[a.theme.roofs.length - 1], 1).fillRoundedRect(-280, y + 24, 36, 30, 6);
+      m.body.add([this.add.image(0, y, panelTexture(this, "row", 800, 180)), swatch]);
+      if (!open) m.body.add(this.add.image(-300, y, "icon_lock").setScale(0.8));
+      m.body.add([
+        fitText(label(this, -205, y - 36, a.name, 38, "#4a2f1d").setOrigin(0, 0.5), 340),
+        fitText(label(this, -205, y + 26, `Money x${a.cash}  •  Monster HP x${a.hp}`, 26, "#7a5236").setOrigin(0, 0.5), 340),
+        button(this, 275, y, 210, 104, open && !here ? "blue" : "grey", here ? "HERE" : open ? "GO" : `Stage ${a.unlock}`, () => this.travel(a.id), { size: open && !here ? 40 : 28 })
+          .setEnabled(open && !here),
+      ]);
+    });
+    m.body.add(label(this, 0, h / 2 - 90, "Beat bosses to reach higher stages and unlock new lands!", 26, "#9a7a5a", 760));
+  }
+
+  private travel(id: string): void {
+    this.openModal?.close();
+    save.area = id;
+    persist();
+    sfx.levelUp();
+    const b = this.scene.get("Battle");
+    b.cameras.main.fadeOut(300, 74, 47, 29);
+    b.cameras.main.once("camerafadeoutcomplete", () => b.scene.restart());
+    this.toast(`Welcome to ${AREA_BY_ID[id].name}!`, "#ffe680");
+  }
+
+  private indexMilestone(): void {
+    if (!checkIndexMilestones()) return;
+    sfx.levelUp();
+    this.toast(`${save.indexMilestones * INDEX_STEP} pets found! Luck x${indexBonus().toFixed(2)} forever`, "#8fe3ff");
   }
 
   // ───────────────────────── bottom: slots, roll, cards ─────────────────────────
@@ -295,6 +492,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private afterPurchase(): void {
+    questEvent("buy");
     this.buildSlots();
     this.rollBtn.icon?.setTexture(dieTexture(this, dieSkin(), 5));
     this.game.events.emit("pets-changed");
@@ -370,6 +568,9 @@ export class UIScene extends Phaser.Scene {
     save.luckyCount = lucky ? 0 : save.luckyCount + 1;
     const results = rollMany(dicePerRoll(), luck() * (lucky ? LUCKY_MULT : 1));
     this.rollReadyAt = this.time.now + rollTime();
+    questEvent("roll", results.length);
+    questEvent("rare", Math.max(...results.map((r) => rarityRank(r.item.rarity))));
+    if (results.some((r) => r.isNew)) this.time.delayedCall(2200, () => this.indexMilestone());
     this.game.events.emit("rolled", results);
     this.autoEquip(results);
     this.reveal(results, lucky);
@@ -605,6 +806,11 @@ export class UIScene extends Phaser.Scene {
     this.sheetKind = kind;
     const body = m.body;
     let gridTop = -h / 2 + 90;
+    if (kind === "index") {
+      const next = (Math.floor(save.discovered.length / INDEX_STEP) + 1) * INDEX_STEP;
+      body.add(label(this, 0, -h / 2 + 100, `Collection bonus: Luck x${indexBonus().toFixed(2)}  •  +25% more at ${next} pets`, 30, "#4a2f1d"));
+      gridTop += 44;
+    }
 
     if (kind === "pets") {
       const slots = petSlots();
@@ -962,6 +1168,11 @@ export class UIScene extends Phaser.Scene {
     const m = this.showModal(modal(this, 860, h, "SETTINGS", "peach", () => (this.openModal = null)));
     m.body.add(label(this, 0, -h / 2 + 140,
       `Best stage: ${save.bestStage}\nRolls: ${fmt(save.totalRolls)}\nRarest roll: ${oneIn(save.bestRoll)}\nPets found: ${save.discovered.length}/${PET_LIST.length}`, 36, "#7a5236"));
+    const snd: Button = button(this, 0, -130, 380, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
+      setMuted(!isMuted());
+      snd.setLabel(isMuted() ? "Sound: OFF" : "Sound: ON").setColor(isMuted() ? "grey" : "green");
+    }, { size: 32 });
+    m.body.add(snd);
     m.body.add(label(this, 0, -30, "Testing tools (removed before release)", 26, "#9a7a5a"));
     const dev = (y: number, x: number, str: string, fn: () => void) =>
       m.body.add(button(this, x, y, 360, 96, "grey", str, () => {
@@ -979,15 +1190,18 @@ export class UIScene extends Phaser.Scene {
   }
 
   /** "Welcome back" reward — the idle part of the game. */
-  private offlineEarnings(): void {
+  private offlineEarnings(): boolean {
     const away = (Date.now() - lastSeenAtLoad) / 1000;
-    if (away < 60 || save.cashPerSec <= 0) return;
+    if (away < 60 || save.cashPerSec <= 0) return false;
     const seconds = Math.min(away, 8 * 3600);
     const cash = Math.floor(save.cashPerSec * seconds * offlineRate());
-    if (cash <= 0) return;
+    if (cash <= 0) return false;
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    const m = this.showModal(modal(this, 880, 820, "WELCOME BACK!", "gold", () => (this.openModal = null)));
+    const m = this.showModal(modal(this, 880, 820, "WELCOME BACK!", "gold", () => {
+      this.openModal = null;
+      if (dailyDay() >= 0) this.time.delayedCall(400, () => this.showDaily());
+    }));
     const collect = (mult: number) => {
       save.cash += cash * mult;
       persist();
@@ -1003,5 +1217,6 @@ export class UIScene extends Phaser.Scene {
       // In the real game this would show a rewarded ad first
       button(this, 195, 300, 360, 130, "purple", "x2", () => collect(2), { icon: "icon_ad", iconSize: 70, size: 52 }),
     ]);
+    return true;
   }
 }

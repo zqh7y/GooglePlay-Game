@@ -525,6 +525,74 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     starPath(ctx, 48, 50, 42, 0.48);
     fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#fff3a0"], [1, "#ffb300"]]), 6);
   },
+  map: (ctx) => {
+    const xs = [8, 36, 60, 88];
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      const up = i % 2 === 0;
+      ctx.moveTo(xs[i], up ? 18 : 10);
+      ctx.lineTo(xs[i + 1], up ? 10 : 18);
+      ctx.lineTo(xs[i + 1], up ? 80 : 88);
+      ctx.lineTo(xs[i], up ? 88 : 80);
+      ctx.closePath();
+      fillOutline(ctx, i === 1 ? "#cfe9a0" : "#f4e4b8", 5);
+    }
+    ctx.setLineDash([6, 7]);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#c9663a";
+    ctx.beginPath();
+    ctx.moveTo(18, 70);
+    ctx.quadraticCurveTo(40, 30, 66, 52);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "#e8443f";
+    ctx.beginPath();
+    ctx.moveTo(62, 26);
+    ctx.lineTo(78, 42);
+    ctx.moveTo(78, 26);
+    ctx.lineTo(62, 42);
+    ctx.stroke();
+  },
+  gift: (ctx) => {
+    rr(ctx, 12, 40, 72, 48, 8);
+    fillOutline(ctx, linear(ctx, 0, 40, 0, 88, [[0, "#ff7a8a"], [1, "#e0485c"]]));
+    rr(ctx, 6, 26, 84, 22, 7);
+    fillOutline(ctx, "#ff8f9c");
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillRect(41, 27, 14, 60);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = INK;
+    ctx.strokeRect(41, 27, 14, 60);
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(48 + s * 15, 18, 15, 9, s * 0.5, 0, Math.PI * 2);
+      fillOutline(ctx, "#ffd23f", 5);
+    }
+  },
+  quest: (ctx) => {
+    rr(ctx, 14, 12, 68, 80, 10);
+    fillOutline(ctx, "#a8714a");
+    rr(ctx, 22, 22, 52, 62, 6);
+    fillOutline(ctx, "#fff6e0", 4);
+    rr(ctx, 34, 6, 28, 16, 6);
+    fillOutline(ctx, "#c9cbd6", 4);
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = "#7ad651";
+      ctx.beginPath();
+      ctx.moveTo(30, 40 + i * 16);
+      ctx.lineTo(34, 45 + i * 16);
+      ctx.lineTo(41, 35 + i * 16);
+      ctx.stroke();
+      ctx.strokeStyle = "#c9b08a";
+      ctx.beginPath();
+      ctx.moveTo(48, 40 + i * 16);
+      ctx.lineTo(66, 40 + i * 16);
+      ctx.stroke();
+    }
+  },
   sword: (ctx) => {
     ctx.save();
     ctx.translate(48, 48);
