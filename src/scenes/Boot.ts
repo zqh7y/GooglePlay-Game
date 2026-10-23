@@ -1,11 +1,11 @@
 import Phaser from "phaser";
-import { makeCloudTextures } from "../art/background";
+import { makePetalTexture } from "../art/background";
 import { makeCharacterTextures } from "../art/characters";
-import { makeCardTextures, makeDiceTextures, makeIconTextures } from "../art/ui";
+import { makeCardTextures, makeIconTextures } from "../art/ui";
 
 /**
- * Draws all the game art with code (canvas), so the game needs no image files.
- * To use real artwork later, load images under the same texture keys instead.
+ * Draws the shared game art with code (canvas), so the game needs no image files.
+ * Pets, dice and the map are drawn later, the first time they are needed.
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -16,8 +16,7 @@ export class BootScene extends Phaser.Scene {
     makeIconTextures(this);
     makeCharacterTextures(this);
     makeCardTextures(this);
-    makeDiceTextures(this);
-    makeCloudTextures(this);
+    makePetalTexture(this);
     this.scene.start("Battle");
     this.scene.launch("UI");
   }

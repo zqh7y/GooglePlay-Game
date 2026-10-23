@@ -1,46 +1,46 @@
 import Phaser from "phaser";
-import { petKey } from "../art/characters";
 import { INK_N } from "../art/draw";
+import { lockedTexture, petTexture } from "../art/pets";
 import { BtnColor, CARD_H, CARD_W, btnEdge, btnTexture, panelTexture, pillTexture, ribbonTexture } from "../art/ui";
 import { ITEMS, ItemKey, parseKey } from "../data/items";
 import { RARITY_INFO } from "../data/rarity";
+import { oneIn } from "./format";
 
-export const DISPLAY = "'Lilita One', 'Arial Black', sans-serif";
-export const BODY = "'Fredoka', 'Trebuchet MS', sans-serif";
-export const INK_CSS = "#26183f";
+export const FONT = "'Jua', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif";
+export const INK_CSS = "#4a2f1d";
+export const BROWN = "#7a5236";
 
 export interface TextOpts {
-  font?: "display" | "body";
+  /** outline thickness; false for plain text (on cream panels) */
   stroke?: number | false;
-  shadow?: boolean;
   wrap?: number;
   align?: "left" | "center" | "right";
-  lineSpacing?: number;
 }
 
-/** Game-styled text: chunky display font with a dark outline and drop shadow. */
+/** Game-styled text: rounded font, white with a brown outline by default. */
 export function text(
   scene: Phaser.Scene, x: number, y: number, str: string, size: number, color = "#ffffff", opts: TextOpts = {},
 ): Phaser.GameObjects.Text {
-  const display = (opts.font ?? "display") === "display";
-  const stroke = opts.stroke === false ? 0 : opts.stroke ?? Math.max(3, Math.round(size * (display ? 0.17 : 0.13)));
+  const stroke = opts.stroke === false ? 0 : opts.stroke ?? Math.max(3, Math.round(size * 0.16));
   const t = scene.add
     .text(x, y, str, {
-      fontFamily: display ? DISPLAY : BODY,
+      fontFamily: FONT,
       fontSize: `${size}px`,
-      fontStyle: display ? "normal" : "600",
       color,
       stroke: INK_CSS,
       strokeThickness: stroke,
       align: opts.align ?? "center",
-      lineSpacing: opts.lineSpacing ?? 0,
       wordWrap: opts.wrap ? { width: opts.wrap, useAdvancedWrap: true } : undefined,
-      padding: { x: 3, y: 5 },
+      padding: { x: 3, y: 4 },
     })
     .setOrigin(0.5);
-  if (opts.shadow !== false && stroke > 0) t.setShadow(0, Math.max(2, Math.round(size * 0.07)), "rgba(20,8,40,0.6)", 0, true, true);
+  if (stroke > 0) t.setShadow(0, Math.max(2, Math.round(size * 0.06)), "rgba(74,47,29,0.6)", 0, true, true);
   return t;
 }
+
+/** Brown text with no outline, for cream panels. */
+export const label = (scene: Phaser.Scene, x: number, y: number, str: string, size: number, color = BROWN, wrap?: number) =>
+  text(scene, x, y, str, size, color, { stroke: false, wrap });
 
 /** Shrink a text so it fits a width. */
 export function fitText(t: Phaser.GameObjects.Text, maxW: number): Phaser.GameObjects.Text {
@@ -60,7 +60,7 @@ export interface ButtonOpts {
   subIcon?: string;
 }
 
-/** Glossy 3D mobile-game button with press feedback. */
+/** Chunky mobile-game button with press feedback. */
 export class Button extends Phaser.GameObjects.Container {
   bg: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
@@ -80,7 +80,7 @@ export class Button extends Phaser.GameObjects.Container {
     this.bh = h;
     this.opts = opts;
     this.bg = scene.add.image(0, 0, btnTexture(scene, color, w, h));
-    this.label = text(scene, 0, 0, str, opts.size ?? Math.round(h * 0.36));
+    this.label = text(scene, 0, 0, str, opts.size ?? Math.round(h * 0.34));
     this.add([this.bg, this.label]);
     if (opts.icon) {
       this.icon = scene.add.image(0, 0, opts.icon);
@@ -88,11 +88,11 @@ export class Button extends Phaser.GameObjects.Container {
       this.add(this.icon);
     }
     if (opts.sub !== undefined) {
-      this.subText = text(scene, 0, 0, opts.sub, Math.round((opts.size ?? h * 0.36) * 0.72));
+      this.subText = text(scene, 0, 0, opts.sub, Math.round((opts.size ?? h * 0.34) * 0.72));
       this.add(this.subText);
       if (opts.subIcon) {
         this.subIcon = scene.add.image(0, 0, opts.subIcon);
-        this.subIcon.setScale((this.subText.height * 0.85) / this.subIcon.height);
+        this.subIcon.setScale((this.subText.height * 0.95) / this.subIcon.height);
         this.add(this.subIcon);
       }
     }
@@ -119,15 +119,15 @@ export class Button extends Phaser.GameObjects.Container {
 
   private layout(): void {
     const faceY = -btnEdge(this.bh) / 2;
-    const gap = 12;
+    const gap = 10;
     const { label, icon, subText, subIcon } = this;
-    fitText(label, this.bw - 30 - (icon && !this.opts.stack ? icon.displayWidth + gap : 0));
+    fitText(label, this.bw - 26 - (icon && !this.opts.stack ? icon.displayWidth + gap : 0));
     if (icon && this.opts.stack) {
-      icon.setPosition(0, faceY - this.bh * 0.13);
-      label.setPosition(0, faceY + this.bh * 0.25);
+      icon.setPosition(0, faceY - this.bh * 0.14);
+      label.setPosition(0, faceY + this.bh * 0.26);
       return;
     }
-    const mainY = subText ? faceY - this.bh * 0.14 : faceY;
+    const mainY = subText ? faceY - this.bh * 0.15 : faceY;
     if (icon) {
       const total = icon.displayWidth + gap + label.displayWidth;
       icon.setPosition(-total / 2 + icon.displayWidth / 2, mainY);
@@ -136,7 +136,8 @@ export class Button extends Phaser.GameObjects.Container {
       label.setPosition(0, mainY);
     }
     if (subText) {
-      const subY = faceY + this.bh * 0.21;
+      const subY = faceY + this.bh * 0.22;
+      fitText(subText, this.bw - 40 - (subIcon?.displayWidth ?? 0));
       const iw = subIcon ? subIcon.displayWidth + 6 : 0;
       const total = iw + subText.displayWidth;
       subIcon?.setPosition(-total / 2 + iw / 2 - 3, subY);
@@ -145,14 +146,18 @@ export class Button extends Phaser.GameObjects.Container {
   }
 
   setLabel(str: string): this {
-    this.label.setText(str);
-    this.layout();
+    if (this.label.text !== str) {
+      this.label.setText(str);
+      this.layout();
+    }
     return this;
   }
 
   setSub(str: string): this {
-    this.subText?.setText(str);
-    this.layout();
+    if (this.subText && this.subText.text !== str) {
+      this.subText.setText(str);
+      this.layout();
+    }
     return this;
   }
 
@@ -163,10 +168,10 @@ export class Button extends Phaser.GameObjects.Container {
   }
 
   setEnabled(on: boolean): this {
+    if (on === this.enabled) return this;
     this.enabled = on;
     this.bg.setTexture(btnTexture(this.scene, on ? this.color : "grey", this.bw, this.bh));
-    this.label.setAlpha(on ? 1 : 0.75);
-    this.icon?.setAlpha(on ? 1 : 0.7);
+    this.label.setAlpha(on ? 1 : 0.8);
     return this;
   }
 }
@@ -177,7 +182,7 @@ export function button(
   return new Button(scene, x, y, w, h, color, str, onClick, opts);
 }
 
-/** Small round icon-only button (e.g. the close X). */
+/** Round icon-only button (e.g. the close X). */
 export function iconButton(scene: Phaser.Scene, x: number, y: number, icon: string, size: number, onClick: () => void): Phaser.GameObjects.Image {
   const base = size / 96;
   const img = scene.add.image(x, y, icon).setScale(base).setInteractive({ useHandCursor: true });
@@ -196,37 +201,39 @@ export interface CardOpts {
   count?: number;
   equipped?: boolean;
   fuseReady?: boolean;
-  oneIn?: string;
   isNew?: boolean;
+  /** hide the odds line */
+  noOdds?: boolean;
 }
 
-/** A pet card with rarity frame, art, name and badges. Size CARD_W x CARD_H at scale 1. */
+/** A pet card with rarity frame, art, name and odds. Size CARD_W x CARD_H at scale 1. */
 export function petCard(scene: Phaser.Scene, x: number, y: number, key: ItemKey, opts: CardOpts = {}): Phaser.GameObjects.Container {
   const { def, variant } = parseKey(key);
   const rarity = RARITY_INFO[def.rarity];
   const parts: Phaser.GameObjects.GameObject[] = [
     scene.add.image(0, 0, `card_${def.rarity}`),
-    fitText(text(scene, 0, -CARD_H / 2 + 27, rarity.label.toUpperCase(), 24), CARD_W - 40),
-    scene.add.image(0, 2, petKey(def.id, variant)).setScale(0.96),
-    fitText(text(scene, 0, CARD_H / 2 - 25, def.name, 24), CARD_W - 40),
+    fitText(text(scene, 0, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24), CARD_W - 40),
+    scene.add.image(0, -12, petTexture(scene, def.id, variant)).setScale(0.9),
+    fitText(text(scene, 0, CARD_H / 2 - 27, def.name, 25), CARD_W - 36),
   ];
   if (variant !== "normal") {
-    parts.push(text(scene, 0, CARD_H / 2 - 62, variant === "golden" ? "GOLDEN" : "RAINBOW", 22, variant === "golden" ? "#ffd84a" : "#ff9ae0"));
+    parts.push(text(scene, 0, CARD_H / 2 - 66, variant === "golden" ? "GOLDEN" : "RAINBOW", 22, variant === "golden" ? "#ffe066" : "#ffb3e6"));
+  } else if (!opts.noOdds) {
+    parts.push(text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"));
   }
-  if (opts.oneIn) parts.push(text(scene, 0, CARD_H / 2 - 62, opts.oneIn, 20, "#ffe680"));
   if (opts.count !== undefined) {
-    parts.push(scene.add.image(CARD_W / 2 - 34, -CARD_H / 2 + 70, "badge_count"));
-    parts.push(fitText(text(scene, CARD_W / 2 - 34, -CARD_H / 2 + 69, `x${opts.count}`, 24, "#ffe680"), 60));
+    parts.push(scene.add.image(CARD_W / 2 - 34, -CARD_H / 2 + 68, pillTexture(scene, "dark", 66, 44)));
+    parts.push(fitText(text(scene, CARD_W / 2 - 34, -CARD_H / 2 + 67, `x${opts.count}`, 24, "#ffe680"), 56));
   }
-  if (opts.equipped) parts.push(scene.add.image(-CARD_W / 2 + 32, -CARD_H / 2 + 70, "icon_check").setScale(0.5));
+  if (opts.equipped) parts.push(scene.add.image(-CARD_W / 2 + 32, -CARD_H / 2 + 68, "icon_check").setScale(0.48));
   const c = scene.add.container(x, y, parts);
   if (opts.fuseReady) {
-    const f = scene.add.image(CARD_W / 2 - 30, CARD_H / 2 - 76, "icon_fuse").setScale(0.48);
+    const f = scene.add.image(CARD_W / 2 - 30, CARD_H / 2 - 92, "icon_fuse").setScale(0.46);
     c.add(f);
     scene.tweens.add({ targets: f, y: f.y - 8, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
   }
   if (opts.isNew) {
-    const n = text(scene, CARD_W / 2 - 18, -CARD_H / 2 - 4, "NEW!", 30, "#5ff0ff").setAngle(14);
+    const n = text(scene, CARD_W / 2 - 16, -CARD_H / 2 - 2, "NEW!", 32, "#ff6a8a").setAngle(14);
     c.add(n);
     scene.tweens.add({ targets: n, scale: 1.15, duration: 400, yoyo: true, repeat: -1 });
   }
@@ -234,16 +241,16 @@ export function petCard(scene: Phaser.Scene, x: number, y: number, key: ItemKey,
   return c;
 }
 
-/** Card for a pet the player has never rolled. */
+/** Card for a pet the player has never rolled: silhouette, rarity and odds. */
 export function lockedCard(scene: Phaser.Scene, x: number, y: number, itemId: string): Phaser.GameObjects.Container {
   const def = ITEMS[itemId];
   const rarity = RARITY_INFO[def.rarity];
   return scene.add.container(x, y, [
     scene.add.image(0, 0, "card_locked"),
-    text(scene, 0, -CARD_H / 2 + 27, rarity.label.toUpperCase(), 24, rarity.css),
-    scene.add.image(0, 2, `pet_${itemId}_locked`).setScale(0.96).setAlpha(0.9),
-    scene.add.image(0, 10, "icon_lock").setScale(0.6),
-    text(scene, 0, CARD_H / 2 - 25, "???", 26, "#8a90c0"),
+    text(scene, 0, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24, rarity.css),
+    scene.add.image(0, -12, lockedTexture(scene, itemId)).setScale(0.9).setAlpha(0.85),
+    text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"),
+    text(scene, 0, CARD_H / 2 - 27, "???", 26, "#e9dcc6"),
   ]).setSize(CARD_W, CARD_H);
 }
 
@@ -251,7 +258,7 @@ export function lockedCard(scene: Phaser.Scene, x: number, y: number, itemId: st
 
 /** Draw a chunky rounded progress bar into a Graphics object. */
 export function drawBar(
-  g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, frac: number, color: number, track = 0x1a1640,
+  g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, frac: number, color: number, track = 0x5b3a24,
 ): void {
   const r = h / 2;
   g.fillStyle(INK_N, 1).fillRoundedRect(x - 4, y - 4, w + 8, h + 8, r + 4);
@@ -259,24 +266,24 @@ export function drawBar(
   const fw = Math.max(0, Math.min(1, frac)) * w;
   if (fw > 2) {
     g.fillStyle(color, 1).fillRoundedRect(x, y, Math.max(fw, h), h, r);
-    g.fillStyle(0xffffff, 0.3).fillRoundedRect(x + 4, y + 3, Math.max(fw - 8, h - 8), h * 0.32, h * 0.16);
+    g.fillStyle(0xffffff, 0.35).fillRoundedRect(x + 4, y + 3, Math.max(fw - 8, h - 8), h * 0.3, h * 0.15);
   }
 }
 
-/** Dark rounded pill with an icon on the left and a value — used for coins, DPS, luck... */
+/** Cream pill with an icon overlapping its left end, like the money counter. */
 export class Pill extends Phaser.GameObjects.Container {
   value: Phaser.GameObjects.Text;
   icon: Phaser.GameObjects.Image;
   private readonly pw: number;
   private readonly iconScale: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, w: number, h: number, icon: string, size: number, color = "#ffffff") {
+  constructor(scene: Phaser.Scene, x: number, y: number, w: number, h: number, icon: string, size: number, style: "cream" | "glass" = "cream") {
     super(scene, x, y);
     this.pw = w;
-    const bg = scene.add.image(0, 0, pillTexture(scene, w, h));
-    this.iconScale = (h * 1.1) / 96;
-    this.icon = scene.add.image(-w / 2 + h * 0.45, 0, icon).setScale(this.iconScale);
-    this.value = text(scene, 0, -2, "", size, color);
+    const bg = scene.add.image(0, 0, pillTexture(scene, style, w, h));
+    this.iconScale = (h * 1.15) / 96;
+    this.icon = scene.add.image(-w / 2 + h * 0.3, 0, icon).setScale(this.iconScale);
+    this.value = text(scene, 0, -1, "", size);
     this.add([bg, this.icon, this.value]);
     scene.add.existing(this);
   }
@@ -284,9 +291,9 @@ export class Pill extends Phaser.GameObjects.Container {
   setValue(str: string): this {
     if (this.value.text === str) return this;
     this.value.setText(str);
-    const left = -this.pw / 2 + this.icon.displayWidth * 0.95;
-    fitText(this.value, this.pw / 2 - left - 20);
-    this.value.setX((left + this.pw / 2 - 16) / 2);
+    const left = -this.pw / 2 + this.icon.displayWidth * 0.8;
+    fitText(this.value, this.pw / 2 - left - 22);
+    this.value.setX((left + this.pw / 2 - 14) / 2);
     return this;
   }
 
@@ -299,11 +306,11 @@ export class Pill extends Phaser.GameObjects.Container {
 
 /** Pop-in ribbon banner ("WAVE 3", "STAGE 2!"). */
 export function ribbonBanner(scene: Phaser.Scene, x: number, y: number, str: string, color: BtnColor, ms = 1000, depth = 3000): void {
-  const w = 640;
-  const h = 130;
+  const w = 620;
+  const h = 128;
   const c = scene.add.container(x, y, [
     scene.add.image(0, 0, ribbonTexture(scene, color, w, h)),
-    fitText(text(scene, 0, -14, str, 58), w * 0.66),
+    fitText(text(scene, 0, -14, str, 56), w * 0.66),
   ]).setDepth(depth).setScale(0.3).setAlpha(0);
   scene.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 280, ease: "Back.out" });
   scene.tweens.add({ targets: c, alpha: 0, y: y - 40, delay: ms, duration: 350, onComplete: () => c.destroy() });
@@ -317,17 +324,17 @@ export interface Modal {
   close: () => void;
 }
 
-/** Centered popup with dimmed background, title ribbon and close button. */
-export function modal(scene: Phaser.Scene, w: number, h: number, title: string, color: BtnColor, onClose?: () => void): Modal {
+/** Centered cream popup with dimmed background, title ribbon and close button. */
+export function modal(scene: Phaser.Scene, w: number, h: number, title: string, color: BtnColor, onClose?: () => void, cy?: number): Modal {
   const W = scene.scale.width;
   const H = scene.scale.height;
-  const dim = scene.add.rectangle(0, 0, W, H, 0x0a0620, 0.72).setOrigin(0).setInteractive();
-  const body = scene.add.container(W / 2, H / 2);
-  body.add(scene.add.image(0, 0, panelTexture(scene, "modal", w, h)));
-  const rw = Math.min(w - 40, 640);
+  const dim = scene.add.rectangle(0, 0, W, H, 0x2a1a10, 0.6).setOrigin(0).setInteractive();
+  const body = scene.add.container(W / 2, cy ?? H / 2);
+  body.add(scene.add.image(0, 0, panelTexture(scene, "cream", w, h)));
+  const rw = Math.min(w - 40, 620);
   body.add(scene.add.container(0, -h / 2, [
-    scene.add.image(0, 0, ribbonTexture(scene, color, rw, 120)),
-    fitText(text(scene, 0, -12, title, 50), rw * 0.7),
+    scene.add.image(0, 0, ribbonTexture(scene, color, rw, 116)),
+    fitText(text(scene, 0, -12, title, 48), rw * 0.7),
   ]));
   const root = scene.add.container(0, 0, [dim, body]).setDepth(5000);
   let closed = false;
@@ -338,10 +345,10 @@ export function modal(scene: Phaser.Scene, w: number, h: number, title: string, 
     scene.tweens.add({ targets: dim, alpha: 0, duration: 120 });
     onClose?.();
   };
-  body.add(iconButton(scene, w / 2 - 26, -h / 2 + 26, "icon_close", 88, close));
+  body.add(iconButton(scene, w / 2 - 24, -h / 2 + 24, "icon_close", 86, close));
   body.setScale(0.8).setAlpha(0);
   dim.setAlpha(0);
   scene.tweens.add({ targets: body, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
-  scene.tweens.add({ targets: dim, alpha: 0.72, duration: 160 });
+  scene.tweens.add({ targets: dim, alpha: 0.6, duration: 160 });
   return { root, body, close };
 }

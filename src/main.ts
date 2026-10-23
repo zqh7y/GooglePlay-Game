@@ -10,7 +10,7 @@ loadFonts().then(() => {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game",
-    backgroundColor: "#171a45",
+    backgroundColor: "#c8e296",
     // EXPAND keeps the 1080x1920 layout and grows the height to fill taller phones
     scale: { mode: Phaser.Scale.EXPAND, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_W, height: BASE_H },
     input: { activePointers: 2 },
