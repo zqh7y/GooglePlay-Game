@@ -2,7 +2,8 @@ import Phaser from "phaser";
 import { INK_N } from "../art/draw";
 import { lockedTexture, petTexture } from "../art/pets";
 import { BtnColor, CARD_H, CARD_W, btnEdge, btnTexture, panelTexture, pillTexture, ribbonTexture } from "../art/ui";
-import { ITEMS, ItemKey, parseKey } from "../data/items";
+import { ITEMS, MAX_LEVEL, copiesFor } from "../data/items";
+import { save } from "../systems/save";
 import { RARITY_INFO } from "../data/rarity";
 import { oneIn } from "./format";
 import { sfx } from "../systems/sound";
@@ -202,40 +203,46 @@ export function iconButton(scene: Phaser.Scene, x: number, y: number, icon: stri
 // ───────────────────────── cards ─────────────────────────
 
 export interface CardOpts {
-  count?: number;
   equipped?: boolean;
-  fuseReady?: boolean;
   isNew?: boolean;
-  /** hide the odds line */
   noOdds?: boolean;
+  /** show level badge and the copies-to-next-level bar instead of the odds */
+  level?: boolean;
 }
 
 /** A pet card with rarity frame, art, name and odds. Size CARD_W x CARD_H at scale 1. */
-export function petCard(scene: Phaser.Scene, x: number, y: number, key: ItemKey, opts: CardOpts = {}): Phaser.GameObjects.Container {
-  const { def, variant } = parseKey(key);
+export function petCard(scene: Phaser.Scene, x: number, y: number, id: string, opts: CardOpts = {}): Phaser.GameObjects.Container {
+  const def = ITEMS[id];
   const rarity = RARITY_INFO[def.rarity];
-  const parts: Phaser.GameObjects.GameObject[] = [
+  const c = scene.add.container(x, y, [
     scene.add.image(0, 0, `card_${def.rarity}`),
     fitText(text(scene, 0, -CARD_H / 2 + 25, rarity.label.toUpperCase(), 24), CARD_W - 40),
-    scene.add.image(0, -12, petTexture(scene, def.id, variant)).setScale(0.9),
+    scene.add.image(0, -12, petTexture(scene, def.id)).setScale(0.9),
     fitText(text(scene, 0, CARD_H / 2 - 27, def.name, 25), CARD_W - 36),
-  ];
-  if (variant !== "normal") {
-    parts.push(text(scene, 0, CARD_H / 2 - 66, variant === "golden" ? "GOLDEN" : "RAINBOW", 22, variant === "golden" ? "#ffe066" : "#ffb3e6"));
+  ]);
+  const p = save.pets[id];
+  if (opts.level && p) {
+    const max = p.level >= MAX_LEVEL;
+    const need = copiesFor(p.level);
+    const ready = !max && p.copies >= need;
+    c.add(scene.add.image(-CARD_W / 2 + 48, -CARD_H / 2 + 66, pillTexture(scene, "dark", 84, 42)));
+    c.add(fitText(text(scene, -CARD_W / 2 + 48, -CARD_H / 2 + 65, `Lv.${p.level}`, 23, max ? "#ffe066" : "#ffffff"), 76));
+    const g = scene.add.graphics();
+    drawBar(g, -CARD_W / 2 + 26, CARD_H / 2 - 78, CARD_W - 52, 22, max ? 1 : Math.min(1, p.copies / need), max ? 0xffcf3a : ready ? 0x7ad651 : 0x5ac8ff);
+    c.add(g);
+    c.add(text(scene, 0, CARD_H / 2 - 68, max ? "MAX" : `${p.copies}/${need}`, 20));
+    if (ready) {
+      const plus = scene.add.container(CARD_W / 2 - 30, -CARD_H / 2 + 30, [
+        scene.add.circle(0, 0, 22, 0x6fd64a).setStrokeStyle(5, INK_N),
+        text(scene, 0, -2, "+", 36),
+      ]);
+      c.add(plus);
+      scene.tweens.add({ targets: plus, scale: 1.18, duration: 380, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    }
   } else if (!opts.noOdds) {
-    parts.push(text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"));
+    c.add(text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"));
   }
-  if (opts.count !== undefined) {
-    parts.push(scene.add.image(CARD_W / 2 - 34, -CARD_H / 2 + 68, pillTexture(scene, "dark", 66, 44)));
-    parts.push(fitText(text(scene, CARD_W / 2 - 34, -CARD_H / 2 + 67, `x${opts.count}`, 24, "#ffe680"), 56));
-  }
-  if (opts.equipped) parts.push(scene.add.image(-CARD_W / 2 + 32, -CARD_H / 2 + 68, "icon_check").setScale(0.48));
-  const c = scene.add.container(x, y, parts);
-  if (opts.fuseReady) {
-    const f = scene.add.image(CARD_W / 2 - 30, CARD_H / 2 - 92, "icon_fuse").setScale(0.46);
-    c.add(f);
-    scene.tweens.add({ targets: f, y: f.y - 8, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-  }
+  if (opts.equipped) c.add(scene.add.image(CARD_W / 2 - 32, CARD_H / 2 - 104, "icon_check").setScale(0.48));
   if (opts.isNew) {
     const n = text(scene, CARD_W / 2 - 16, -CARD_H / 2 - 2, "NEW!", 32, "#ff6a8a").setAngle(14);
     c.add(n);

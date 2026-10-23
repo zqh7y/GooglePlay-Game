@@ -1,6 +1,6 @@
-import { ItemDef, PET_LIST, makeKey } from "../data/items";
+import { ItemDef, PET_LIST } from "../data/items";
 import { RARITY_ORDER, rarityRank } from "../data/rarity";
-import { addItem, persist, save } from "./save";
+import { addPet, persist, save } from "./save";
 
 const RAREST_FIRST = [...PET_LIST].reverse();
 
@@ -37,7 +37,7 @@ export function rollMany(n: number, luck: number): RollResult[] {
     const item = rollPet(luck);
     const isNew = !save.discovered.includes(item.id);
     if (isNew) save.discovered.push(item.id);
-    addItem(makeKey(item.id, "normal"));
+    addPet(item.id);
     save.totalRolls++;
     save.bestRoll = Math.max(save.bestRoll, item.oneIn);
     results.push({ item, isNew });

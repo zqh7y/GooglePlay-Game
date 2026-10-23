@@ -1,114 +1,220 @@
 /**
- * The upgrade tree. Buying a node unlocks the nodes connected above it.
- * x/y are grid positions (root at 0,0; the tree grows upward).
+ * The upgrade tree: a honeycomb of single-purchase hexagons growing out from the middle.
  *
- * Effects (per level):
- * - luckAdd:  +per to base luck (0.2 = +20%)
- * - luckMult: luck x per
- * - die:      luck x per and a new die skin (one level only)
- * - speed:    roll time x (1 - per)
- * - multi:    +1 die per roll
- * - auto:     unlocks auto roll
- * - cashAdd / cashMult, dmgAdd / dmgMult: same idea for money and damage
- * - slot:     +1 pet in your team
- * - crit:     +per critical-hit chance
- * - offline:  +per of normal earnings while away
- * - gems:     +per gems per boss
- * - potionPower: luck potion x(2 + level)
- * - potionTime:  +per minutes per potion
+ * Six main branches leave the centre in the six hex directions. Side forks always turn
+ * 60 degrees counter-clockwise, so every fork stays inside its own wedge and nothing overlaps.
+ * Positions are axial hex coordinates (q, r).
+ *
+ * Effects:
+ * - luck, cash, dmg, heroDmg, chest: multiply by `per`
+ * - die: multiply luck by `per` and unlock a new die skin
+ * - speed: roll time x (1 - per)
+ * - multi: +1 die per roll; auto: unlocks auto roll
+ * - slot: +1 pet in your team
+ * - crit: +per critical-hit chance; critDmg: +per critical damage (x3 base)
+ * - offline: +per of normal earnings while away
+ * - villageHp, moveSpeed, range: +per (0.25 = +25%)
+ * - gems: +per gems per boss; potionPower: +per x potion luck; potionTime: +per minutes
+ * - luckyEvery: lucky roll comes `per` rolls sooner; luckyPower: +per x lucky roll luck
  */
 export type Effect =
-  | "luckAdd" | "luckMult" | "die" | "speed" | "multi" | "auto"
-  | "cashAdd" | "cashMult" | "dmgAdd" | "dmgMult" | "slot" | "crit" | "offline" | "gems" | "potionPower" | "potionTime";
+  | "start" | "luck" | "die" | "speed" | "multi" | "auto" | "cash" | "offline" | "dmg" | "heroDmg" | "crit" | "critDmg"
+  | "slot" | "villageHp" | "moveSpeed" | "range" | "gems" | "potionPower" | "potionTime" | "chest" | "luckyEvery" | "luckyPower";
+
+export type Branch = "start" | "luck" | "roll" | "money" | "power" | "team" | "gems";
+
+export const BRANCH_INFO: Record<Branch, { label: string; color: number; light: number }> = {
+  start: { label: "Start", color: 0xffffff, light: 0xffffff },
+  luck: { label: "Luck", color: 0x3fcf6a, light: 0xb8f5c6 },
+  roll: { label: "Rolling", color: 0xffa62e, light: 0xffe0a8 },
+  money: { label: "Money", color: 0xf2c21f, light: 0xfff0a0 },
+  power: { label: "Power", color: 0xf2545b, light: 0xffc2c4 },
+  team: { label: "Team", color: 0xa66bff, light: 0xe2cfff },
+  gems: { label: "Gems & Potions", color: 0x3fb8f2, light: 0xb8e8ff },
+};
 
 export interface TreeNode {
   id: string;
   name: string;
   icon: string;
-  x: number;
-  y: number;
+  branch: Branch;
+  q: number;
+  r: number;
   req: string[];
-  max: number;
-  base: number;
-  growth: number;
+  cost: number;
   effect: Effect;
   per: number;
 }
 
-const n = (id: string, name: string, icon: string, x: number, y: number, req: string[], max: number, base: number, growth: number, effect: Effect, per: number): TreeNode =>
-  ({ id, name, icon, x, y, req, max, base, growth, effect, per });
+type Dir = "E" | "NE" | "NW" | "W" | "SW" | "SE";
+const DIRS: Record<Dir, [number, number]> = { E: [1, 0], NE: [1, -1], NW: [0, -1], W: [-1, 0], SW: [-1, 1], SE: [0, 1] };
+const TURN: Record<Dir, Dir> = { E: "NE", NE: "NW", NW: "W", W: "SW", SW: "SE", SE: "E" };
 
-export const TREE: TreeNode[] = [
-  // trunk: luck
-  n("paw", "Lucky Paw", "clover", 0, 0, [], 5, 15, 1.6, "luckAdd", 0.2),
-  n("clover", "Four-Leaf Clover", "clover", 0, -1, ["paw"], 5, 250, 1.7, "luckAdd", 0.5),
-  n("iron", "Iron Die", "dice", 0, -2, ["clover"], 1, 2500, 1, "die", 2),
-  n("horseshoe", "Horseshoe", "clover", 0, -3, ["iron"], 10, 12000, 1.8, "luckMult", 1.25),
-  n("golddie", "Golden Die", "dice", 0, -4, ["horseshoe"], 1, 5e5, 1, "die", 3),
-  n("star", "Shooting Star", "star", 0, -5, ["golddie"], 10, 4e6, 1.9, "luckMult", 1.3),
-  n("crystaldie", "Crystal Die", "dice", 0, -6, ["star"], 1, 3e8, 1, "die", 5),
-  n("rainbow", "Rainbow Luck", "clover", 0, -7, ["crystaldie"], 10, 5e9, 2, "luckMult", 1.5),
-  n("cosmicdie", "Cosmic Die", "dice", 0, -8, ["rainbow"], 1, 2e12, 1, "die", 10),
-  n("infinite", "Infinite Luck", "star", 0, -9, ["cosmicdie"], 999, 5e13, 1.35, "luckMult", 1.15),
+/** Prices are bent upward so late hexagons take real saving up: price = base ^ COST_POWER. */
+export const COST_POWER = 1.16;
+const price = (c: number) => (c < 100 ? Math.round(c) : Math.round(c ** COST_POWER / 10 ** (2 * (COST_POWER - 1))));
 
-  // left: rolling
-  n("auto", "Auto Roll", "auto", -1, 0, ["paw"], 1, 40, 1, "auto", 1),
-  n("quick", "Quick Hands", "clock", -2, 0, ["auto"], 8, 120, 1.7, "speed", 0.12),
-  n("double", "Double Roll", "dice", -2, -1, ["quick"], 1, 3000, 1, "multi", 1),
-  n("speedy", "Speedy Dice", "clock", -2, -2, ["double"], 8, 40000, 1.8, "speed", 0.1),
-  n("triple", "Triple Roll", "dice", -2, -3, ["speedy"], 1, 1.5e6, 1, "multi", 1),
-  n("lightning", "Lightning Dice", "bolt", -2, -4, ["triple"], 10, 1e8, 1.9, "speed", 0.08),
-  n("quad", "Quad Roll", "dice", -2, -5, ["lightning"], 1, 2e10, 1, "multi", 1),
-  n("penta", "Penta Roll", "dice", -2, -6, ["quad"], 1, 5e12, 1, "multi", 1),
+/** [id, name, icon, cost, effect, per] */
+type Spec = [string, string, string, number, Effect, number];
 
-  // left-middle: gems and potions
-  n("gems", "Gem Finder", "gem", -1, -2, ["clover"], 5, 5000, 2, "gems", 1),
-  n("potion", "Strong Potion", "potion", -1, -4, ["gems"], 3, 2e5, 5, "potionPower", 1),
-  n("potiontime", "Long Potion", "potion", -1, -6, ["potion"], 3, 1e7, 10, "potionTime", 2),
+export const TREE: TreeNode[] = [{ id: "start", name: "Start", icon: "star", branch: "start", q: 0, r: 0, req: [], cost: 0, effect: "start", per: 0 }];
+const byId = () => Object.fromEntries(TREE.map((t) => [t.id, t]));
 
-  // right-middle: money
-  n("piggy", "Piggy Bank", "cash", 1, 0, ["paw"], 10, 30, 1.5, "cashAdd", 0.25),
-  n("magnet", "Cash Magnet", "cash", 1, -1, ["piggy"], 5, 1500, 2, "cashMult", 1.5),
-  n("vault", "Bank Vault", "cash", 1, -3, ["magnet"], 5, 2e5, 2.5, "cashMult", 2),
-  n("offline", "Night Shift", "clock", 1, -4, ["vault"], 4, 3e6, 3, "offline", 0.25),
-  n("goose", "Golden Goose", "cash", 1, -5, ["offline"], 5, 5e8, 3, "cashMult", 3),
-  n("infcash", "Infinite Money", "cash", 1, -6, ["goose"], 999, 1e12, 1.4, "cashMult", 1.2),
+/** Lay a straight run of nodes from `from`, each requiring the one before. */
+function run(branch: Branch, from: string, dir: Dir, specs: Spec[]): void {
+  let prev = byId()[from];
+  const [dq, dr] = DIRS[dir];
+  for (const [id, name, icon, cost, effect, per] of specs) {
+    const node: TreeNode = { id, name, icon, branch, q: prev.q + dq, r: prev.r + dr, req: [prev.id], cost: price(cost), effect, per };
+    TREE.push(node);
+    prev = node;
+  }
+}
 
-  // right: power and team
-  n("claws", "Sharp Claws", "sword", 2, 0, ["piggy"], 10, 60, 1.55, "dmgAdd", 0.3),
-  n("slot1", "Pet Slot", "slots", 2, -1, ["claws"], 1, 800, 1, "slot", 1),
-  n("power", "Power Up", "sword", 2, -2, ["slot1"], 10, 20000, 1.8, "dmgMult", 1.5),
-  n("slot2", "Pet Slot II", "slots", 2, -3, ["power"], 1, 1e6, 1, "slot", 1),
-  n("crit", "Critical Hit", "target", 3, -3, ["slot2"], 6, 5e6, 2, "crit", 0.05),
-  n("fury", "Fury", "sword", 2, -4, ["slot2"], 10, 5e7, 2.2, "dmgMult", 2),
-  n("slot3", "Pet Slot III", "slots", 2, -5, ["fury"], 1, 1e9, 1, "slot", 1),
-  n("titan", "Titan Strength", "sword", 2, -6, ["slot3"], 10, 1e11, 2.5, "dmgMult", 3),
-  n("infdmg", "Infinite Power", "sword", 2, -7, ["titan"], 999, 1e13, 1.4, "dmgMult", 1.25),
-];
+/** A main branch from the centre, plus forks that turn off it. */
+function branch(b: Branch, dir: Dir, main: Spec[], forks: Record<string, Spec[]>): void {
+  run(b, "start", dir, main);
+  for (const [from, specs] of Object.entries(forks)) run(b, from, TURN[dir], specs);
+}
 
-export const TREE_BY_ID: Record<string, TreeNode> = Object.fromEntries(TREE.map((t) => [t.id, t]));
+const R = ["I", "II", "III", "IV", "V"];
+/** Numbered fork: "Four Leaf I", "Four Leaf II", ... with costs multiplied by `step`. */
+const series = (id: string, name: string, icon: string, n: number, cost: number, step: number, effect: Effect, per: number): Spec[] =>
+  Array.from({ length: n }, (_, i) => [`${id}${i + 1}`, `${name} ${R[i]}`, icon, cost * step ** i, effect, per]);
 
-export const nodeCost = (node: TreeNode, level: number) => Math.round(node.base * node.growth ** level);
+branch("money", "E", [
+  ["piggy", "Piggy Bank", "cash", 40, "cash", 1.5],
+  ["magnet", "Coin Magnet", "cash", 700, "cash", 1.5],
+  ["vault", "Bank Vault", "cash", 12e3, "cash", 2],
+  ["goose", "Golden Goose", "cash", 250e3, "cash", 2],
+  ["tmap", "Treasure Map", "chest", 6e6, "chest", 2],
+  ["mine", "Gold Mine", "cash", 150e6, "cash", 2],
+  ["mint", "Royal Mint", "cash", 5e9, "cash", 2.5],
+  ["hoard", "Dragon Hoard", "cash", 200e9, "cash", 2.5],
+  ["midas", "Midas Touch", "cash", 10e12, "cash", 3],
+  ["infcash", "Endless Wealth", "cash", 600e12, "cash", 3],
+], {
+  magnet: series("off", "Idle Income", "clock", 3, 3000, 12, "offline", 0.15),
+  goose: series("coin", "Lucky Coins", "cash", 3, 1e6, 15, "cash", 1.3),
+  mint: series("interest", "Interest", "cash", 2, 20e9, 20, "cash", 1.5),
+});
 
-/** Short text for what one node level does. */
+branch("luck", "NE", [
+  ["paw", "Lucky Paw", "paw", 25, "luck", 2],
+  ["clover", "Clover", "clover", 300, "luck", 3],
+  ["horseshoe", "Horseshoe", "clover", 5e3, "luck", 3],
+  ["golddie", "Gold Die", "dice", 90e3, "die", 4],
+  ["lstar", "Lucky Star", "star", 2e6, "luck", 5],
+  ["crystaldie", "Crystal Die", "dice", 60e6, "die", 6],
+  ["charm", "Fortune Charm", "clover", 2e9, "luck", 8],
+  ["cosmicdie", "Cosmic Die", "dice", 80e9, "die", 10],
+  ["fate", "Fate Weaver", "star", 4e12, "luck", 12],
+  ["galaxydie", "Galaxy Die", "dice", 200e12, "die", 15],
+  ["destiny", "Destiny", "star", 10e15, "luck", 20],
+  ["influck", "Infinite Luck", "clover", 500e15, "luck", 30],
+], {
+  clover: series("leaf", "Four Leaf", "clover", 3, 1200, 6, "luck", 2),
+  lstar: series("wish", "Wishbone", "star", 3, 8e6, 8, "luck", 3),
+  cosmicdie: series("shard", "Star Shard", "star", 3, 300e9, 10, "luck", 4),
+  destiny: series("moonstone", "Moonstone", "star", 2, 30e15, 10, "luck", 6),
+});
+
+branch("roll", "NW", [
+  ["quick", "Quick Hands", "clock", 30, "speed", 0.15],
+  ["auto", "Auto Roll", "auto", 400, "auto", 1],
+  ["double", "Double Dice", "dice", 8e3, "multi", 1],
+  ["swift", "Swift Roll", "clock", 150e3, "speed", 0.15],
+  ["triple", "Triple Dice", "dice", 4e6, "multi", 1],
+  ["rapid", "Rapid Roll", "clock", 120e6, "speed", 0.15],
+  ["quad", "Quad Dice", "dice", 5e9, "multi", 1],
+  ["lightning", "Lightning Roll", "bolt", 200e9, "speed", 0.2],
+  ["penta", "Penta Dice", "dice", 10e12, "multi", 1],
+  ["instant", "Instant Roll", "bolt", 600e12, "speed", 0.2],
+], {
+  quick: series("streak", "Lucky Streak", "star", 2, 2500, 40, "luckyEvery", 2),
+  swift: series("spd", "Nimble Fingers", "clock", 3, 500e3, 10, "speed", 0.08),
+  quad: series("lpow", "Lucky Roll Power", "star", 2, 20e9, 30, "luckyPower", 1),
+});
+
+branch("power", "W", [
+  ["claws", "Sharp Claws", "sword", 50, "dmg", 1.5],
+  ["powerup", "Power Up", "sword", 900, "dmg", 1.6],
+  ["blaster", "Hero Blaster", "target", 15e3, "heroDmg", 2],
+  ["fury", "Fury", "sword", 300e3, "dmg", 2],
+  ["crit", "Critical Eye", "target", 5e6, "crit", 0.05],
+  ["titan", "Titan Strength", "sword", 120e6, "dmg", 2.5],
+  ["rifle", "Hero Rifle", "target", 4e9, "heroDmg", 3],
+  ["rage", "Rage", "sword", 150e9, "dmg", 3],
+  ["deadly", "Deadly Crits", "target", 8e12, "crit", 0.05],
+  ["infdmg", "Infinite Power", "sword", 500e12, "dmg", 5],
+], {
+  powerup: series("str", "Strength", "sword", 3, 3000, 12, "dmg", 1.3),
+  crit: series("cdmg", "Crit Power", "target", 2, 20e6, 30, "critDmg", 1),
+  rage: series("berserk", "Berserk", "sword", 2, 600e9, 25, "dmg", 2),
+});
+
+branch("team", "SW", [
+  ["slot1", "Pet Slot", "slots", 600, "slot", 1],
+  ["walls", "Village Walls", "shield", 3e3, "villageHp", 0.5],
+  ["slot2", "Pet Slot II", "slots", 150e3, "slot", 1],
+  ["boots", "Running Shoes", "boot", 600e3, "moveSpeed", 0.2],
+  ["walls2", "Stone Walls", "shield", 15e6, "villageHp", 0.5],
+  ["slot3", "Pet Slot III", "slots", 800e6, "slot", 1],
+  ["bond", "Pet Bond", "paw", 30e9, "dmg", 2],
+  ["fortress", "Fortress", "shield", 1e12, "villageHp", 1],
+], {
+  walls: series("tower", "Watchtower", "target", 2, 20e3, 50, "range", 0.15),
+  boots: series("sprint", "Sprint", "boot", 2, 2e6, 40, "moveSpeed", 0.15),
+  bond: series("pack", "Pack Spirit", "paw", 2, 100e9, 30, "dmg", 1.5),
+});
+
+branch("gems", "SE", [
+  ["gemfind", "Gem Finder", "gem", 300, "gems", 1],
+  ["brewer", "Potion Brewer", "potion", 5e3, "potionPower", 1],
+  ["longpot", "Long Potion", "clock", 80e3, "potionTime", 5],
+  ["gemhunt", "Gem Hunter", "gem", 2e6, "gems", 1],
+  ["strongpot", "Strong Potion", "potion", 60e6, "potionPower", 1],
+  ["gemmaster", "Gem Master", "gem", 3e9, "gems", 2],
+  ["elixir", "Elixir", "clock", 150e9, "potionTime", 10],
+  ["ultpot", "Ultimate Potion", "potion", 10e12, "potionPower", 2],
+], {
+  longpot: series("thunt", "Treasure Hunter", "gift", 2, 300e3, 30, "chest", 1.5),
+  gemmaster: series("gemrain", "Gem Rain", "gem", 2, 10e9, 30, "gems", 1),
+});
+
+export const TREE_BY_ID: Record<string, TreeNode> = byId();
+
+/** Pixel position of a node (pointy-top hexagons of the given radius). */
+export function hexPos(node: TreeNode, size: number): { x: number; y: number } {
+  return { x: size * Math.sqrt(3) * (node.q + node.r / 2), y: size * 1.5 * node.r };
+}
+
+/** Short text for what a node does. */
 export function effectText(node: TreeNode): string {
   const p = node.per;
+  const pct = `${Math.round(p * 100)}%`;
   switch (node.effect) {
-    case "luckAdd": return `+${Math.round(p * 100)}% luck`;
-    case "luckMult": return `x${p} luck`;
-    case "die": return `x${p} luck + new die`;
-    case "speed": return `-${Math.round(p * 100)}% roll time`;
+    case "start": return "Where it all begins";
+    case "luck": return `x${p} luck`;
+    case "die": return `x${p} luck + a new die`;
+    case "speed": return `Rolls ${pct} faster`;
     case "multi": return "+1 die every roll";
     case "auto": return "Rolls automatically";
-    case "cashAdd": return `+${Math.round(p * 100)}% money`;
-    case "cashMult": return `x${p} money`;
-    case "dmgAdd": return `+${Math.round(p * 100)}% damage`;
-    case "dmgMult": return `x${p} damage`;
+    case "cash": return `x${p} money`;
+    case "offline": return `+${pct} money while away`;
+    case "dmg": return `x${p} team damage`;
+    case "heroDmg": return `x${p} hero damage`;
+    case "crit": return `+${pct} critical hit chance`;
+    case "critDmg": return `+${p}x critical damage`;
     case "slot": return "+1 pet in your team";
-    case "crit": return `+${Math.round(p * 100)}% critical hits`;
-    case "offline": return `+${Math.round(p * 100)}% money while away`;
-    case "gems": return "+1 gem per boss";
-    case "potionPower": return "+1x potion luck";
+    case "villageHp": return `+${pct} village health`;
+    case "moveSpeed": return `+${pct} walking speed`;
+    case "range": return `+${pct} attack range`;
+    case "gems": return `+${p} gem${p > 1 ? "s" : ""} per boss`;
+    case "potionPower": return `+${p}x potion luck`;
     case "potionTime": return `+${p} min potion time`;
+    case "chest": return `x${p} treasure chest rewards`;
+    case "luckyEvery": return `Lucky roll ${p} rolls sooner`;
+    case "luckyPower": return `+${p}x lucky roll luck`;
   }
 }

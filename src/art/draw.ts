@@ -23,6 +23,11 @@ export function mix(a: number, b: number, t: number): number {
 export const lighten = (c: number, t: number) => mix(c, 0xffffff, t);
 export const darken = (c: number, t: number) => mix(c, 0x000000, t);
 
+/** Rounded-rectangle path centred on (x, y). */
+export function box(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  rr(ctx, x - w / 2, y - h / 2, w, h, r);
+}
+
 /** Rounded-rectangle path (not filled). */
 export function rr(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
   r = Math.max(0, Math.min(r, w / 2, h / 2));

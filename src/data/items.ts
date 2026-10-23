@@ -19,14 +19,16 @@ export interface ItemDef {
   oneIn: number;
   rarity: Rarity;
   species: Species;
-  /** body colour, or "rainbow" */
   color: string;
+  /** secondary colour: belly, shell, inner ears ("" = automatic) */
+  accent: string;
   accs: string[];
   pattern: string;
   eyes: string;
   kind: PetKind;
   /** attack colour */
   fx: number;
+  /** damage per attack at level 1 (buff pets: % team damage) */
   damage: number;
   /** milliseconds between attacks */
   cooldown: number;
@@ -73,10 +75,10 @@ function oddsCurve(count: number): number[] {
 
 function kindFor(accs: string[], pattern: string): PetKind {
   const has = (...a: string[]) => a.some((x) => accs.includes(x) || pattern === x);
-  if (has("halo", "wings", "flower", "bubble")) return "buff";
-  if (has("flame", "sun", "cracks", "rock")) return "splash";
-  if (has("bolt", "sparkantenna", "antenna")) return "zap";
-  if (has("icecrown", "crystal", "galaxy", "frost", "moon")) return "pierce";
+  if (has("halo", "wings", "flower")) return "buff";
+  if (has("flame", "cracks")) return "splash";
+  if (has("bolt")) return "zap";
+  if (has("crystal", "frost", "galaxy", "moon", "star")) return "pierce";
   return "shot";
 }
 
@@ -90,14 +92,18 @@ const DESCRIPTION: Record<PetKind, string> = {
   buff: "Cheers the team on: boosts all damage.",
 };
 
+/** Pet damage grows with rarity: base x (1-in-N odds) ^ power. */
+export const PET_DMG_BASE = 6;
+export const PET_DMG_POWER = 0.55;
+
 const ODDS = oddsCurve(PET_ROWS.length);
 
-export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accs, pattern, eyes], index) => {
+export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accent, accs, pattern, eyes], index) => {
   const accList = accs ? accs.split(",") : [];
   const tier = Math.floor(index / 10);
   // very rare angels attack with holy lightning instead of only cheering
   const kind = kindFor(accList, pattern) === "buff" && tier >= 6 ? "zap" : kindFor(accList, pattern);
-  const base = 5 * 1.45 ** index;
+  const base = PET_DMG_BASE * ODDS[index] ** PET_DMG_POWER;
   return {
     id: name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
     index,
@@ -106,12 +112,13 @@ export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accs, pa
     rarity: RARITY_ORDER[Math.min(tier, RARITY_ORDER.length - 1)],
     species,
     color,
+    accent,
     accs: accList,
     pattern,
     eyes,
     kind,
     fx: FX[kind],
-    damage: kind === "buff" ? 10 + tier * 12 : Math.round(base * (kind === "splash" ? 0.8 : kind === "shot" ? 1 : 0.9)),
+    damage: kind === "buff" ? 8 + tier * 6 : Math.round(base * (kind === "splash" ? 0.8 : kind === "shot" ? 1 : 0.9)),
     cooldown: { shot: 1000, pierce: 1500, splash: 1600, zap: 1400, buff: 0 }[kind],
     count: 1 + Math.floor(tier / 3),
     description: DESCRIPTION[kind],
@@ -120,25 +127,11 @@ export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accs, pa
 
 export const ITEMS: Record<string, ItemDef> = Object.fromEntries(PET_LIST.map((p) => [p.id, p]));
 
-export type Variant = "normal" | "golden" | "rainbow";
+// ───────────────────────── pet levels ─────────────────────────
 
-export const VARIANT_INFO: Record<Variant, { label: string; mult: number }> = {
-  normal: { label: "", mult: 1 },
-  golden: { label: "Golden ", mult: 3 },
-  rainbow: { label: "Rainbow ", mult: 10 },
-};
-
-/** How many copies fuse into the next variant. */
-export const FUSE_COST = 5;
-
-export function nextVariant(v: Variant): Variant | null {
-  return v === "normal" ? "golden" : v === "golden" ? "rainbow" : null;
-}
-
-/** Inventory key, e.g. "kitten:golden". */
-export type ItemKey = string;
-export const makeKey = (id: string, v: Variant): ItemKey => `${id}:${v}`;
-export function parseKey(key: ItemKey): { def: ItemDef; variant: Variant } {
-  const [id, v] = key.split(":");
-  return { def: ITEMS[id], variant: v as Variant };
-}
+/** Duplicates level a pet up (no golden/rainbow versions). */
+export const MAX_LEVEL = 30;
+/** Copies needed to go from `level` to `level + 1`. */
+export const copiesFor = (level: number) => 2 + level;
+/** Damage multiplier at a level: +15% per level. */
+export const levelMult = (level: number) => 1 + 0.15 * (level - 1);

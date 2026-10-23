@@ -1,31 +1,20 @@
 import { indexBonus } from "./goals";
-import { TREE, TREE_BY_ID, TreeNode, nodeCost } from "../data/tree";
+import { Effect, TREE, TREE_BY_ID, TreeNode } from "../data/tree";
 import { persist, save } from "./save";
 
 /** Everything the upgrade tree (and the luck potion) adds up to. */
-function level(node: TreeNode): number {
-  return save.tree[node.id] ?? 0;
-}
-
-function sum(effect: TreeNode["effect"]): number {
-  return TREE.filter((t) => t.effect === effect).reduce((s, t) => s + t.per * level(t), 0);
-}
-
-function product(effect: TreeNode["effect"]): number {
-  return TREE.filter((t) => t.effect === effect).reduce((p, t) => p * t.per ** level(t), 1);
-}
+const owned = (node: TreeNode) => (save.tree[node.id] ?? 0) > 0;
+const sum = (effect: Effect) => TREE.reduce((s, t) => (t.effect === effect && owned(t) ? s + t.per : s), 0);
+const product = (effect: Effect) => TREE.reduce((p, t) => (t.effect === effect && owned(t) ? p * t.per : p), 1);
 
 export const potionActive = () => Date.now() < save.potionUntil;
 export const potionMult = () => 2 + sum("potionPower");
 export const potionMinutes = () => 5 + sum("potionTime");
 export const POTION_GEMS = 10;
 
-export const dieSkin = () => TREE.filter((t) => t.effect === "die" && level(t) > 0).length;
-
-export function luckParts(): { base: number; mult: number; die: number; index: number; potion: number } {
+export function luckParts(): { tree: number; die: number; index: number; potion: number } {
   return {
-    base: 1 + sum("luckAdd"),
-    mult: product("luckMult"),
+    tree: product("luck"),
     die: product("die"),
     index: indexBonus(),
     potion: potionActive() ? potionMult() : 1,
@@ -34,37 +23,43 @@ export function luckParts(): { base: number; mult: number; die: number; index: n
 
 export function luck(): number {
   const p = luckParts();
-  return p.base * p.mult * p.die * p.index * p.potion;
+  return p.tree * p.die * p.index * p.potion;
 }
 
+/** Every Nth roll is a lucky roll. */
+export const luckyEvery = () => 10 - sum("luckyEvery");
+export const luckyMult = () => 2 + sum("luckyPower");
+
 /** Milliseconds between rolls. */
-export const rollTime = () => Math.max(150, 2000 * TREE.filter((t) => t.effect === "speed").reduce((m, t) => m * (1 - t.per) ** level(t), 1));
+export const rollTime = () => Math.max(150, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && owned(t) ? m * (1 - t.per) : m), 1));
 export const dicePerRoll = () => 1 + sum("multi");
 export const autoUnlocked = () => sum("auto") > 0;
-export const cashMult = () => (1 + sum("cashAdd")) * product("cashMult");
-export const dmgMult = () => (1 + sum("dmgAdd")) * product("dmgMult");
+export const cashMult = () => product("cash");
+export const dmgMult = () => product("dmg");
+export const heroDmgMult = () => product("heroDmg");
 export const petSlots = () => 3 + sum("slot");
 export const critChance = () => 0.05 + sum("crit");
+export const critDamage = () => 3 + sum("critDmg");
 export const offlineRate = () => 0.25 + sum("offline");
 export const gemsPerBoss = () => 2 + sum("gems");
+export const villageHpMult = () => 1 + sum("villageHp");
+export const moveSpeedMult = () => 1 + sum("moveSpeed");
+export const rangeMult = () => 1 + sum("range");
+export const chestMult = () => product("chest");
+
+export const dieSkin = () => TREE.filter((t) => t.effect === "die" && owned(t)).length;
 
 // ───────────────────────── tree purchases ─────────────────────────
 
-export const nodeLevel = (id: string) => save.tree[id] ?? 0;
-
-export function nodeUnlocked(node: TreeNode): boolean {
-  return node.req.every((r) => nodeLevel(r) > 0);
-}
-
-export function canBuy(node: TreeNode): boolean {
-  return nodeUnlocked(node) && nodeLevel(node.id) < node.max && save.cash >= nodeCost(node, nodeLevel(node.id));
-}
+export const nodeOwned = (id: string) => id === "start" || (save.tree[id] ?? 0) > 0;
+export const nodeUnlocked = (node: TreeNode) => node.req.every(nodeOwned);
+export const canBuy = (node: TreeNode) => nodeUnlocked(node) && !nodeOwned(node.id) && save.cash >= node.cost;
 
 export function buyNode(id: string): boolean {
   const node = TREE_BY_ID[id];
   if (!canBuy(node)) return false;
-  save.cash -= nodeCost(node, nodeLevel(id));
-  save.tree[id] = nodeLevel(id) + 1;
+  save.cash -= node.cost;
+  save.tree[id] = 1;
   persist();
   return true;
 }

@@ -1,18 +1,25 @@
-import { FUSE_COST, ItemKey, PET_LIST, makeKey, nextVariant, parseKey } from "../data/items";
+import { MAX_STAGE } from "../data/balance";
+import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor } from "../data/items";
+
+export interface PetState {
+  level: number;
+  /** spare copies, spent to level up */
+  copies: number;
+}
 
 export interface SaveData {
   cash: number;
   gems: number;
-  /** item key -> how many you own */
-  inventory: Record<ItemKey, number>;
-  /** pets fighting next to the cat */
-  equipped: ItemKey[];
-  /** pet ids ever obtained */
+  /** pets you own: id -> level and spare copies */
+  pets: Record<string, PetState>;
+  /** pet ids fighting next to the hero */
+  equipped: string[];
+  /** pet ids in the order they were found */
   discovered: string[];
   stage: number;
   wave: number;
   bestStage: number;
-  /** upgrade tree node id -> level */
+  /** upgrade tree: node id -> 1 when bought */
   tree: Record<string, number>;
   autoRoll: boolean;
   potionUntil: number;
@@ -23,8 +30,6 @@ export interface SaveData {
   bestRoll: number;
   lastSeen: number;
   cashPerSec: number;
-  /** area you are defending */
-  area: string;
   /** hero walks to monsters by itself */
   autoHunt: boolean;
   quests: { type: import("./goals").QuestType; target: number; progress: number }[];
@@ -35,19 +40,22 @@ export interface SaveData {
   dailyStreak: number;
   /** collection milestones already rewarded */
   indexMilestones: number;
-  /** how many areas were unlocked last time the map was opened */
-  areasSeen: number;
+  /** highest region whose "new land" cutscene was shown */
+  regionShown: number;
+  /** treasure chest id -> time it can be opened again */
+  chests: Record<string, number>;
+  totalKills: number;
 }
 
-const STORAGE_KEY = "dice-idle-save-v2";
+const STORAGE_KEY = "dice-idle-save-v3";
 const STARTER = PET_LIST[0].id;
 
 function fresh(): SaveData {
   return {
     cash: 0,
     gems: 10,
-    inventory: { [makeKey(STARTER, "normal")]: 1 },
-    equipped: [makeKey(STARTER, "normal")],
+    pets: { [STARTER]: { level: 1, copies: 0 } },
+    equipped: [STARTER],
     discovered: [STARTER],
     stage: 1,
     wave: 1,
@@ -60,7 +68,6 @@ function fresh(): SaveData {
     bestRoll: 2,
     lastSeen: Date.now(),
     cashPerSec: 0,
-    area: "village",
     autoHunt: true,
     quests: [],
     questTier: 0,
@@ -68,7 +75,9 @@ function fresh(): SaveData {
     dailyLast: "",
     dailyStreak: 0,
     indexMilestones: 0,
-    areasSeen: 1,
+    regionShown: 0,
+    chests: {},
+    totalKills: 0,
   };
 }
 
@@ -78,8 +87,10 @@ function load(): SaveData {
     if (raw) {
       const data = { ...fresh(), ...JSON.parse(raw) } as SaveData;
       // drop anything that no longer exists
-      for (const key of Object.keys(data.inventory)) if (!parseKey(key).def) delete data.inventory[key];
-      data.equipped = data.equipped.filter((k) => data.inventory[k]);
+      for (const id of Object.keys(data.pets)) if (!ITEMS[id]) delete data.pets[id];
+      data.equipped = data.equipped.filter((id) => data.pets[id]);
+      data.discovered = data.discovered.filter((id) => ITEMS[id]);
+      data.stage = Math.min(data.stage, MAX_STAGE);
       return data;
     }
   } catch {
@@ -101,39 +112,33 @@ export function persist(): void {
   }
 }
 
-export function addItem(key: ItemKey, n = 1): void {
-  save.inventory[key] = (save.inventory[key] ?? 0) + n;
+/** Add a rolled pet: the first copy unlocks it, later ones are spare copies for levelling. */
+export function addPet(id: string): void {
+  const p = save.pets[id];
+  if (p) p.copies++;
+  else save.pets[id] = { level: 1, copies: 0 };
 }
 
-export function removeItem(key: ItemKey, n: number): void {
-  const left = (save.inventory[key] ?? 0) - n;
-  if (left > 0) {
-    save.inventory[key] = left;
-  } else {
-    delete save.inventory[key];
-    save.equipped = save.equipped.filter((k) => k !== key);
-  }
+export const petLevel = (id: string) => save.pets[id]?.level ?? 0;
+export const canLevelUp = (id: string) => {
+  const p = save.pets[id];
+  return !!p && p.level < MAX_LEVEL && p.copies >= copiesFor(p.level);
+};
+
+/** Spend copies on one level. Returns true if it levelled up. */
+export function levelUp(id: string): boolean {
+  if (!canLevelUp(id)) return false;
+  const p = save.pets[id];
+  p.copies -= copiesFor(p.level);
+  p.level++;
+  return true;
 }
 
-/** Fuse FUSE_COST copies into one of the next variant. Returns the new key or null. */
-export function fuse(key: ItemKey): ItemKey | null {
-  const { def, variant } = parseKey(key);
-  const next = nextVariant(variant);
-  if (!next || (save.inventory[key] ?? 0) < FUSE_COST) return null;
-  const wasEquipped = save.equipped.includes(key);
-  removeItem(key, FUSE_COST);
-  const newKey = makeKey(def.id, next);
-  addItem(newKey);
-  if (wasEquipped && !save.equipped.includes(key) && !save.equipped.includes(newKey)) save.equipped.push(newKey);
-  persist();
-  return newKey;
-}
-
-export function toggleEquip(key: ItemKey, maxSlots: number): void {
-  if (save.equipped.includes(key)) {
-    save.equipped = save.equipped.filter((k) => k !== key);
+export function toggleEquip(id: string, maxSlots: number): void {
+  if (save.equipped.includes(id)) {
+    save.equipped = save.equipped.filter((k) => k !== id);
   } else if (save.equipped.length < maxSlots) {
-    save.equipped.push(key);
+    save.equipped.push(id);
   }
   persist();
 }

@@ -5,11 +5,11 @@
 import { PET_LIST } from "/src/data/items.ts";
 import { drawPet } from "/src/art/pets.ts";
 const g = document.getElementById("g");
-const variant = new URLSearchParams(location.search).get("v") || "normal";
+
 for (const p of PET_LIST) {
   const d = document.createElement("div"); d.className = "c";
   const c = document.createElement("canvas"); c.width = 160; c.height = 178;
-  drawPet(c.getContext("2d"), p, variant);
+  drawPet(c.getContext("2d"), p);
   d.append(c, `${p.index} ${p.name}`);
   g.append(d);
 }

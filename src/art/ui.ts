@@ -525,6 +525,38 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
     starPath(ctx, 48, 50, 42, 0.48);
     fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#fff3a0"], [1, "#ffb300"]]), 6);
   },
+  shield: (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(48, 8);
+    ctx.lineTo(84, 20);
+    ctx.quadraticCurveTo(84, 66, 48, 90);
+    ctx.quadraticCurveTo(12, 66, 12, 20);
+    ctx.closePath();
+    fillOutline(ctx, linear(ctx, 0, 8, 0, 90, [[0, "#9fd8ff"], [1, "#3f8fd8"]]), 6);
+    ctx.beginPath();
+    ctx.moveTo(48, 20);
+    ctx.lineTo(72, 28);
+    ctx.quadraticCurveTo(72, 60, 48, 76);
+    ctx.closePath();
+    fill(ctx, "rgba(255,255,255,0.35)");
+  },
+  boot: (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(26, 10);
+    ctx.lineTo(56, 10);
+    ctx.lineTo(56, 52);
+    ctx.lineTo(84, 62);
+    ctx.quadraticCurveTo(90, 66, 88, 82);
+    ctx.lineTo(18, 82);
+    ctx.closePath();
+    fillOutline(ctx, linear(ctx, 0, 10, 0, 82, [[0, "#c98a4a"], [1, "#8a5428"]]), 6);
+    ctx.beginPath();
+    ctx.rect(18, 74, 70, 10);
+    fillOutline(ctx, "#4a3a30", 5);
+    ctx.beginPath();
+    ctx.rect(24, 24, 34, 8);
+    fill(ctx, "#ffd23f");
+  },
   map: (ctx) => {
     const xs = [8, 36, 60, 88];
     for (let i = 0; i < 3; i++) {

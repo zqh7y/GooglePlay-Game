@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { makePetalTexture } from "../art/village";
+import { makePetalTexture } from "../art/world";
 import { makeCharacterTextures } from "../art/characters";
 import { makeCardTextures, makeIconTextures } from "../art/ui";
 
