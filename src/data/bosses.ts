@@ -51,7 +51,7 @@ export const RUSH_MS = 15000;
  * in a normal run. A starter team can beat boss 1; past stage 40 normal runs send twice the monsters, so
  * the rush bosses get about twice as tough there too.
  */
-const RUSH_HP_MULT: [number, number][] = [[1, 0.8], [3, 1.65], [6, 0.85], [9, 0.3], [38, 0.3], [44, 0.68], [MAX_STAGE, 0.68]];
+const RUSH_HP_MULT: [number, number][] = [[1, 0.45], [3, 1.65], [6, 0.85], [9, 0.3], [38, 0.3], [44, 0.68], [MAX_STAGE, 0.68]];
 const rushHpMult = (n: number) => {
   const i = RUSH_HP_MULT.findIndex(([s]) => s >= n);
   if (i <= 0) return RUSH_HP_MULT[0][1];
