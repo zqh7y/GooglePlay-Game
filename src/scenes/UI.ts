@@ -8,7 +8,7 @@ import { gunKey } from "../data/guns";
 import { PET_LIST } from "../data/items";
 import { RARITY_INFO, RARITY_ORDER, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
-import { MAX_SKILL, SKILL_BY_ID, SkillId } from "../data/skills";
+import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { TREE } from "../data/tree";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -146,6 +146,8 @@ export class UIScene extends Phaser.Scene implements Host {
       ["cash-fly", this.onCashFly],
       ["gun-found", this.gunFound],
       ["battle-ready", this.onBattleReady],
+      ["boss-warning", this.bossWarning],
+      ["boss-intro", this.bossIntro],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -211,7 +213,8 @@ export class UIScene extends Phaser.Scene implements Host {
     const paused = this.scene.isPaused("Battle");
     if (run && paused) this.scene.resume("Battle");
     else if (!run && !paused && this.scene.isActive("Battle")) this.scene.pause("Battle");
-    music.play(this.tab === "battle" && !this.mapOpen && battle.mode === "run" ? (battle.bossFrac >= 0 ? "boss" : "battle") : "calm");
+    const fight = this.tab === "battle" && !this.mapOpen && battle.mode === "run";
+    music.play(fight ? (battle.bossFight ? (battle.bossFrac >= 0 ? "boss" : "calm") : "battle") : "calm");
   }
 
   /** Lobby or fight: during a fight only the battle is on screen (no tab bar, no shops). */
@@ -534,9 +537,10 @@ export class UIScene extends Phaser.Scene implements Host {
     fitText(this.stageText, 480);
     // the crystal, and whether its shield is up
     const c = battle.crystal;
-    drawBar(g, 274, 236, 366, 26, c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
+    drawBar(g, 274, 236, 366, 26, battle.bossFight ? 0 : c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
     const left = Math.ceil(battle.shieldLeft / 1000);
-    this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
+    if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
+    else this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
     fitText(this.shieldText, 340);
     this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
     this.progressText.setColor(c < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
@@ -574,7 +578,9 @@ export class UIScene extends Phaser.Scene implements Host {
     const dim = this.add.rectangle(0, 0, W, H, 0x1a0e08, 0.78).setOrigin(0).setInteractive();
     const rays = this.add.image(W / 2, H * 0.24, "rays").setTint(0xffe066).setAlpha(0.35).setScale(1.4);
     const title = text(this, W / 2, H * 0.22, "LEVEL UP!", 104, "#ffe066");
-    const sub = text(this, W / 2, H * 0.22 + 90, `Level ${info.level}  •  choose a skill`, 40);
+    const used = Object.keys(info.levels).length;
+    const sub = text(this, W / 2, H * 0.22 + 90, used >= SKILL_SLOTS ? `Level ${info.level}  •  all ${SKILL_SLOTS} skill slots used: level them up!` : `Level ${info.level}  •  skill slots ${used}/${SKILL_SLOTS}`, 38);
+    fitText(sub, W - 80);
     const root = this.add.container(0, 0, [dim, rays, title, sub]).setDepth(5600);
     this.picker = root;
     this.tweens.add({ targets: rays, angle: 360, duration: 12000, repeat: -1 });
@@ -769,6 +775,49 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 300, ease: "Back.out" });
     this.tweens.add({ targets: c, alpha: 0, y: y - 60, delay: rank >= 3 ? 2600 : 1800, duration: 350, onComplete: () => c.destroy() });
     if (f.equipped && rank >= 4) this.onBanner(`${info.name.toUpperCase()} GUN!`, "gold", 1200);
+  }
+
+  /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */
+  private bossWarning(): void {
+    const { W, H } = this;
+    const edge = this.add.graphics().setDepth(5300);
+    for (let i = 0; i < 6; i++) {
+      const a = 0.5 - i * 0.08;
+      const w = 30 + i * 22;
+      edge.lineStyle(w, 0xff2a2a, a).strokeRect(w / 2, w / 2, W - w, H - w);
+    }
+    edge.setAlpha(0);
+    this.tweens.add({ targets: edge, alpha: 1, duration: 300, yoyo: true, repeat: 4, onComplete: () => edge.destroy() });
+    const band = this.add.rectangle(W / 2, H * 0.36, W, 220, 0x1a0808, 0.75).setDepth(5310);
+    const warn = text(this, W / 2, H * 0.36 - 30, "WARNING!", 110, "#ff4a4a").setDepth(5320);
+    const sub = text(this, W / 2, H * 0.36 + 60, "Something is coming for the crystal...", 38, "#ffe0e0").setDepth(5320);
+    this.tweens.add({ targets: warn, alpha: 0.3, duration: 250, yoyo: true, repeat: 5 });
+    this.time.delayedCall(2600, () => this.tweens.add({ targets: [band, warn, sub], alpha: 0, duration: 400, onComplete: () => [band, warn, sub].forEach((o) => o.destroy()) }));
+    [0, 700, 1400].forEach((t) => this.time.delayedCall(t, () => sfx.alarm()));
+  }
+
+  /** The boss lands: a big title card with its name. */
+  private bossIntro(info: { name: string; tex: string }): void {
+    const { W, H } = this;
+    const cy = H * 0.4;
+    const band = this.add.graphics().setDepth(5300);
+    band.fillStyle(0x1a0808, 0.85).fillRect(0, cy - 190, W, 380);
+    band.fillStyle(0xff4a4a, 1).fillRect(0, cy - 190, W, 10).fillRect(0, cy + 180, W, 10);
+    const rays = this.add.image(W - 250, cy, "rays").setTint(0xff6a3a).setAlpha(0.5).setScale(1.3).setDepth(5301);
+    const portrait = this.add.image(W + 300, cy + 120, info.tex).setOrigin(0.5, 0.94).setScale(1.9).setDepth(5302);
+    const title = text(this, -400, cy - 80, "BOSS FIGHT!", 96, "#ff5a5a").setOrigin(0, 0.5).setDepth(5303);
+    const name = text(this, -400, cy + 40, info.name.toUpperCase(), 64, "#ffe066").setOrigin(0, 0.5).setDepth(5303);
+    const hint = text(this, 60, cy + 120, "Only you and your pets. Watch for the red marks!", 30, "#ffe0e0").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
+    this.tweens.add({ targets: rays, angle: 180, duration: 3000 });
+    this.tweens.add({ targets: portrait, x: W - 250, duration: 450, ease: "Back.out" });
+    this.tweens.add({ targets: title, x: 60, duration: 400, ease: "Back.out", delay: 100 });
+    this.tweens.add({ targets: name, x: 60, duration: 400, ease: "Back.out", delay: 250 });
+    this.tweens.add({ targets: hint, alpha: 1, duration: 300, delay: 600 });
+    this.cameras.main.flash(250, 255, 120, 80);
+    sfx.fanfare();
+    buzz(300);
+    const all = [band, rays, portrait, title, name, hint];
+    this.time.delayedCall(2200, () => this.tweens.add({ targets: all, alpha: 0, duration: 350, onComplete: () => all.forEach((o) => o.destroy()) }));
   }
 
   private updateGoals(): void {

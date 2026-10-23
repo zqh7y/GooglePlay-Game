@@ -85,7 +85,7 @@ const gunAt = (() => {
 })();
 /** Skills (about +35% a minute) and better guns from airdrops, at a point of the run. */
 const skillMult = (minute: number) => (1 + 0.35 * minute) * (0.7 + 0.3 * gunAt[Math.min(MINUTES, minute)]);
-const group = (minute: number, s: number) => 1 + Math.floor(minute / 3) + (s > 40 ? 1 : 0);
+const group = (_minute: number, s: number) => 1 + (s > 40 ? 1 : 0);
 const avgBase = (WALKER_A.hp + WALKER_B.hp + FLYER.hp) / 3;
 
 /** One 5 minute run: how far you get, the money it pays and the dice you find. */

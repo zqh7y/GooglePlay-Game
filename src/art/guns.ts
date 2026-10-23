@@ -54,12 +54,12 @@ const C = (x: number, y: number, r: number): Path => () => {
 };
 
 /** An outlined part with a top-lit gradient and a shine stripe. */
-function part(path: Path, color: number, y0: number, y1: number, shine = 0.3): void {
+function part(path: Path, color: number, y0: number, y1: number, shine = 0.3, lw = LW): void {
   ctx.beginPath();
   path();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.lineWidth = LW * 2;
+  ctx.lineWidth = lw * 2;
   ctx.strokeStyle = OL;
   ctx.stroke();
   const g = ctx.createLinearGradient(0, y0, 0, y1);
@@ -569,18 +569,25 @@ export function drawGun(c: Ctx, gun: GunDef): void {
 /** Make every gun texture plus the bullets. */
 export function makeGunTextures(scene: Phaser.Scene): void {
   for (const g of GUNS) canvasTexture(scene, gunKey(g.id), g.w, g.h, (c) => drawGun(c, g));
-  canvasTexture(scene, "bullet", 46, 16, (c) => {
-    const g = c.createLinearGradient(0, 0, 46, 0);
-    g.addColorStop(0, "rgba(255,255,255,0)");
-    g.addColorStop(0.6, "rgba(255,255,255,0.7)");
-    g.addColorStop(1, "#ffffff");
-    c.fillStyle = g;
+  // a real-looking bullet: brass casing, copper tip, a short puff of a trail
+  canvasTexture(scene, "bullet", 44, 18, (c) => {
+    ctx = c;
+    const trail = c.createLinearGradient(0, 0, 18, 0);
+    trail.addColorStop(0, "rgba(255,240,200,0)");
+    trail.addColorStop(1, "rgba(255,240,200,0.55)");
+    c.fillStyle = trail;
     c.beginPath();
-    c.ellipse(26, 8, 20, 5, 0, 0, Math.PI * 2);
+    c.ellipse(12, 9, 12, 3, 0, 0, Math.PI * 2);
     c.fill();
-    c.fillStyle = "#ffffff";
+    part(R(16, 4, 16, 10, 2), 0xd8a03a, 4, 14, 0.4, 1.6);
+    part(P([[30, 4], [36, 5], [42, 9], [36, 13], [30, 14]], 3), 0xc86a3a, 4, 14, 0.45, 1.6);
+  });
+  // the Plasma Rifle fires glowing balls
+  canvasTexture(scene, "plasma", 40, 40, (c) => {
+    glow(20, 20, 20, "rgba(70,240,255,0.8)");
+    c.fillStyle = "#e8ffff";
     c.beginPath();
-    c.ellipse(38, 8, 7, 4, 0, 0, Math.PI * 2);
+    c.arc(20, 20, 8, 0, Math.PI * 2);
     c.fill();
   });
   canvasTexture(scene, "grenade", 34, 26, (c) => {

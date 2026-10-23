@@ -5,24 +5,33 @@ import { INK, Ctx, canvasTexture, circle, darken, ellipse, fill, fillOutline, li
 
 /** Bones and meat (XP), dice of every tier, airdrops, map power-ups and skill icons. */
 
+/** A little bone (small XP). Thick outline so it reads on any ground. */
 function bone(ctx: Ctx): void {
   ctx.save();
-  ctx.translate(22, 14);
-  ctx.rotate(-0.35);
-  ctx.beginPath();
-  rr(ctx, -12, -3.5, 24, 7, 3);
-  for (const [x, y] of [[-13, -4], [-13, 4], [13, -4], [13, 4]]) {
-    ctx.moveTo(x + 5, y);
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-  }
-  ctx.lineWidth = 5;
+  ctx.translate(32, 22);
+  ctx.rotate(-0.3);
+  const path = () => {
+    ctx.beginPath();
+    rr(ctx, -16, -5, 32, 10, 4);
+    for (const [x, y] of [[-17, -6], [-17, 6], [17, -6], [17, 6]]) {
+      ctx.moveTo(x + 7.5, y);
+      ctx.arc(x, y, 7.5, 0, Math.PI * 2);
+    }
+  };
+  path();
+  ctx.lineWidth = 9;
   ctx.strokeStyle = INK;
   ctx.stroke();
-  ctx.fillStyle = "#fff6e2";
+  ctx.fillStyle = "#e8d8b8";
+  ctx.fill();
+  ctx.translate(-1.5, -2);
+  path();
+  ctx.fillStyle = "#fffaf0";
   ctx.fill();
   ctx.restore();
 }
 
+/** A drumstick (more XP), or a big ham from elites. */
 function meat(big: boolean) {
   return (ctx: Ctx) => {
     const s = big ? 1.35 : 1;
@@ -30,22 +39,22 @@ function meat(big: boolean) {
     ctx.scale(s, s);
     // bone handle
     ctx.beginPath();
-    rr(ctx, 4, 16, 14, 6, 3);
-    ctx.moveTo(8, 15);
-    ctx.arc(5, 15, 4, 0, Math.PI * 2);
-    ctx.moveTo(8, 23);
-    ctx.arc(5, 23, 4, 0, Math.PI * 2);
-    ctx.lineWidth = 4;
+    rr(ctx, 6, 22, 20, 9, 4);
+    ctx.moveTo(12, 21);
+    ctx.arc(7, 21, 6, 0, Math.PI * 2);
+    ctx.moveTo(12, 32);
+    ctx.arc(7, 32, 6, 0, Math.PI * 2);
+    ctx.lineWidth = 7;
     ctx.strokeStyle = INK;
     ctx.stroke();
     ctx.fillStyle = "#fff6e2";
     ctx.fill();
     // the meat
     ctx.beginPath();
-    ctx.ellipse(27, 18, 13, 11, -0.2, 0, Math.PI * 2);
-    fillOutline(ctx, linear(ctx, 0, 7, 0, 30, [[0, "#ff9a7a"], [1, "#b8442e"]]), 4);
-    ellipse(ctx, 24, 13, 5, 3, -0.4);
-    fill(ctx, "rgba(255,255,255,0.55)");
+    ctx.ellipse(39, 26, 18, 15, -0.2, 0, Math.PI * 2);
+    fillOutline(ctx, linear(ctx, 0, 11, 0, 41, [[0, "#ffa07a"], [1, "#b8442e"]]), 5);
+    ellipse(ctx, 35, 19, 7, 4, -0.4);
+    fill(ctx, "rgba(255,255,255,0.6)");
     ctx.restore();
   };
 }
@@ -156,6 +165,81 @@ function skillOrb(ctx: Ctx): void {
   fillOutline(ctx, radial(ctx, 45, 42, 40, [[0, "#fff6c8"], [0.6, "#ffcf3a"], [1, "#ff9a2a"]]), 5);
   starPath(ctx, 55, 57, 20);
   fillOutline(ctx, "#ffffff", 4);
+}
+
+/** The claw that comes out of the storm and carries the crystal away. */
+function claw(shut: boolean) {
+  return (ctx: Ctx) => {
+    const cx = 120;
+    // the arm, hanging from the sky
+    ctx.beginPath();
+    ctx.moveTo(cx - 34, 0);
+    ctx.lineTo(cx + 34, 0);
+    ctx.lineTo(cx + 40, 330);
+    ctx.lineTo(cx - 40, 330);
+    ctx.closePath();
+    fillOutline(ctx, linear(ctx, cx - 40, 0, cx + 40, 0, [[0, "#3a2a4a"], [0.45, "#6a4f86"], [1, "#2a1e36"]]), 6);
+    for (let y = 40; y < 330; y += 48) {
+      rr(ctx, cx - 44, y, 88, 16, 6);
+      fillOutline(ctx, "#8a6aa8", 4);
+    }
+    // the hand
+    ctx.beginPath();
+    ctx.ellipse(cx, 360, 62, 46, 0, 0, Math.PI * 2);
+    fillOutline(ctx, radial(ctx, cx - 18, 344, 70, [[0, "#8a6aa8"], [1, "#3a2a4a"]]), 6);
+    // three big claws
+    for (const k of [-1, 0, 1]) {
+      const spread = shut ? 0.25 : 0.75;
+      const a = Math.PI / 2 + k * spread;
+      const bx = cx + k * 40;
+      const by = 390;
+      const tipX = bx + Math.cos(a) * 90 - (shut ? k * 30 : 0);
+      const tipY = by + Math.sin(a) * 110;
+      ctx.beginPath();
+      ctx.moveTo(bx - 14, by - 6);
+      ctx.quadraticCurveTo(bx + Math.cos(a) * 40 - 18, by + 60, tipX, tipY);
+      ctx.quadraticCurveTo(bx + Math.cos(a) * 40 + 18, by + 50, bx + 14, by - 6);
+      ctx.closePath();
+      fillOutline(ctx, linear(ctx, 0, by, 0, tipY, [[0, "#e8e0f0"], [1, "#9a8aa8"]]), 5);
+    }
+    // glowing eyes on the back of the hand: it is alive
+    for (const x of [cx - 22, cx + 22]) {
+      ellipse(ctx, x, 352, 9, 6);
+      fill(ctx, "#ff3a5a");
+      ellipse(ctx, x - 2, 350, 3, 2);
+      fill(ctx, "#ffd0d8");
+    }
+  };
+}
+
+/** A dark storm cloud. */
+function storm(ctx: Ctx): void {
+  const puffs: [number, number, number][] = [[90, 150, 80], [190, 110, 100], [310, 100, 110], [420, 130, 90], [500, 160, 60], [260, 170, 90], [140, 180, 60], [380, 180, 70]];
+  for (const [x, y, r] of puffs) {
+    circle(ctx, x, y, r + 5);
+    fill(ctx, INK);
+  }
+  for (const [x, y, r] of puffs) {
+    circle(ctx, x, y, r);
+    fill(ctx, radial(ctx, x - r * 0.3, y - r * 0.4, r * 1.3, [[0, "#7a6a8a"], [1, "#2e2638"]]));
+  }
+}
+
+/** A crystal shard (tinted per land) for the Crystal Shards skill. */
+function shard(ctx: Ctx): void {
+  ctx.beginPath();
+  ctx.moveTo(18, 2);
+  ctx.lineTo(32, 26);
+  ctx.lineTo(18, 58);
+  ctx.lineTo(4, 26);
+  ctx.closePath();
+  fillOutline(ctx, linear(ctx, 0, 2, 0, 58, [[0, "#ffffff"], [1, "#c8c8d8"]]), 4);
+  ctx.beginPath();
+  ctx.moveTo(18, 8);
+  ctx.lineTo(24, 26);
+  ctx.lineTo(18, 30);
+  ctx.closePath();
+  fill(ctx, "rgba(255,255,255,0.9)");
 }
 
 /** Military supply crate. */
@@ -351,28 +435,20 @@ const GLYPHS: Record<string, (ctx: Ctx) => void> = {
     rr(ctx, 86, 54, 12, 36, 4);
     fillOutline(ctx, "#7ad651", 4);
   },
-  link: (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(18, 40);
-    ctx.lineTo(34, 40);
-    ctx.lineTo(42, 62);
-    ctx.lineTo(26, 92);
-    ctx.lineTo(10, 62);
-    ctx.closePath();
-    fillOutline(ctx, "#c8a8ff", 4);
-    rr(ctx, 80, 50, 30, 42, 6);
-    fillOutline(ctx, "#ff9a3c", 4);
-    ctx.lineCap = "round";
-    for (const [w, c] of [[12, "rgba(185,138,255,0.5)"], [5, "#ffffff"]] as [number, string][]) {
+  shards: (ctx) => {
+    for (const [x, y, r, sc] of [[40, 64, -0.5, 1], [76, 50, 0.4, 1.15], [62, 92, 0.1, 0.8]] as [number, number, number, number][]) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(r);
+      ctx.scale(sc, sc);
       ctx.beginPath();
-      ctx.moveTo(40, 62);
-      ctx.lineTo(52, 52);
-      ctx.lineTo(60, 70);
-      ctx.lineTo(70, 56);
-      ctx.lineTo(80, 68);
-      ctx.lineWidth = w;
-      ctx.strokeStyle = c;
-      ctx.stroke();
+      ctx.moveTo(0, -30);
+      ctx.lineTo(14, -4);
+      ctx.lineTo(0, 30);
+      ctx.lineTo(-14, -4);
+      ctx.closePath();
+      fillOutline(ctx, linear(ctx, 0, -30, 0, 30, [[0, "#f2e6ff"], [1, "#9a6aff"]]), 5);
+      ctx.restore();
     }
   },
   fort: (ctx) => {
@@ -398,9 +474,13 @@ const GLYPHS: Record<string, (ctx: Ctx) => void> = {
 };
 
 export function makePickupTextures(scene: Phaser.Scene): void {
-  canvasTexture(scene, "xp_bone", 44, 30, bone);
-  canvasTexture(scene, "xp_meat", 44, 36, meat(false));
-  canvasTexture(scene, "xp_ham", 60, 48, meat(true));
+  canvasTexture(scene, "xp_bone", 64, 44, bone);
+  canvasTexture(scene, "xp_meat", 62, 50, meat(false));
+  canvasTexture(scene, "xp_ham", 84, 66, meat(true));
+  canvasTexture(scene, "sky_claw", 240, 520, claw(false));
+  canvasTexture(scene, "sky_claw_shut", 240, 520, claw(true));
+  canvasTexture(scene, "storm", 590, 270, storm);
+  canvasTexture(scene, "shard", 36, 60, shard);
   for (const t of DICE_TIERS) canvasTexture(scene, `die_${t}`, 80, 80, tierDie(t));
   canvasTexture(scene, "pk_heart", 80, 80, heart);
   canvasTexture(scene, "pk_magnet", 80, 80, magnet);

@@ -85,10 +85,10 @@ function kindFor(accs: string[], pattern: string): PetKind {
 const FX: Record<PetKind, number> = { shot: 0xfff2a0, pierce: 0x9ff3ff, splash: 0xffa23a, zap: 0xffe14d, buff: 0xffd86b };
 
 const DESCRIPTION: Record<PetKind, string> = {
-  shot: "Shoots the closest enemy.",
-  pierce: "Fires a beam through every enemy in a line.",
-  splash: "Blasts an area with explosions.",
-  zap: "Strikes random enemies with lightning.",
+  shot: "Runs after monsters and pelts them with orbs.",
+  pierce: "Throws spinning stars that fly through several monsters.",
+  splash: "Lobs bombs that blow up a whole group.",
+  zap: "Pounces on monsters and bites hard.",
   buff: "Cheers the team on: boosts all damage.",
 };
 

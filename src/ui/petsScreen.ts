@@ -9,7 +9,7 @@ import { fmt } from "./format";
 import { Host, Screen } from "./screens";
 import { Button, Modal, button, drawBar, label, lockedCard, modal, petCard, text } from "./widgets";
 
-const KIND_LABEL = { shot: "Shooter", pierce: "Beam", splash: "Explosion", zap: "Lightning", buff: "Support" };
+const KIND_LABEL = { shot: "Shooter", pierce: "Star thrower", splash: "Bomber", zap: "Pouncer", buff: "Support" };
 
 /** Rough strength of a pet at its level, used by "Equip Best". */
 export function petScore(id: string): number {

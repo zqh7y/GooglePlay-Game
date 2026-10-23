@@ -40,11 +40,17 @@ player needs per stage.
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
 - **The Battle tab is a lobby**: the fight only starts when you press **BATTLE**. During a fight the tab bar
   and shops are gone; you only get **Pause** (resume, sound, music, give up) and **Stats**.
-- **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself and pets help.
-  The camera is zoomed out (1.66x) so you see more of the field. Survive **5:00** while monsters come faster
-  and tougher every minute (a ring of them closes in at each minute mark), then **kill the boss** (it
-  charges, watch the red line). If you fall or the crystal breaks, the run is over: revive once for gems,
-  try again, or go back to the lobby.
+- **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself. The camera is
+  zoomed out (1.66x) so you see more of the field. Survive **5:00** against hordes of monsters that come
+  faster and tougher every minute (a ring of them closes in at each minute mark). If you fall or the crystal
+  breaks, the run is over: revive once for gems, try again, or go back to the lobby.
+- **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and a claw carries the
+  crystal into the sky. The boss drops down next to you with a title card and its own music. It is just you
+  and your pets against it (health of 100 normal monsters). It charges (red marks on the ground), stomps
+  (a red circle) and throws rocks. Beat it and the crystal floats back down.
+- **Pets** run around the field after monsters near you: shooters throw orbs, bombers lob bombs,
+  pouncers leap and bite, star throwers throw spinning stars; support pets stay by your side. Each pet's
+  odds ("1 in N") float above its head. No lasers anywhere.
 - **The crystal shield**: the crystal is open for 45 s, then shielded for 45 s, and so on. While it is open,
   monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
   shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
@@ -54,13 +60,14 @@ player needs per stage.
   Better guns are equipped right away, worse ones are scrapped for money. 14 guns: Glock, Revolver, Uzi, MP5,
   Pump Shotgun, Desert Eagle, AK-47, M4A1, AWP Sniper, AA-12, Minigun, Grenade Launcher, Dragon Minigun and
   Plasma Rifle, each with its own damage, fire rate, magazine, reload, spread, range, pierce or blast.
-- **Skills**: monsters drop tiny bones and meat (XP). Every level up freezes the fight and offers 3 of 14
-  skills, each up to level 5, reset every stage: Big Mag, Quick Reload, Hollow Points, Hair Trigger, Long
-  Barrel, Boom Rounds, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick Cardboard,
-  Crystal Link (a beam from the crystal to you that burns monsters), Box Fort (stand still to dig in) and
-  Pack Leader (pets).
+- **Skills**: monsters drop small bones and meat (XP). Every level up freezes the fight and offers 3
+  skills. You carry at most **4 different skills** per stage, each up to level 5, and a good run levels high
+  enough (about 22) to max all four. They reset every stage: Big Mag, Quick Reload, Hollow Points, Hair
+  Trigger, Long Barrel, Boom Rounds, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick
+  Cardboard, Crystal Shards (the crystal shoots shards at monsters around it), Box Fort (stand still to dig
+  in) and Pack Leader (pets).
 - **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and airdrops.
-- **Pets** walk next to you with a stepping animation (floating pets bob).
+- **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.

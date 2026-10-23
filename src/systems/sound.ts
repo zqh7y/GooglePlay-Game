@@ -151,10 +151,13 @@ export const sfx = {
     tone(1400 + Math.random() * 400, 0.04, "triangle", 0.025);
   },
   dice: () => [880, 1175, 1568].forEach((f, i) => tone(f, 0.1, "square", 0.04, 0, i * 0.05)),
-  zap: () => {
-    if (throttle("zap", 120)) return;
-    burst(0.12, 0.06, 5000);
-    tone(1800, 0.1, "sawtooth", 0.025, 400);
+  thunder: () => {
+    burst(0.9, 0.2, 500);
+    tone(70, 0.8, "sine", 0.12, 40);
+  },
+  claw: () => {
+    tone(1400, 0.35, "sawtooth", 0.04, 300);
+    tone(1500, 0.35, "square", 0.025, 340, 0.04);
   },
 };
 
@@ -199,13 +202,14 @@ const SONGS: Record<Track, Song> = {
     ],
   },
   boss: {
-    bpm: 150, chords: [[45, 57, 60, 64], [45, 57, 60, 64], [41, 57, 60, 65], [40, 56, 59, 64]], kick: [0, 4, 8, 10, 12], snare: [4, 12],
-    hat: 0.022, bass: [0, 1, 2, 4, 6, 7, 8, 10, 12, 14], bassType: "sawtooth", arp: 1, arpType: "square",
+    // D minor, pounding drums and a stabbing riff: only you and the boss now
+    bpm: 164, chords: [[38, 50, 53, 57], [34, 50, 53, 58], [36, 48, 52, 55], [33, 49, 52, 57]], kick: [0, 3, 4, 8, 11, 12], snare: [4, 12],
+    hat: 0.026, bass: [0, 1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 14], bassType: "sawtooth", arp: 1, arpType: "square",
     lead: [
-      69, 0, 69, 72, 69, 0, 76, 74,
-      69, 0, 69, 72, 69, 0, 77, 76,
-      72, 0, 72, 74, 72, 0, 69, 72,
-      68, 0, 71, 0, 76, 0, 80, 0,
+      74, 0, 74, 77, 74, 72, 70, 0,
+      70, 0, 70, 74, 70, 69, 67, 0,
+      72, 0, 72, 76, 79, 76, 72, 0,
+      73, 0, 76, 0, 81, 0, 79, 76,
     ],
   },
 };

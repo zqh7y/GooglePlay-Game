@@ -3,7 +3,7 @@
  * stage ends, so every run builds up again from nothing.
  */
 export type SkillId =
-  | "mag" | "reload" | "damage" | "firerate" | "range" | "boom" | "speed" | "magnet" | "mend" | "luck" | "tough" | "link" | "fort" | "pack";
+  | "mag" | "reload" | "damage" | "firerate" | "range" | "boom" | "speed" | "magnet" | "mend" | "luck" | "tough" | "shards" | "fort" | "pack";
 
 export interface SkillDef {
   id: SkillId;
@@ -16,6 +16,8 @@ export interface SkillDef {
 }
 
 export const MAX_SKILL = 5;
+/** You can carry at most this many different skills in one stage. */
+export const SKILL_SLOTS = 4;
 
 export const SKILLS: SkillDef[] = [
   { id: "mag", name: "Big Mag", icon: "sk_mag", color: 0xffc93a, text: () => "+40% bullets per magazine" },
@@ -29,16 +31,20 @@ export const SKILLS: SkillDef[] = [
   { id: "mend", name: "Crystal Mend", icon: "sk_mend", color: 0x67c3ff, text: () => "Crystal heals 35% and slowly regrows" },
   { id: "luck", name: "Lucky Drops", icon: "sk_luck", color: 0x3fd08a, text: () => "Better guns in airdrops, and more often" },
   { id: "tough", name: "Thick Cardboard", icon: "pk_heart", color: 0xff6a8a, text: () => "+25% max health, heal 30%" },
-  { id: "link", name: "Crystal Link", icon: "sk_link", color: 0xb98aff, text: (l) => (l === 0 ? "A beam from the crystal to you burns monsters" : "Hotter, wider beam") },
+  { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xb98aff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
   { id: "fort", name: "Box Fort", icon: "sk_fort", color: 0xc8935a, text: () => "Stand still: take 12% less damage, shoot 10% faster" },
   { id: "pack", name: "Pack Leader", icon: "icon_paw", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
 ];
 
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<SkillId, SkillDef>;
 
-/** Three different skills to offer (only ones not maxed yet). */
+/** Three different skills to offer: ones not maxed yet, and new ones only while a slot is free. */
 export function skillChoices(levels: Partial<Record<SkillId, number>>, n = 3): SkillId[] {
-  const open = SKILLS.filter((s) => (levels[s.id] ?? 0) < MAX_SKILL).map((s) => s.id);
+  const owned = Object.keys(levels).length;
+  const open = SKILLS.filter((s) => {
+    const lv = levels[s.id] ?? 0;
+    return lv < MAX_SKILL && (lv > 0 || owned < SKILL_SLOTS);
+  }).map((s) => s.id);
   for (let i = open.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [open[i], open[j]] = [open[j], open[i]];

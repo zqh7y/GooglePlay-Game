@@ -19,7 +19,7 @@ export interface GunDef {
   spread: number;
   range: number;
   speed: number;
-  /** extra monsters a bullet passes through */
+  /** extra monsters a bullet passes through (on top of the one every bullet gets) */
   pierce: number;
   /** blast radius on hit (0 = none) */
   explode: number;
@@ -39,7 +39,7 @@ const G = (g: Omit<GunDef, "pellets" | "spread" | "pierce" | "explode" | "speed"
 });
 
 export const GUNS: GunDef[] = [
-  G({ id: "glock", name: "Glock", tier: "A", dmg: 1, fireMs: 380, mag: 15, reloadMs: 1100, range: 700, color: 0xfff3a0, w: 150, h: 100, grip: [48, 74], muzzle: [134, 34], hold: 0.5 }),
+  G({ id: "glock", name: "Glock", tier: "A", dmg: 1, fireMs: 300, mag: 17, reloadMs: 1000, range: 700, color: 0xfff3a0, w: 150, h: 100, grip: [48, 74], muzzle: [134, 34], hold: 0.5 }),
   G({ id: "revolver", name: "Revolver", tier: "A", dmg: 2.6, fireMs: 850, mag: 6, reloadMs: 1500, range: 780, pierce: 1, color: 0xffe08a, w: 190, h: 100, grip: [44, 72], muzzle: [180, 36], hold: 0.48 }),
   G({ id: "uzi", name: "Uzi", tier: "B", dmg: 0.65, fireMs: 110, mag: 32, reloadMs: 1400, spread: 0.12, range: 620, color: 0xfff3a0, w: 170, h: 120, grip: [70, 84], muzzle: [160, 40], hold: 0.55 }),
   G({ id: "mp5", name: "MP5", tier: "B", dmg: 0.9, fireMs: 140, mag: 30, reloadMs: 1500, spread: 0.06, range: 720, color: 0xfff3a0, w: 230, h: 110, grip: [104, 80], muzzle: [222, 40], hold: 0.55 }),

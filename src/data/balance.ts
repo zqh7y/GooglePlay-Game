@@ -33,13 +33,13 @@ export const HERO_BASE_DMG = 6;
 export const HERO_TEAM_SHARE = 0.2;
 export const HERO_HP = 100;
 
-export const CRYSTAL_HP = 400;
+export const CRYSTAL_HP = 800;
 /** The crystal is open for 45 s, then shielded for 45 s, and so on. */
 export const SHIELD_MS = 45000;
-/** Monsters appear this often (ms) at the start; every minute they come faster. */
-export const SPAWN_MS = 1250;
+/** Monsters appear this often (ms) at the start; every minute they come faster. Hordes! */
+export const SPAWN_MS = 312;
 export const SPAWN_SPEEDUP = 0.35;
-export const MAX_MONSTERS = 140;
+export const MAX_MONSTERS = 350;
 /** Share of monsters that walk in from far away towards the crystal while it is open. */
 export const CRYSTAL_SPAWN_SHARE = 0.4;
 /** First airdrop, and time between airdrops. */
@@ -55,11 +55,13 @@ export interface MonsterStats {
   xp: number;
 }
 
-export const WALKER_A: MonsterStats = { hp: 10, speed: 165, cash: 0.4, dmg: 6, xp: 1 };
-export const WALKER_B: MonsterStats = { hp: 18, speed: 135, cash: 0.6, dmg: 9, xp: 2 };
-export const FLYER: MonsterStats = { hp: 7, speed: 235, cash: 0.4, dmg: 5, xp: 1 };
-export const ELITE_MULT = 4;
-export const BOSS: MonsterStats = { hp: 700, speed: 120, cash: 60, dmg: 25, xp: 30 };
+export const WALKER_A: MonsterStats = { hp: 4, speed: 165, cash: 0.1, dmg: 4, xp: 1 };
+export const WALKER_B: MonsterStats = { hp: 7, speed: 135, cash: 0.15, dmg: 6, xp: 2 };
+export const FLYER: MonsterStats = { hp: 3, speed: 235, cash: 0.1, dmg: 3, xp: 1 };
+export const ELITE_MULT = 8;
+/** The boss has as much health as a hundred normal monsters (at the end of the stage). */
+export const BOSS_HP_MULT = 100;
+export const BOSS: MonsterStats = { hp: ((WALKER_A.hp + WALKER_B.hp) / 2) * BOSS_HP_MULT, speed: 120, cash: 60, dmg: 22, xp: 0 };
 
 export const minuteMult = (minute: number) => 1 + MINUTE_HP_STEP * minute;
 export const monsterHp = (base: number, stage: number, minute: number) => base * HP_TABLE[Math.max(0, stage - 1)] * minuteMult(minute);
@@ -67,5 +69,5 @@ export const monsterCash = (base: number, stage: number) => base * CASH_GROWTH *
 /** Time between spawns at this point of the stage. */
 export const spawnGap = (minute: number) => SPAWN_MS / (1 + SPAWN_SPEEDUP * minute);
 
-/** XP needed to go from `level` to the next one. */
-export const xpFor = (level: number) => 6 + level * 5;
+/** XP needed to go from `level` to the next one (a good run reaches ~22: four skills at level 5). */
+export const xpFor = (level: number) => 10 + level * 6;

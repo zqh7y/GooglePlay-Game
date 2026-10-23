@@ -239,8 +239,11 @@ export function petCard(scene: Phaser.Scene, x: number, y: number, id: string, o
       c.add(plus);
       scene.tweens.add({ targets: plus, scale: 1.18, duration: 380, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     }
-  } else if (!opts.noOdds) {
-    c.add(text(scene, 0, CARD_H / 2 - 66, oneIn(def.oneIn), 22, "#fff3dc"));
+  }
+  // the chance of rolling this pet, at the top of the card
+  if (!opts.noOdds) {
+    const x = opts.level && p ? 34 : 0;
+    c.add(fitText(text(scene, x, -CARD_H / 2 + 64, oneIn(def.oneIn), 22, "#fff3dc"), opts.level && p ? 120 : CARD_W - 40));
   }
   if (opts.equipped) c.add(scene.add.image(CARD_W / 2 - 32, CARD_H / 2 - 104, "icon_check").setScale(0.48));
   if (opts.isNew) {
