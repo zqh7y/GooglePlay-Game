@@ -28,8 +28,7 @@ hours (and failed runs) a steady player needs per stage.
 - **Rolling costs one die.** Dice are found in battle (on the map, in chests, on elites and from the boss)
   or bought with gems in the Shop. Dice come in tiers **A, B, C, D, E, S, SSS, uSSS**; which tiers drop
   depends on the stage (a D die is a dream at stage 10 and normal at stage 100; uSSS stays very rare), and a
-  rarer die multiplies the roll's luck. Reels spin at the bottom of the screen; rare pulls get a slower,
-  suspenseful reel. Every 10th roll is a Lucky Roll (x2 luck).
+  rarer die multiplies the roll's luck. Every 10th roll is a Lucky Roll (x2 luck).
 - **Luck raises your chances, it never guarantees a pet.** With luck x1B, a pet much rarer than 1 in 1B is
   1B times more likely than with no luck, but every roll is still a mix: each roll draws its own luck,
   anywhere from x1 up to a top luck (evenly on a log scale, averaging your luck), then checks the pets from
@@ -38,7 +37,7 @@ hours (and failed runs) a steady player needs per stage.
   button shows your chance per roll of each class.
 - **Roll x1, x3 or x10** with the buttons over ROLL. Every die is one roll: a x10 uses 10 dice and counts as
   10 rolls for the lucky ring, the SUPER ROLL and gift meters, quests and stats (so a x10 can hold the lucky
-  roll or the SUPER ROLL). Big batches land in a grid over the die.
+  roll or the SUPER ROLL).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
 - **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the honeycomb
@@ -56,9 +55,16 @@ hours (and failed runs) a steady player needs per stage.
     - **SUPER ROLL**: every 50th roll has x10 luck.
     - **Roll gift**: every 25 rolls a present pops out with dice and gems.
   - **Hot streak**: rolling again within a few seconds adds +2% luck per roll, up to +50%.
-  - Before a big pull the die **charges up** through each rarity colour with rising notes and shakes.
+  - **When you roll, the screen goes dark and only your rolls show**, as big as they fit (a x10 fills
+    the screen in a grid). They spin like reels (rare pulls get a slower, suspenseful reel) while a glow
+    behind them **charges up** through each rarity colour with rising notes and shakes, then land.
   - Rare pulls bring rays, flashes, confetti, a **NEW RECORD!** stamp when it is your rarest pet ever,
     and "LEVEL UP READY!" when a copy completes a level.
+  - **A good roll stays up for 3 seconds** (a new pet, a new record, or a pet 10x rarer than your die's
+    luck): "NEW PET!" / "NEW RECORD!" / "GREAT ROLL!" on top, the cards bob, the best one shines, and a bar
+    counts down (tap to skip). Other rolls fly straight into your collection.
+  - No upgrade cards here: the screen is all rolling. Luck, rolling speed and money upgrades are in the
+    Upgrades tab.
   - **Next to find** shows the three easiest pets you are missing, with your own chance per roll.
 - **Pet classes**: every pet has a class from **A** to **uSSS**, like dice and gadgets:
 
@@ -222,7 +228,7 @@ hours (and failed runs) a steady player needs per stage.
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
 | `src/scenes/Battle.ts` | A stage (lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose) and the Boss Rush |
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget panel), pause, stats, skill picker, defeat screen, rolling, popups |
-| `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, charge-up and reel reveal, next-to-find |
+| `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, x1/x3/x10, the full-screen reveal and its 3 s showcase, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |

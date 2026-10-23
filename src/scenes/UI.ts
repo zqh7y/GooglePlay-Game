@@ -1029,15 +1029,18 @@ export class UIScene extends Phaser.Scene implements Host {
     this.rollReadyAt = this.time.now + rollTime();
     questEvent("roll", dice.length);
     questEvent("rare", Math.max(...results.map((r) => rarityRank(r.item.rarity))));
-    if (results.some((r) => r.isNew)) this.time.delayedCall(2400, () => this.indexMilestone());
+    const anyNew = results.some((r) => r.isNew);
     this.autoEquip(results);
     this.rollScreen.addHistory(results);
     if (this.tab === "roll" && !this.mapOpen) {
-      this.rollScreen.reveal(results, { lucky, superRoll, record }, () => {
-        this.afterReveal(results, 3, record);
+      // a good roll stays up for a few seconds: a new pet, a record, or far beyond this die's luck
+      const good = record || anyNew || best.item.oneIn >= luck() * DICE_LUCK[dice[0]] * 10;
+      this.rollScreen.reveal(results, { lucky, superRoll, record, good }, () => {
+        if (anyNew) this.indexMilestone();
         gifts.forEach((g, i) => this.time.delayedCall(i * 2200, () => this.rollScreen.giftPop(g.tier, g.dice, g.gems)));
       });
     } else {
+      if (anyNew) this.time.delayedCall(2400, () => this.indexMilestone());
       this.miniReveal(results);
       this.afterReveal(results, 5, record);
       for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice, +${g.gems} gems!`, "#ffe066");

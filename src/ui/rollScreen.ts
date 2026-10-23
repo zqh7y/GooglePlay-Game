@@ -2,19 +2,16 @@ import Phaser from "phaser";
 import { INK_N, canvasTexture, linear } from "../art/draw";
 import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
-import { CARD_H, CARD_W, btnTexture, dieTexture, panelTexture, pillTexture } from "../art/ui";
+import { CARD_H, CARD_W, dieTexture, panelTexture, pillTexture } from "../art/ui";
 import { ItemDef, PET_LIST } from "../data/items";
 import { petChances } from "../data/luck";
 import { RARITY_INFO, RARITY_ORDER, rainbowColor, rarityRank } from "../data/rarity";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
-import { Branch, TREE, TreeNode, effectText } from "../data/tree";
 import { TOP_ROW, TOP_Y } from "../layout";
 import { RollResult } from "../systems/roll";
 import { ROLL_BATCHES, persist, save, totalDice } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
-import {
-  autoUnlocked, buyNode, cashMult, dieSkin, luck, luckParts, luckyEvery, luckyMult, nodeOwned, nodeUnlocked, potionActive, rollTime, speedActive,
-} from "../systems/stats";
+import { autoUnlocked, dieSkin, luck, luckParts, luckyEvery, luckyMult, potionActive, rollTime, speedActive } from "../systems/stats";
 import { fmt, luckText, oneIn } from "./format";
 import { classBadge, classText, setClassTint } from "./classText";
 import { Host, Screen } from "./screens";
@@ -32,6 +29,10 @@ const streakWindow = () => 7000 + rollTime();
 export const streakMult = (n: number) => 1 + Math.min(STREAK_MAX, Math.max(0, n - 1)) * STREAK_STEP;
 
 const DIE_SCALE = 1.8;
+/** The roll reveal covers the whole screen, top bar and tabs included. */
+const REVEAL_DEPTH = 4800;
+/** How long a good roll stays up before moving on. */
+const GOOD_HOLD_MS = 3000;
 const RING_R = 196;
 
 /** What made this roll special, for the reveal. */
@@ -40,14 +41,9 @@ export interface RollInfo {
   superRoll: boolean;
   /** rarest pet ever rolled */
   record: boolean;
+  /** a new pet, a record or a pull far beyond your luck: it stays up for a few seconds */
+  good: boolean;
 }
-
-/** Quick-buy cards: each buys the cheapest open hexagon of one tree branch. */
-const BRANCHES: { title: string; icon: string; branch: Branch; value: () => string }[] = [
-  { title: "Luck", icon: "icon_clover", branch: "luck", value: () => luckText(luck()) },
-  { title: "Rolling", icon: "icon_clock", branch: "roll", value: () => `${(rollTime() / 1000).toFixed(2)}s` },
-  { title: "Money", icon: "icon_cash", branch: "money", value: () => `x${fmt(cashMult())}` },
-];
 
 /** A cartoon flame for the hot streak badge. */
 function flameTexture(scene: Phaser.Scene): string {
@@ -93,7 +89,6 @@ export class RollScreen extends Screen {
   private die: Phaser.GameObjects.Image;
   private dieY: number;
   private dieRays: Phaser.GameObjects.Image;
-  private aura: Phaser.GameObjects.Image;
   private ring: Phaser.GameObjects.Graphics;
   private luckText: Phaser.GameObjects.Text;
   private chips: Phaser.GameObjects.Text;
@@ -113,13 +108,13 @@ export class RollScreen extends Screen {
   private streakAt = 0;
   private history: Phaser.GameObjects.Container;
   private recent: ItemDef[] = [];
-  private cards: { box: Phaser.GameObjects.Container; value: Phaser.GameObjects.Text; cost: Phaser.GameObjects.Text; node: Phaser.GameObjects.Text }[] = [];
   private burst: Phaser.GameObjects.Particles.ParticleEmitter;
   private readyAt = 0;
   private reelY: number;
   private tierChips: { tier: Tier; box: Phaser.GameObjects.Container; count: Phaser.GameObjects.Text; ring: Phaser.GameObjects.Arc }[] = [];
   private batchBtns: { n: number; btn: Button }[] = [];
   private batchY: number;
+  private btnY: number;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "roll");
@@ -130,7 +125,7 @@ export class RollScreen extends Screen {
     const r = this.root;
     makePickupTextures(s);
     // tall phones: spread things out instead of leaving a gap
-    const extra = Math.max(0, bottom - 1724);
+    const extra = Math.max(0, bottom - 1480);
 
     // drifting sparkles behind everything
     r.add(s.add.particles(0, 0, "spark", {
@@ -166,14 +161,13 @@ export class RollScreen extends Screen {
     this.dieY = dieY;
     this.dieRays = s.add.image(W / 2, dieY, "rays").setScale(0.9).setAlpha(0.25).setTint(0xffe066);
     s.tweens.add({ targets: this.dieRays, angle: 360, duration: 16000, repeat: -1 });
-    this.aura = s.add.image(W / 2, dieY, "glow").setScale(2.2).setAlpha(0);
     const ped = s.add.graphics();
     ped.fillStyle(0x2a1f4a, 0.6).fillEllipse(W / 2, dieY + 150, 300, 66);
     ped.fillStyle(0xffe066, 0.25).fillEllipse(W / 2, dieY + 145, 240, 48);
     this.ring = s.add.graphics();
     this.die = s.add.image(W / 2, dieY, dieTexture(s, dieSkin(), 5)).setScale(DIE_SCALE);
     s.tweens.add({ targets: this.die, y: dieY - 16, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    r.add([this.dieRays, this.aura, ped, this.ring, this.die]);
+    r.add([this.dieRays, ped, this.ring, this.die]);
 
     // hot streak badge
     this.streakText = text(s, 34, -14, "", 46, "#ffe066");
@@ -204,7 +198,8 @@ export class RollScreen extends Screen {
     });
 
     // buttons
-    const btnY = bottom - 446;
+    const btnY = bottom - 210;
+    this.btnY = btnY;
     this.batchY = btnY - 116;
     this.reelY = (chipY + 65 + this.batchY - 40) / 2;
     // the pets you have not found yet (hidden while the reels spin in the same spot)
@@ -239,40 +234,11 @@ export class RollScreen extends Screen {
     });
 
     // recent pulls
-    const histY = bottom - 316;
+    const histY = bottom - 72;
     r.add(s.add.image(W / 2, histY, panelTexture(s, "glass", 1000, 92)));
     r.add(text(s, 86, histY, "LAST", 28, "#e8e0ff"));
     this.history = s.add.container(0, histY);
     r.add(this.history);
-
-    // quick upgrade cards
-    const cardsY = bottom - 125;
-    BRANCHES.forEach((b, i) => {
-      const x = W / 2 + (i - 1) * 352;
-      const c = s.add.container(x, cardsY);
-      const bg = s.add.image(0, 0, btnTexture(s, "mint", 320, 196));
-      const value = text(s, 0, -26, "", 48);
-      const node = label(s, 0, 18, "", 22, "#2f6f5c");
-      const cost = text(s, 14, 58, "", 32, "#ffffff");
-      c.add([bg, text(s, 0, -122, b.title, 36), s.add.image(-128, -76, b.icon).setScale(0.62), value, node,
-        s.add.image(0, 60, pillTexture(s, "dark", 240, 58)), s.add.image(-88, 60, "icon_cash").setScale(0.5), cost]);
-      c.setSize(320, 196).setInteractive({ useHandCursor: true });
-      let hold: Phaser.Time.TimerEvent | null = null;
-      const stop = () => {
-        hold?.remove();
-        hold = null;
-        s.tweens.add({ targets: c, scale: 1, duration: 100 });
-      };
-      c.on("pointerdown", () => {
-        s.tweens.add({ targets: c, scale: 0.94, duration: 60 });
-        this.buyBranch(i);
-        hold = s.time.addEvent({ delay: 160, startAt: -280, loop: true, callback: () => this.buyBranch(i, true) });
-      });
-      c.on("pointerup", stop);
-      c.on("pointerout", stop);
-      r.add(c);
-      this.cards.push({ box: c, value, cost, node });
-    });
 
     this.burst = s.add.particles(0, 0, "spark", {
       speed: { min: 200, max: 620 }, lifespan: 800, scale: { start: 0.9, end: 0 }, rotate: { min: 0, max: 180 }, gravityY: 500, emitting: false,
@@ -300,27 +266,6 @@ export class RollScreen extends Screen {
       this.scene.tweens.add({ targets: b, scale: 1, duration: 220, ease: "Back.out" });
     }
     return streakMult(this.streak);
-  }
-
-  private branchNode(i: number): TreeNode | null {
-    return TREE.filter((n) => n.branch === BRANCHES[i].branch && !nodeOwned(n.id) && nodeUnlocked(n)).sort((a, b) => a.cost - b.cost)[0] ?? null;
-  }
-
-  private buyBranch(i: number, quiet = false): void {
-    const node = this.branchNode(i);
-    if (!node) return;
-    if (buyNode(node.id)) {
-      sfx.buy();
-      const card = this.cards[i].box;
-      this.burst.setParticleTint(0x8af06a);
-      this.burst.explode(14, card.x, card.y - 40);
-      this.scene.tweens.add({ targets: this.cards[i].value, scale: 1.3, duration: 100, yoyo: true });
-      this.host.toast(`${node.name}: ${effectText(node)}`, "#b6f59a");
-      this.host.afterPurchase();
-    } else if (!quiet) {
-      sfx.error();
-      this.host.toast("Not enough money!", "#ff9a9a");
-    }
   }
 
   // ───────────────────────── every frame ─────────────────────────
@@ -407,26 +352,13 @@ export class RollScreen extends Screen {
     this.rollBtn.setColor(none ? "grey" : busy ? "peach" : superNext ? "purple" : luckyNext ? "gold" : "orange");
     this.rollGlow.setVisible(!none && !busy).setTint(superNext ? rainbowColor(time) : luckyNext ? 0xffe066 : 0xffb03a);
     this.rollBar.clear();
-    if (left > 0) drawBar(this.rollBar, W / 2 - 150, this.host.L.navTop - 404, 300, 12, 1 - left / rollTime(), 0xffe066);
+    if (left > 0) drawBar(this.rollBar, W / 2 - 150, this.btnY + 42, 300, 12, 1 - left / rollTime(), 0xffe066);
     const unlocked = autoUnlocked();
     this.autoBtn.setColor(unlocked && save.autoRoll ? "green" : unlocked ? "mint" : "grey");
     this.autoBtn.setLabel(unlocked ? (save.autoRoll ? "AUTO ON" : "AUTO") : "LOCKED");
     this.fastBtn.setColor(this.host.isFast() ? "green" : "mint");
     for (const b of this.batchBtns) b.btn.setColor(b.n === save.rollBatch ? "gold" : "mint").setScale(b.n === save.rollBatch ? 1.08 : 1);
 
-    BRANCHES.forEach((b, i) => {
-      const card = this.cards[i];
-      const node = this.branchNode(i);
-      card.value.setText(b.value());
-      fitText(card.value, 280);
-      if (!node) {
-        card.node.setText("All bought!");
-        card.cost.setText("MAX");
-        return;
-      }
-      fitText(card.node.setText(`${node.name}: ${effectText(node)}`), 290);
-      fitText(card.cost.setText(fmt(node.cost)).setColor(save.cash >= node.cost ? "#ffffff" : "#ff9a9a"), 160);
-    });
   }
 
   /**
@@ -499,56 +431,69 @@ export class RollScreen extends Screen {
   }
 
   /** Big floating words ("SUPER ROLL!", "NEW RECORD!"). */
-  private shout(str: string, y: number, size: number, color: string, ms = 1100): void {
+  private shout(parent: Phaser.GameObjects.Container, str: string, y: number, size: number, color: string, ms = 1100): void {
     const s = this.scene;
     const t = text(s, s.scale.width / 2, y, str, size, color).setScale(0);
-    this.root.add(t);
+    parent.add(t);
     s.tweens.add({ targets: t, scale: 1, duration: 260, ease: "Back.out" });
     s.tweens.add({ targets: t, alpha: 0, y: y - 60, delay: ms, duration: 400, onComplete: () => t.destroy() });
   }
 
   /**
-   * The die tumbles while it charges up through the rarity colours (as far as the best pet
-   * rolled), the reels spin and slow down, and land on the rolled pets. Rare pulls get
-   * suspense, flashes, shakes and confetti.
+   * The roll takes over the screen: everything else goes dark and only the rolled pets show,
+   * as big as they fit. They spin like reels while a glow charges up through the rarity
+   * colours, then land. A good roll (a new pet, a record or a pull far beyond your luck) stays
+   * up for 3 s to enjoy (tap to skip); otherwise the pets fly straight into your collection.
    */
   reveal(results: RollResult[], info: RollInfo, done: () => void): void {
     const s = this.scene;
     const W = s.scale.width;
+    const H = s.scale.height;
     this.revealing = true;
-    this.chase.setVisible(false);
     const n = results.length;
-    // up to 3 cards in a row on the reel; bigger batches in a grid over the die
-    const grid = n > 3;
-    const cols = n <= 3 ? n : n <= 10 ? 5 : n <= 24 ? 6 : 10;
-    const rows = Math.ceil(n / cols);
+    const layer = s.add.container(0, 0).setDepth(REVEAL_DEPTH);
+    const shade = s.add.rectangle(W / 2, H / 2, W, H, 0x0a0614, 0.88).setAlpha(0).setInteractive();
+    layer.add(shade);
+    s.tweens.add({ targets: shade, alpha: 1, duration: 160 });
+
+    // as big as they fit, preferring wide rows
+    const areaTop = this.host.L.headerBottom + 170;
+    const areaBottom = H - 300;
     const pitchW = CARD_W + 16;
     const pitchH = CARD_H + 64;
-    const areaTop = this.meterY + 70;
-    const areaBottom = this.batchY - 60;
-    const scale = !grid ? (n <= 1 ? 1 : 0.86) : Math.min(0.84, 1000 / (cols * pitchW), (areaBottom - areaTop) / (rows * pitchH));
-    const midY = grid ? (areaTop + areaBottom) / 2 : this.reelY;
+    const fit = (c: number) => Math.min(1.5, 1000 / (c * pitchW), (areaBottom - areaTop) / (Math.ceil(n / c) * pitchH));
+    let most = 0;
+    for (let c = 1; c <= n; c++) most = Math.max(most, fit(c));
+    let cols = 1;
+    for (let c = n; c >= 1; c--) {
+      if (fit(c) >= most * 0.9) {
+        cols = c;
+        break;
+      }
+    }
+    const scale = fit(cols);
+    const rows = Math.ceil(n / cols);
+    const midY = (areaTop + areaBottom) / 2;
     const spot = (i: number): [number, number] => {
       const row = Math.floor(i / cols);
       const inRow = Math.min(cols, n - row * cols);
       const col = i - row * cols;
       return [W / 2 + (col - (inRow - 1) / 2) * pitchW * scale, midY + (row - (rows - 1) / 2) * pitchH * scale];
     };
-    const backdrop = grid ? s.add.image(W / 2, midY, panelTexture(s, "glass", 1040, Math.round(rows * pitchH * scale + 40))).setAlpha(0) : null;
-    if (backdrop) {
-      this.root.add(backdrop);
-      s.tweens.add({ targets: backdrop, alpha: 1, duration: 200 });
-    }
+
     const bestRank = Math.max(...results.map((r) => rarityRank(r.item.rarity)));
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const fast = this.host.isFast();
     const suspense = !fast && bestRank >= 3;
     const quick = Phaser.Math.Clamp(rollTime() / 2000, 0.12, 1) * (fast ? 0.5 : 1);
     const spin = Math.max(140, 1000 * quick) + (suspense ? 500 + bestRank * 90 : 0) + (info.superRoll && !fast ? 500 : 0);
-    const hold = Math.max(120, 700 * quick) + (suspense ? 300 : 0);
+    const hold = Math.max(150, 700 * quick) + (suspense ? 300 : 0) + bestRank * 60;
     const fly = Math.max(140, 360 * quick);
+    const burst = s.add.particles(0, 0, "spark", {
+      speed: { min: 200, max: 620 }, lifespan: 800, scale: { start: 0.9, end: 0 }, rotate: { min: 0, max: 180 }, gravityY: 500, emitting: false,
+    });
 
-    // tumble the die
+    // the die still tumbles behind the shade
     const tumble = Math.min(spin, 900);
     s.tweens.add({ targets: this.die, angle: this.die.angle + 720, duration: tumble, ease: "Cubic.out" });
     const faces = s.time.addEvent({ delay: 70, repeat: Math.floor(tumble / 70), callback: () => this.die.setTexture(dieTexture(s, dieSkin(), 1 + Math.floor(Math.random() * 6))) });
@@ -557,40 +502,45 @@ export class RollScreen extends Screen {
       this.die.setTexture(dieTexture(s, dieSkin(), 6));
     });
 
-    // charge up: the die glows through each rarity colour up to the best one rolled
-    const climb = !fast && bestRank >= 2;
-    this.aura.setTint(0xffffff).setAlpha(0.5).setScale(2);
-    if (climb) {
+    // charge up: a glow behind the cards climbs through each rarity colour up to the best one rolled
+    const aura = s.add.image(W / 2, midY, "glow").setTint(0xffffff).setAlpha(0.25).setScale(4);
+    const auraRays = s.add.image(W / 2, midY, "rays").setAlpha(0).setScale(1.6);
+    layer.add([auraRays, aura]);
+    s.tweens.add({ targets: auraRays, angle: 360, duration: 12000, repeat: -1 });
+    if (!fast && bestRank >= 2) {
       const stepMs = Math.min(spin * 0.85, 300 + bestRank * 170) / bestRank;
       for (let k = 1; k <= bestRank; k++) {
         s.time.delayedCall(k * stepMs, () => {
           const c = RARITY_INFO[RARITY_ORDER[k]].color;
-          this.aura.setTint(c).setAlpha(0.95).setScale(2 + k * 0.22);
-          this.dieRays.setTint(c).setAlpha(0.3 + k * 0.06);
+          aura.setTint(c).setAlpha(0.5 + k * 0.05).setScale(4 + k * 0.4);
+          auraRays.setTint(c).setAlpha(0.12 + k * 0.04);
           sfx.charge(k);
-          s.tweens.add({ targets: this.die, scale: DIE_SCALE * 1.14, duration: 70, yoyo: true });
           if (k >= 4) s.cameras.main.shake(90, 0.002 * (k - 3));
           if (k >= 4) buzz(15 + k * 4);
         });
       }
     }
 
+    const shoutY = areaTop - 90;
     if (info.superRoll) {
       sfx.superRoll();
       buzz(120);
-      this.shout(`SUPER ROLL!  x${SUPER_MULT} LUCK`, this.dieY - 250, 58, "#e6b8ff", 1300);
+      this.shout(layer, `SUPER ROLL!  x${SUPER_MULT} LUCK`, shoutY, 58, "#e6b8ff", 1300);
       s.cameras.main.flash(250, 200, 140, 255);
       s.cameras.main.shake(300, 0.006);
     } else if (info.lucky) {
       sfx.lucky();
-      this.shout(`LUCKY ROLL!  x${luckyMult()} LUCK`, this.dieY - 250, 50, "#ffe066");
+      this.shout(layer, `LUCKY ROLL!  x${luckyMult()} LUCK`, shoutY, 50, "#ffe066");
       s.cameras.main.flash(150, 255, 230, 120);
     }
-    let finished = 0;
+
+    const cards: Phaser.GameObjects.Container[] = [];
+    const extras: Phaser.GameObjects.GameObject[] = [];
+    let landed = 0;
     results.forEach((res, i) => {
       const [x, y] = spot(i);
-      // in a big batch only the best card makes the big noises and flashes
-      const loud = !grid || res === best;
+      // with many cards only the best one makes the big noises and flashes
+      const loud = n <= 3 || res === best;
       const rank = rarityRank(res.item.rarity);
       const color = RARITY_INFO[res.item.rarity].color;
       const glow = s.add.image(x, y, "glow").setAlpha(0.35).setScale(scale * 1.8);
@@ -602,7 +552,9 @@ export class RollScreen extends Screen {
       const badge = classBadge(s, -CARD_W / 2 + 6, -CARD_H / 2 + 6, "A", 46);
       const name = text(s, 0, CARD_H / 2 - 27, "", 25);
       const card = s.add.container(x, y + 200, [frame, rar, pet, odds, name, badge]).setScale(0);
-      this.root.add([rays, glow, card]);
+      layer.add([rays, glow, card]);
+      cards.push(card);
+      extras.push(glow, rays);
       const show = (def: ItemDef, real: boolean) => {
         frame.setTexture(`card_${def.rarity}`);
         fitText(rar.setText(RARITY_INFO[def.rarity].label.toUpperCase()), CARD_W - 84);
@@ -616,7 +568,8 @@ export class RollScreen extends Screen {
         else pet.setTexture("icon_dice").setScale(1.3).setAngle(Phaser.Math.Between(-20, 20));
         glow.setTint(RARITY_INFO[def.rarity].color);
       };
-      s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * (grid ? 30 : 60), ease: "Back.out" });
+      const stagger = n > 3 ? 30 : 60;
+      s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * stagger, ease: "Back.out" });
       let t = 0;
       let k = 0;
       const tick = () => {
@@ -642,23 +595,23 @@ export class RollScreen extends Screen {
         if (rank >= 3) {
           rays.setTint(color);
           s.tweens.add({ targets: rays, alpha: 0.85, scale: scale * (0.75 + rank * 0.05), duration: 250 });
-          s.tweens.add({ targets: rays, angle: 120, duration: hold + rank * 60 + 300 });
+          s.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
           if (loud) s.cameras.main.flash(180, (color >> 16) & 255, (color >> 8) & 255, color & 255);
           if (res === best) this.confetti([color, 0xffffff, 0xffe066, 0xff7ab8, 0x5ac8ff], 30 + rank * 12);
         }
         s.tweens.add({ targets: card, scaleX: scale * 1.22, scaleY: scale * 0.84, duration: 80, yoyo: true, ease: "Quad.out" });
         s.tweens.add({ targets: glow, scale: scale * (2.2 + rank * 0.25), alpha: 0.6, duration: 260 });
         if (rank >= 1) {
-          this.burst.setParticleTint(color);
-          this.burst.explode(8 + rank * 9, x, y);
+          burst.setParticleTint(color);
+          burst.explode(8 + rank * 9, x, y);
         }
         const crank = tierIndex(res.item.cls);
-        if (crank >= (grid ? 3 : 1)) {
+        if (crank >= (n > 3 ? 3 : 1)) {
           // the class shouts out in its own animated colours
-          const call = classText(s, x, y - (CARD_H * scale) / 2 - (grid ? 24 : 56), `${res.item.cls} CLASS!`, (36 + crank * 5) * (grid ? 0.7 : 1), res.item.cls).setScale(0);
-          this.root.add(call);
+          const call = classText(s, x, y - (CARD_H * scale) / 2 - 30, `${res.item.cls} CLASS!`, (36 + crank * 5) * Math.min(1, scale), res.item.cls).setScale(0);
+          layer.add(call);
           s.tweens.add({ targets: call, scale: 1, duration: 200, ease: "Back.out" });
-          s.tweens.add({ targets: call, alpha: 0, y: call.y - 30, delay: hold + 150, duration: 300, onComplete: () => call.destroy() });
+          s.tweens.add({ targets: call, alpha: 0, y: call.y - 30, delay: hold + 400, duration: 300, onComplete: () => call.destroy() });
         }
         if (rank >= 4 && loud) {
           s.cameras.main.shake(180 + rank * 30, 0.004 + rank * 0.001);
@@ -679,27 +632,71 @@ export class RollScreen extends Screen {
           const ready = pst.copies >= 2 + pst.level;
           card.add(text(s, 0, CARD_H / 2 + 26, ready ? "LEVEL UP READY!" : `+1 copy  (Lv.${pst.level})`, 26, ready ? "#8af06a" : "#b6f59a"));
         }
-        s.time.delayedCall(hold + rank * 60 + (info.record && res === best ? 400 : 0), () => {
-          s.tweens.add({ targets: [glow, rays], alpha: 0, duration: 200, onComplete: () => (glow.destroy(), rays.destroy()) });
-          const target = this.host.tabPos("pets");
-          s.tweens.add({
-            targets: card, x: target.x, y: target.y, scale: 0.06, angle: 200, duration: fly, ease: "Cubic.in",
-            onComplete: () => {
-              card.destroy();
-              if (++finished === n) {
-                this.revealing = false;
-                if (backdrop) s.tweens.add({ targets: backdrop, alpha: 0, duration: 200, onComplete: () => backdrop.destroy() });
-                this.chase.setVisible(true);
-                s.tweens.add({ targets: this.aura, alpha: 0, duration: 300 });
-                this.dieRays.setTint(0xffe066).setAlpha(0.25);
-                done();
-              }
-            },
-          });
+        if (++landed === n) allLanded();
+      };
+      s.time.delayedCall(i * stagger + 140 + (info.superRoll && !fast ? 300 : 0), tick);
+    });
+    layer.add(burst);
+
+    // everything is on the table: a good roll gets its moment, then the pets fly to your collection
+    const allLanded = () => {
+      const ms = info.good ? (fast ? GOOD_HOLD_MS / 2 : GOOD_HOLD_MS) : hold;
+      const stopShow = info.good ? this.showcase(layer, cards, results.indexOf(best), shoutY, areaBottom, ms, info, results.some((r) => r.isNew)) : null;
+      let over = false;
+      const finish = () => {
+        if (over) return;
+        over = true;
+        wait.remove();
+        const target = this.host.tabPos("pets");
+        s.tweens.add({ targets: [...extras, aura, auraRays], alpha: 0, duration: 200 });
+        cards.forEach((card, i) => {
+          s.tweens.killTweensOf(card);
+          s.tweens.add({ targets: card, x: target.x, y: target.y, scale: 0.06, angle: 200, duration: fly, delay: i * 15, ease: "Cubic.in" });
+        });
+        s.tweens.add({
+          targets: shade, alpha: 0, duration: 220, delay: fly * 0.6 + cards.length * 15,
+          onComplete: () => {
+            // stop the endless spins and bobs before their objects go
+            s.tweens.killTweensOf([...layer.list]);
+            stopShow?.();
+            layer.destroy();
+            this.revealing = false;
+            done();
+          },
         });
       };
-      s.time.delayedCall(i * (grid ? 30 : 60) + 140 + (info.superRoll && !fast ? 300 : 0), tick);
+      const wait = s.time.delayedCall(ms, finish);
+      if (info.good) shade.once("pointerup", finish);
+    };
+  }
+
+  /** A good roll: the cards bob, the best one shines, a title on top and a 3 s bar to the end. */
+  private showcase(
+    layer: Phaser.GameObjects.Container, cards: Phaser.GameObjects.Container[], bestIdx: number, y: number, bottom: number, ms: number,
+    info: RollInfo, isNew: boolean,
+  ): () => void {
+    const s = this.scene;
+    const W = s.scale.width;
+    sfx.fanfare();
+    const title = info.record ? "NEW RECORD!" : isNew ? "NEW PET!" : "GREAT ROLL!";
+    const head = text(s, W / 2, y, title, 76, info.record ? "#ffe066" : isNew ? "#ff8ab0" : "#b6f59a").setScale(0);
+    layer.add(head);
+    s.tweens.add({ targets: head, scale: 1, duration: 280, ease: "Back.out" });
+    s.tweens.add({ targets: head, scale: 1.08, duration: 420, delay: 300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    cards.forEach((card, i) => {
+      if (i === bestIdx) {
+        s.tweens.add({ targets: card, scale: card.scale * 1.12, duration: 300, ease: "Back.out" });
+        s.tweens.add({ targets: card, angle: { from: -3, to: 3 }, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      }
+      s.tweens.add({ targets: card, y: card.y - 14, duration: 520, delay: i * 70, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     });
+    // how long until it moves on
+    const bar = s.add.graphics();
+    const hint = text(s, W / 2, bottom + 150, "Tap to continue", 30, "#e8e0ff");
+    layer.add([bar, hint]);
+    const left = { v: 1 };
+    const countdown = s.tweens.add({ targets: left, v: 0, duration: ms, onUpdate: () => drawBar(bar.clear(), W / 2 - 200, bottom + 90, 400, 18, left.v, 0xffe066) });
+    return () => countdown.remove();
   }
 
   /** The roll gift: a present flies out of its meter, bursts open, and the dice and gems fly to the top bar. */
