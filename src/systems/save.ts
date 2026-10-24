@@ -74,7 +74,23 @@ export interface SaveData {
   afk: boolean;
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
+  fishing: FishingState;
 }
+
+export interface FishingState {
+  /** fishing upgrade levels */
+  lv: Record<string, number>;
+  shells: number;
+  /** when the next catch comes in */
+  nextAt: number;
+  catches: number;
+  /** catches since the last SUPER catch */
+  superCount: number;
+  /** prize id -> how many you caught */
+  caught: Record<string, number>;
+}
+
+export const freshFishing = (): FishingState => ({ lv: {}, shells: 0, nextAt: 0, catches: 0, superCount: 0, caught: {} });
 
 const STORAGE_KEY = "dice-idle-save-v3";
 /** Roll 1, 3 or 10 dice at once. */
@@ -124,6 +140,7 @@ function fresh(): SaveData {
     rollBatch: 1,
     afk: false,
     bossRushBest: 0,
+    fishing: freshFishing(),
   };
 }
 
@@ -146,6 +163,7 @@ function load(): SaveData {
       data.equipped = data.equipped.filter((id) => data.pets[id]);
       data.discovered = data.discovered.filter((id) => ITEMS[id]);
       data.newPets = data.newPets.filter((id) => data.pets[id]);
+      data.fishing = { ...freshFishing(), ...data.fishing };
       // the first Boss Rush kept its own place and had weaker bosses. Now its bosses are the stages:
       // move on to the first stage whose boss is tougher than the last one you beat back then
       if (data.bossRush && data.bossRush > 1) {

@@ -12,14 +12,16 @@ export const MINUTES = 5;
 
 /**
  * Monster health grows every stage: very steeply over the first stages (your first good
- * pets do not carry you far), steeply through the first lands, gentler in the middle and
- * steep again in the final land.
+ * pets do not carry you far), steeply through the first lands, gentler in the middle, a bit
+ * steeper once the Forge makes gadgets stronger and steep again in the final land.
  */
 export const START_HP_GROWTH = 2.0;
 export const EARLY_HP_GROWTH = 1.45;
-export const MID_HP_GROWTH = 1.27;
-export const LATE_HP_GROWTH = 1.42;
-const growthAt = (s: number) => (s < 10 ? START_HP_GROWTH : s < 25 ? EARLY_HP_GROWTH : s < 80 ? MID_HP_GROWTH : LATE_HP_GROWTH);
+export const MID_HP_GROWTH = 1.255;
+/** stages 50-80, once the Forge starts making gadgets stronger */
+export const FORGE_HP_GROWTH = 1.324;
+export const LATE_HP_GROWTH = 1.456;
+const growthAt = (s: number) => (s < 10 ? START_HP_GROWTH : s < 25 ? EARLY_HP_GROWTH : s < 50 ? MID_HP_GROWTH : s < 80 ? FORGE_HP_GROWTH : LATE_HP_GROWTH);
 const HP_TABLE: number[] = [1];
 for (let s = 1; s <= MAX_STAGE + 1; s++) HP_TABLE.push(HP_TABLE[s - 1] * growthAt(s));
 /** Money from monsters grows by this factor every stage. */

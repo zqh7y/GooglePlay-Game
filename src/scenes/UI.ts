@@ -21,6 +21,10 @@ import {
 } from "../systems/goals";
 import { RollResult, rollMany } from "../systems/roll";
 import { classChances, topLuck } from "../data/luck";
+import { makeFishIcon } from "../art/fishing";
+import { PRIZES, ROW_COLORS } from "../data/fishing";
+import { Catch, anyFishUpgrade, fishAway, fishTick } from "../systems/fishing";
+import { FishScreen, prizeGift, prizeIcon } from "../ui/fishScreen";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
@@ -64,6 +68,7 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "pets", icon: "icon_paw", label: "Pets" },
   { id: "battle", icon: "icon_sword", label: "Battle" },
   { id: "roll", icon: "icon_dice", label: "Roll" },
+  { id: "fish", icon: "icon_fish", label: "Fish" },
   { id: "upgrades", icon: "icon_tree", label: "Upgrades" },
 ];
 
@@ -147,6 +152,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private tree!: TreeScreen;
   private map!: MapScreen;
   private openModal: Modal | null = null;
+  /** what the fishing line caught while you were away, shown once the other welcome popups are gone */
+  private fishAwayResult: { catches: Catch[]; secs: number } | null = null;
 
   // rolling
   private rollReadyAt = 0;
@@ -169,10 +176,11 @@ export class UIScene extends Phaser.Scene implements Host {
     }
     this.buildHud();
     this.rollScreen = new RollScreen(this, this);
-    this.screens = { roll: this.rollScreen, pets: new PetsScreen(this, this), shop: new ShopScreen(this, this) };
+    this.screens = { roll: this.rollScreen, pets: new PetsScreen(this, this), shop: new ShopScreen(this, this), fish: new FishScreen(this, this) };
     this.tree = new TreeScreen(this, this.L, () => this.afterPurchase(), (s, c) => this.toast(s, c));
     this.map = new MapScreen(this, this, () => this.setTab("battle"));
     this.buildHeader();
+    makeFishIcon(this);
     this.buildNav();
     this.input.on("pointerdown", () => unlockAudio());
     const on: [string, (...a: never[]) => void][] = [
@@ -200,6 +208,8 @@ export class UIScene extends Phaser.Scene implements Host {
     let i = 0;
     this.time.addEvent({ delay: 40, repeat: PET_LIST.length - 1, callback: () => petTexture(this, PET_LIST[i++].id) });
     this.setTab("battle", true);
+    const away = fishAway();
+    if (away.catches.length) this.fishAwayResult = away;
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(900, () => this.showDaily());
   }
 
@@ -315,6 +325,7 @@ export class UIScene extends Phaser.Scene implements Host {
         }
       }
     }
+    this.fishing();
     this.rollScreen.setReadyAt(this.rollReadyAt);
     for (const s of Object.values(this.screens)) s.update(time);
     if (this.mapOpen) this.map.update();
@@ -1124,6 +1135,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0);
     this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady() || save.newPets.length > 0);
     this.nav.upgrades.badge.setVisible(TREE.some((n) => canBuy(n)));
+    this.nav.fish.badge.setVisible(anyFishUpgrade());
     const dice = totalDice();
     this.nav.roll.badge.setVisible(dice > 0 && (dice >= 10 || save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1));
     const ready = save.quests.find(questDone);
@@ -1637,6 +1649,64 @@ export class UIScene extends Phaser.Scene implements Host {
       resetSave();
       window.location.reload();
     }, { size: 36 }));
+  }
+
+  /** The fishing line never stops: catches come in on every screen (the fishing screen shows them). */
+  private fishing(): void {
+    const caught = fishTick();
+    if (caught.length) {
+      persist();
+      this.game.events.emit("fish-caught", caught);
+      // something big while you are elsewhere: a little note
+      const best = caught.reduce((a, c) => (PRIZES[c.prize].row > PRIZES[a.prize].row ? c : a));
+      if (this.tab !== "fish" && PRIZES[best.prize].row >= 3) this.toast(`Fishing: caught a ${PRIZES[best.prize].name}!`, rgba(ROW_COLORS[PRIZES[best.prize].row]));
+    }
+    if (this.fishAwayResult && !this.openModal && battle.mode === "lobby" && this.time.now > 2500) {
+      const r = this.fishAwayResult;
+      this.fishAwayResult = null;
+      this.showFishAway(r);
+    }
+  }
+
+  /** Back after a while: everything the line caught (already in your pockets). */
+  private showFishAway(r: { catches: Catch[]; secs: number }): void {
+    const counts = new Map<number, number>();
+    let shells = 0;
+    for (const c of r.catches) {
+      counts.set(c.prize, (counts.get(c.prize) ?? 0) + 1);
+      shells += c.shells + (PRIZES[c.prize].kind === "shells" ? c.amount : 0);
+    }
+    const kinds = [...counts.entries()].sort((a, b) => PRIZES[b[0]].row - PRIZES[a[0]].row || b[1] - a[1]).slice(0, 12);
+    const rows = Math.ceil(kinds.length / 4);
+    const h = 560 + rows * 170;
+    const m = this.showModal(modal(this, 920, h, "GONE FISHING", "blue", () => (this.openModal = null)));
+    const hours = Math.floor(r.secs / 3600);
+    const mins = Math.floor((r.secs % 3600) / 60);
+    m.body.add([
+      label(this, 0, -h / 2 + 130, `While you were away your line fished for ${hours ? `${hours}h ` : ""}${mins}m and caught ${fmt(r.catches.length)} things!`, 32, "#7a5236", 780),
+      this.add.image(-90, -h / 2 + 220, "fish_shell").setScale(1),
+      text(this, -50, -h / 2 + 220, `+${fmt(shells)} shells`, 44, "#ff8ab0").setOrigin(0, 0.5),
+    ]);
+    kinds.forEach(([idx, n], i) => {
+      const p = PRIZES[idx];
+      const x = ((i % 4) - 1.5) * 200;
+      const y = -h / 2 + 330 + Math.floor(i / 4) * 170;
+      const icon = this.add.image(x, y, prizeIcon(p));
+      icon.setScale(100 / Math.max(icon.width, icon.height));
+      m.body.add([
+        this.add.circle(x, y, 70, ROW_COLORS[p.row], 0.3).setStrokeStyle(5, ROW_COLORS[p.row]),
+        icon,
+        text(this, x + 48, y + 46, `x${fmt(n)}`, 34),
+      ]);
+    });
+    const best = kinds[0] ? PRIZES[kinds[0][0]] : null;
+    if (best) m.body.add(fitText(label(this, 0, h / 2 - 200, `Best catch: ${best.name} (${prizeGift(best)})`, 30, "#4a2f1d"), 820));
+    m.body.add(button(this, -170, h / 2 - 90, 300, 110, "green", "NICE!", () => m.close(), { size: 40 }));
+    m.body.add(button(this, 170, h / 2 - 90, 300, 110, "blue", "GO FISH", () => {
+      m.close();
+      this.setTab("fish");
+    }, { size: 36 }));
+    sfx.gift();
   }
 
   /** "Welcome back" reward — the idle part of the game. */

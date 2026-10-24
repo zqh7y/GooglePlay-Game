@@ -15,10 +15,11 @@
  *   kills inside 15 s clears its stage
  */
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, FLYER, HEALING_BOSS_HP, SKILLED_HEAL_SECS, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
+  BOSS, BOSS_HEAL, FLYER, HEALING_BOSS_HP, SKILLED_HEAL_SECS, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
   monsterHp, spawnGap,
 } from "../src/data/balance";
-import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, diceTierChances, gadgetTierWeights } from "../src/data/tiers";
+import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, Tier, diceTierChances } from "../src/data/tiers";
+import { FISH_UPGRADES, FishUpId, catchSecs, expectedCatch, upgradeCost } from "../src/data/fishing";
 import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode } from "../src/data/tree";
@@ -66,31 +67,21 @@ function teamDps(): { dps: number; best: number } {
   return { dps: (petDps * mult + hero) * crit, best: Math.max(...team) };
 }
 
-/** Skills picked during a run: roughly x1 at the start up to x4.5 by the boss. */
-const gadgetAt = (() => {
-  // expected best gadget (damage relative to the starting shuriken) after each minute, from the airdrop odds
-  const start = gadgetDps(STARTER_GADGET, "A", 1);
-  const tierMult = GADGET_TIERS.map((t) => GADGET_KINDS.reduce((a, k) => a + gadgetDps(k, t, 1), 0) / GADGET_KINDS.length / start);
-  const out: number[] = [];
-  for (let m = 0; m <= MINUTES; m++) {
-    const drops: number[][] = [];
-    for (let at = AIRDROP_FIRST_MS; at <= m * 60000; at += AIRDROP_MS) {
-      const w = gadgetTierWeights(at / 60000, 0);
-      const tot = w.reduce((a, b) => a + b, 0);
-      drops.push(w.map((x) => x / tot));
-    }
-    let e = 0;
-    for (let t = 0; t < GADGET_TIERS.length; t++) {
-      // chance the best tier so far is exactly t
-      const atMost = (k: number) => drops.reduce((p, d) => p * d.slice(0, k + 1).reduce((a, b) => a + b, 0), 1);
-      e += (atMost(t) - (t ? atMost(t - 1) : 0)) * Math.max(1, tierMult[t]);
-    }
-    out.push(e);
-  }
-  return out;
-})();
-/** Skills (about +35% a minute) and better gadgets from airdrops, at a point of the run. */
-const skillMult = (minute: number) => (1 + 0.35 * minute) * (0.7 + 0.3 * gadgetAt[Math.min(MINUTES, minute)]);
+/**
+ * Gadgets during a run: level-ups bring new gadgets, levels and tier-ups, up to the Forge's tier cap
+ * (C at first, SSS with the Titan Forge). Roughly: levels fill up in the first ~2.5 minutes and the
+ * tier climbs to the cap by ~4 minutes. As a multiple of the starting shuriken.
+ */
+const tierMult = GADGET_TIERS.map((t) => GADGET_KINDS.reduce((a, k) => a + gadgetDps(k, t, 1), 0) / GADGET_KINDS.length / gadgetDps(STARTER_GADGET, "A", 1));
+const gadgetAt = (minute: number) => {
+  const cap = Math.min(6, 2 + sum("forge"));
+  const tier = cap * Math.min(1, minute / 4);
+  const lo = Math.floor(tier);
+  const t = tierMult[lo] + (tierMult[Math.min(cap, lo + 1)] - tierMult[lo]) * (tier - lo);
+  return t * (1 + 0.8 * Math.min(1, minute / 2.5));
+};
+/** Skills (about +35% a minute) and better gadgets from level-ups, at a point of the run. */
+const skillMult = (minute: number) => (1 + 0.35 * minute) * (0.7 + 0.3 * gadgetAt(Math.min(MINUTES, minute)));
 const group = (_minute: number, s: number) => 1 + (s > 40 ? 1 : 0);
 const avgBase = (WALKER_A.hp + WALKER_B.hp + FLYER.hp) / 3;
 
@@ -126,24 +117,50 @@ const luck = () => {
   return prod("luck") * prod("die") * index * potion * lucky;
 };
 
+// fishing runs all the time; the cheapest fishing upgrade is bought whenever there are shells for it
+const fish = Object.fromEntries(FISH_UPGRADES.map((u) => [u.id, 0])) as Record<FishUpId, number>;
+let shells = 0;
+const fishDice = Object.fromEntries(DICE_TIERS.map((k) => [k, 0])) as Record<Tier, number>;
+let fishCash = 0;
+let earned = 0;
+
 const report: string[] = [];
-const marks = new Set([2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]);
+const marks = new Set([2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100]);
 let dice = 10;
 let fails = 0;
 let rushed = 0;
 const cleared = (how: string) => {
   if (marks.has(stage)) {
     const { best } = teamDps();
-    report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   ${how}`);
+    report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   forge ${sum("forge")}   fish speed ${fish.speed} luck ${fish.luck}   ${how}`);
   }
   stage++;
 };
 const LIMIT = 300 * 3600;
-while (stage <= MAX_STAGE && t < LIMIT) {
-  const r = run(stage, teamDps().dps);
+const forgeAt: number[] = [];
+// after stage 100, keep farming it until the Titan Forge (the best gadgets) is bought
+while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
+  const r = run(Math.min(stage, MAX_STAGE), teamDps().dps);
   t += r.secs;
   cash += r.cash;
+  earned += r.cash;
   dice += r.dice;
+  // what the fishing line brought meanwhile (money is counted in seconds of fighting income)
+  const casts = process.env.NOFISH ? 0 : r.secs / catchSecs(fish.speed);
+  const haul = expectedCatch(fish);
+  shells += haul.shells * casts;
+  const fc = process.env.X_CASH ? 0 : haul.cashSecs * casts * (r.cash / r.secs);
+  fishCash += fc;
+  cash += fc;
+  if (!process.env.X_DICE) for (const [k, v] of Object.entries(haul.dice)) fishDice[k as Tier] += v! * casts;
+  if (!process.env.X_GEMS) gems += haul.gems * casts;
+  if (!process.env.X_POT) potionLeft += haul.potionMin * 60 * casts;
+  for (;;) {
+    const open = FISH_UPGRADES.filter((u) => fish[u.id] < u.max).sort((a, b) => upgradeCost(a, fish[a.id]) - upgradeCost(b, fish[b.id]))[0];
+    if (!open || upgradeCost(open, fish[open.id]) > shells) break;
+    shells -= upgradeCost(open, fish[open.id]);
+    fish[open.id]++;
+  }
   // potion: drink whenever 10 gems are saved (lasts this run and the next couple)
   potionLeft = Math.max(0, potionLeft - r.secs);
   if (gems >= 10 && potionLeft <= 0) {
@@ -153,12 +170,19 @@ while (stage <= MAX_STAGE && t < LIMIT) {
   // rolling: spend every die (in the tiers this stage drops)
   const rolls = Math.floor(dice) * (1 + sum("multi"));
   dice -= Math.floor(dice);
-  const tiers = diceTierChances(stage);
+  const tiers = diceTierChances(Math.min(stage, MAX_STAGE));
   const ch = PET_LIST.map(() => 0);
-  DICE_TIERS.forEach((t, k) => petChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k])));
+  DICE_TIERS.forEach((t, k) => petChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k] * rolls)));
+  // and the dice the fishing line brought, in their own tiers
+  for (const k of DICE_TIERS) {
+    const n = Math.floor(fishDice[k]);
+    if (!n) continue;
+    fishDice[k] -= n;
+    petChances(luck() * DICE_LUCK[k]).forEach((c, i) => (ch[i] += c * n * (1 + sum("multi"))));
+  }
   for (let i = 0; i < ch.length; i++) {
     if (!ch[i]) continue;
-    const got = ch[i] * rolls;
+    const got = ch[i];
     const p = pets[i];
     p.have += got;
     if (p.level === 0 && p.have >= 1) {
@@ -173,7 +197,9 @@ while (stage <= MAX_STAGE && t < LIMIT) {
       p.level++;
     }
   }
-  if (r.won) {
+  if (stage > MAX_STAGE) {
+    // farming stage 100 for the forge
+  } else if (r.won) {
     gems += 2 + sum("gems");
     cleared("run");
   } else {
@@ -185,6 +211,7 @@ while (stage <= MAX_STAGE && t < LIMIT) {
     if (!open || open.cost > cash) break;
     cash -= open.cost;
     owned.add(open.id);
+    if (open.effect === "forge") forgeAt.push(t / 3600);
   }
   // Boss Rush: on through the stage bosses while each one dies in time
   while (stage <= MAX_STAGE && teamDps().dps * 0.8 * (RUSH_MS / 1000) >= rushBossHp(stage)) {
@@ -197,4 +224,5 @@ while (stage <= MAX_STAGE && t < LIMIT) {
 console.log(report.join("\n"));
 const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monsterHp(avgBase, stage, MINUTES - 1) * 0.7;
 console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, ${rushed} stages cleared in the Boss Rush, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
-console.log(`best gadget by minute (x shuriken): ${gadgetAt.map((g) => g.toFixed(1)).join(" ")}`);
+console.log(`forge levels bought at (h): ${forgeAt.map((h) => h.toFixed(1)).join(", ")}   gadget power by minute now (x shuriken): ${[0, 1, 2, 3, 4, 5].map((m) => gadgetAt(m).toFixed(1)).join(" ")}`);
+console.log(`fishing: levels ${JSON.stringify(fish)}, fishing paid ${(fishCash / (earned + fishCash) * 100).toFixed(0)}% of all money`);

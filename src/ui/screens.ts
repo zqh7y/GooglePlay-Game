@@ -3,7 +3,7 @@ import { canvasTexture, darken, lighten, rgba, starPath } from "../art/draw";
 import { Layout } from "../layout";
 import { Modal } from "./widgets";
 
-export type Tab = "shop" | "pets" | "battle" | "roll" | "upgrades";
+export type Tab = "shop" | "pets" | "battle" | "roll" | "fish" | "upgrades";
 
 /** What the screens need from the UI scene that hosts them. */
 export interface Host {

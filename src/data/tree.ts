@@ -156,7 +156,7 @@ branch("power", "W", [
     ["forge1", "Forge I", "sword", 300e6, "forge", 1],
     ["forge2", "Forge II", "sword", 40e9, "forge", 1],
     ["forge3", "Forge III", "sword", 5e12, "forge", 1],
-    ["forge4", "Titan Forge", "sword", 4e15, "forge", 1],
+    ["forge4", "Titan Forge", "sword", 1e16, "forge", 1],
   ],
   rage: series("berserk", "Berserk", "sword", 2, 600e9, 25, "dmg", 2),
 });
