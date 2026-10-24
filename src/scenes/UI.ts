@@ -631,7 +631,8 @@ export class UIScene extends Phaser.Scene implements Host {
       this.rushHud(time);
     } else if (battle.bossFrac >= 0) {
       drawBar(g, 24, 74, W - 48, 34, battle.bossFrac, 0xf26464);
-      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%`);
+      const healing = battle.sealsTotal > 0 && battle.seals < battle.sealsTotal;
+      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%${healing ? "  •  HEALING" : ""}`);
     } else {
       const f = battle.time / STAGE_MS;
       drawBar(g, 24, 74, W - 48, 34, f, f > 0.8 ? 0xffa64d : 0xffe0a3);
@@ -655,7 +656,10 @@ export class UIScene extends Phaser.Scene implements Host {
     drawBar(g, 274, 236, 366, 26, battle.bossFight ? 0 : c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
     const left = Math.ceil(battle.shieldLeft / 1000);
     if (battle.rush) this.shieldText.setText(`Beat it in ${RUSH_MS / 1000}s or it gets away!`).setColor("#e6d4ff");
-    else if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
+    else if (battle.bossFight && battle.sealsTotal) {
+      const all = battle.seals >= battle.sealsTotal;
+      this.shieldText.setText(all ? "All seals closed: no more healing!" : `SEALS ${battle.seals}/${battle.sealsTotal}  •  stand on them 3s`).setColor(all ? "#ffe066" : "#e6d4ff");
+    } else if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
     else this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
     fitText(this.shieldText, 340);
     this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);

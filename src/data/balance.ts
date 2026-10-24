@@ -65,6 +65,20 @@ export const ELITE_MULT = 8;
 export const BOSS_HP_MULT = 100;
 export const BOSS: MonsterStats = { hp: ((WALKER_A.hp + WALKER_B.hp) / 2) * BOSS_HP_MULT, speed: 120, cash: 60, dmg: 22, xp: 0 };
 
+/**
+ * Stage bosses heal themselves (Boss Rush bosses don't): this share of their health per second
+ * while all the seals are open. Five seals hide around the field; stand on one for SEAL_MS to
+ * close it, and each closed seal takes a fifth off the healing. A strong team can just hit
+ * through it; a skilled player closes the seals.
+ */
+export const BOSS_HEAL = 0.02;
+export const SEALS = 5;
+export const SEAL_MS = 3000;
+/** Healing stage bosses start with less health than before, so closing the seals keeps them as hard as they were. */
+export const HEALING_BOSS_HP = 0.75;
+/** For the simulator: closing a seal about every 6 s lets the boss heal for this many full-rate seconds. */
+export const SKILLED_HEAL_SECS = 18;
+
 export const minuteMult = (minute: number) => 1 + MINUTE_HP_STEP * minute;
 export const monsterHp = (base: number, stage: number, minute: number) => base * HP_TABLE[Math.max(0, stage - 1)] * minuteMult(minute);
 export const monsterCash = (base: number, stage: number) => base * CASH_GROWTH ** (stage - 1);

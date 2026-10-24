@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Places</title>
+<style>body{margin:0;background:#9fd36a;font:16px sans-serif} #g{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-end} .c{text-align:center;background:rgba(255,255,255,.25);padding:8px;border-radius:8px}</style></head>
+<body><div id="g"></div><script type="module">
+import { makePlaceTextures } from "/src/art/places.ts";
+// draw straight onto canvases through a tiny fake scene
+const made = {};
+const scene = { textures: { exists: (k) => !!made[k], createCanvas: (k, w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; made[k] = c; return { getContext: () => c.getContext("2d"), refresh() {} }; } } };
+makePlaceTextures(scene);
+const g = document.getElementById("g");
+for (const [k, label] of [["bld_battle", "Battle building"], ["bld_rush", "Boss Rush building"], ["seal", "Seal (open)"], ["seal_on", "Seal (closed)"]]) {
+  const d = document.createElement("div"); d.className = "c"; d.append(made[k], document.createElement("br"), label); g.append(d);
+}
+</script></body></html>

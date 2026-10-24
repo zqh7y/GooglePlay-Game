@@ -6,7 +6,8 @@
  * Model (deliberately simple):
  * - a stage is a 5 minute run; skills and airdropped gadgets multiply your damage as it goes
  * - each minute you survive if your damage keeps up with the monsters coming in (kiting covers some)
- * - the boss at 5:00 has to die within ~40 s; a failed run still pays money and the dice you found
+ * - the boss at 5:00 has to die within ~40 s while you close its seals (it heals until you do); a failed
+ *   run still pays money and the dice you found
  * - every roll costs one die; dice come from the map, elites, chests and the boss, in tiers that
  *   depend on the stage (a rarer die multiplies the roll's luck)
  * - the best pets are equipped and levelled up; the cheapest open tree hexagon is bought whenever affordable
@@ -14,7 +15,7 @@
  *   kills inside 15 s clears its stage
  */
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, FLYER, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, FLYER, HEALING_BOSS_HP, SKILLED_HEAL_SECS, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
   monsterHp, spawnGap,
 } from "../src/data/balance";
 import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, diceTierChances, gadgetTierWeights } from "../src/data/tiers";
@@ -106,7 +107,9 @@ function run(s: number, dps: number): { won: boolean; secs: number; cash: number
     if (!ok) break;
     minutesSurvived++;
   }
-  const bossOk = minutesSurvived === MINUTES && dps * skillMult(MINUTES) * 40 >= monsterHp(BOSS.hp, s, MINUTES);
+  // the boss heals until you close its seals (a skilled player closes one every ~6 s)
+  const bossHp = monsterHp(BOSS.hp, s, MINUTES) * HEALING_BOSS_HP * (1 + BOSS_HEAL * SKILLED_HEAL_SECS);
+  const bossOk = minutesSurvived === MINUTES && dps * skillMult(MINUTES) * 40 >= bossHp;
   const cash = kills * monsterCash((WALKER_A.cash + WALKER_B.cash + FLYER.cash) / 3, s) * prod("cash") * 1.4 + (bossOk ? monsterCash(BOSS.cash, s) : 0);
   // dice: ~60% of the 14 on the map, elites, chests, rare drops, boss
   const frac = Math.max(0.2, minutesSurvived / MINUTES);

@@ -7,7 +7,7 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, CRYSTAL_DIE_MS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -20,6 +20,7 @@ import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
+import { makePlaceTextures } from "../art/places";
 import { BOSS_EVERY, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
@@ -47,6 +48,9 @@ const PICK_R = 150;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;
 const REVIVE_GEMS = 5;
+/** Stand this close to a boss seal to close it; seals glow up when you are within SEAL_SEE. */
+const SEAL_R = 130;
+const SEAL_SEE = 900;
 
 export type BattleMode = "lobby" | "run" | "over";
 
@@ -91,6 +95,9 @@ export const battle = {
   rush: false,
   rushBoss: 0,
   rushLeft: 0,
+  /** boss seals closed / placed this fight */
+  seals: 0,
+  sealsTotal: 0,
 };
 
 /** How a Boss Rush ended. */
@@ -250,6 +257,17 @@ interface Pickup {
   extra: Phaser.GameObjects.GameObject[];
 }
 
+/** A rune circle on the ground: stand on it to close it and cut the boss's healing. */
+interface Seal {
+  x: number;
+  y: number;
+  img: Phaser.GameObjects.Image;
+  glow: Phaser.GameObjects.Image;
+  /** ms stood on it so far */
+  t: number;
+  done: boolean;
+}
+
 interface Food {
   img: Phaser.GameObjects.Image;
   value: number;
@@ -342,6 +360,8 @@ export class BattleScene extends Phaser.Scene {
   private rocks: Rock[] = [];
   private pickups: Pickup[] = [];
   private food: Food[] = [];
+  private seals: Seal[] = [];
+  private healPopT = 0;
   private spawnTimer = 0;
   private eliteTimer = 0;
   private chestTimer = 0;
@@ -389,6 +409,7 @@ export class BattleScene extends Phaser.Scene {
     makeGadgetTextures(this);
     makeMutationTextures(this);
     makeBossTextures(this);
+    makePlaceTextures(this);
     this.rush = !!data?.rush;
     this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
@@ -398,7 +419,7 @@ export class BattleScene extends Phaser.Scene {
       revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], saws: [], sawHits: new Map(), mines: [], drone: null, droneT: 0, rangs: [], balls: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
-      combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(),
+      combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0,
     });
     this.joy = { ...NO_JOY };
     this.heroMax = HERO_HP * villageHpMult();
@@ -408,7 +429,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, combo: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0,
     });
     this.cameras.main.fadeIn(500, 74, 47, 29);
     this.drawArena();
@@ -1942,9 +1963,10 @@ export class BattleScene extends Phaser.Scene {
         this.puff.setParticleTint(0xd8c8a8);
         this.puff.explode(40, x, y);
         const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true }, x, y);
-        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES));
+        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP);
         boss.huntHero = true;
         boss.phaseT = 2500;
+        this.placeSeals();
         music.play("boss");
         this.game.events.emit("boss-intro", { name: def.name, tex: def.tex });
         this.time.delayedCall(1800, () => {
@@ -1958,6 +1980,7 @@ export class BattleScene extends Phaser.Scene {
 
   private stageWon(): void {
     this.state = "won";
+    for (const sl of this.seals) this.tweens.add({ targets: [sl.img, sl.glow], alpha: 0, duration: 600 });
     battle.mode = "over";
     this.joy = { ...NO_JOY };
     // everything left runs away in a puff
@@ -2108,6 +2131,7 @@ export class BattleScene extends Phaser.Scene {
     this.comboText.setPosition(this.hero.x, this.hero.y - 260);
 
     this.moveEnemies(time, delta);
+    if (this.state === "boss" && !this.rush) this.sealsTick(delta);
     if (fighting) {
       this.gadgetsTick(delta);
       this.petAttacks(delta);
@@ -2319,6 +2343,80 @@ export class BattleScene extends Phaser.Scene {
   private bossRest(e: Enemy): void {
     e.phase = "walk";
     e.phaseT = 1600 + Math.random() * 1400;
+  }
+
+  // ───────────────────────── boss seals ─────────────────────────
+
+  /** Five seals hidden around the field: stand on one for 3 s to close it and cut the boss's healing. */
+  private placeSeals(): void {
+    const spots: [number, number][] = [];
+    for (let tries = 0; spots.length < SEALS && tries < 300; tries++) {
+      const p = this.randomSpot(700, 1900, [this.hero.x, this.hero.y]);
+      if (spots.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) > 650)) spots.push(p);
+    }
+    this.seals = spots.map(([x, y]) => {
+      const glow = this.add.image(x, y - 10, "glow").setTint(0xb98aff).setScale(2.2, 1).setAlpha(0.2).setDepth(-660);
+      const img = this.add.image(x, y, "seal").setDepth(-650).setAlpha(0.35).setScale(0);
+      this.tweens.add({ targets: img, scale: 1, duration: 500, delay: 600, ease: "Back.out" });
+      this.tweens.add({ targets: glow, scaleX: 2.6, scaleY: 1.2, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      return { x, y, img, glow, t: 0, done: false };
+    });
+    battle.seals = 0;
+    battle.sealsTotal = this.seals.length;
+    this.time.delayedCall(2400, () => this.toast(`The boss heals! Stand on the ${SEALS} hidden seals to stop it`, "#e6d4ff"));
+  }
+
+  /** Standing on seals closes them; the boss heals for every seal still open. */
+  private sealsTick(delta: number): void {
+    const boss = this.enemies.find((e) => e.type.boss);
+    if (!boss || !this.seals.length) return;
+    let open = 0;
+    for (const sl of this.seals) {
+      if (sl.done) continue;
+      open++;
+      const d = Math.hypot(sl.x - this.hero.x, (sl.y - this.hero.y) * 1.5);
+      sl.img.setAlpha(d < SEAL_SEE ? 1 : 0.35);
+      sl.glow.setAlpha(d < SEAL_SEE ? 0.55 : 0.2);
+      const was = sl.t;
+      sl.t = d < SEAL_R ? sl.t + delta : Math.max(0, sl.t - delta * 0.5);
+      if (sl.t > was && Math.floor(sl.t / 500) > Math.floor(was / 500)) sfx.charge(1 + Math.floor(sl.t / 500));
+      if (sl.t >= SEAL_MS) this.closeSeal(sl, boss);
+    }
+    if (!open || boss.hp <= 0 || boss.hp >= boss.maxHp) return;
+    const perSec = boss.maxHp * BOSS_HEAL * (open / SEALS);
+    boss.hp = Math.min(boss.maxHp, boss.hp + (perSec * delta) / 1000);
+    this.healPopT -= delta;
+    if (this.healPopT <= 0) {
+      this.healPopT = 1000;
+      const t = text(this, boss.img.x + (Math.random() - 0.5) * 120, boss.img.y - boss.img.displayHeight * 0.7, `+${fmt(perSec)}`, 64, "#7af08a").setDepth(9300);
+      this.tweens.add({ targets: t, y: t.y - 140, alpha: 0, duration: 900, ease: "Quad.out", onComplete: () => t.destroy() });
+    }
+  }
+
+  private closeSeal(sl: Seal, boss: Enemy): void {
+    sl.done = true;
+    battle.seals++;
+    sfx.fanfare();
+    buzz(80);
+    this.tweens.killTweensOf(sl.glow);
+    sl.img.setTexture("seal_on").setAlpha(1);
+    sl.glow.setTint(0xffe066).setAlpha(0.7);
+    this.tweens.add({ targets: sl.img, scale: 1.25, duration: 160, yoyo: true });
+    const beam = this.add.rectangle(sl.x, sl.y - 450, 90, 900, 0xffe066, 0.5).setDepth(sl.y - 2);
+    this.tweens.add({ targets: beam, alpha: 0, scaleX: 0.2, duration: 1200, onComplete: () => beam.destroy() });
+    this.sparks.setParticleTint(0xffe066);
+    this.sparks.explode(30, sl.x, sl.y - 40);
+    // a bolt of light from the seal to the boss
+    const bolt = this.add.graphics().setDepth(9050);
+    bolt.lineStyle(16, 0xffe066, 0.9).lineBetween(sl.x, sl.y - 40, boss.img.x, boss.img.y - boss.img.displayHeight * 0.5);
+    this.tweens.add({ targets: bolt, alpha: 0, duration: 500, onComplete: () => bolt.destroy() });
+    this.tweens.add({ targets: boss.img, angle: { from: -8, to: 8 }, duration: 70, yoyo: true, repeat: 2, onComplete: () => boss.img.setAngle(0) });
+    if (battle.seals < SEALS) {
+      this.toast(`Seal ${battle.seals}/${SEALS} closed! The boss heals slower`, "#ffe066");
+    } else {
+      this.banner("ALL SEALS CLOSED!", "gold", 900);
+      this.toast("The boss can't heal anymore!", "#ffe066");
+    }
   }
 
   /** Boss rocks fly straight; dodge them. */
@@ -2621,6 +2719,16 @@ export class BattleScene extends Phaser.Scene {
   /** Warnings for the boss's moves (marks on the ground, no lines) and health bars. */
   private drawFx(time: number): void {
     this.fx.clear();
+    for (const sl of this.seals) {
+      if (sl.done) continue;
+      if (Math.hypot(sl.x - this.hero.x, sl.y - this.hero.y) < SEAL_SEE) {
+        this.fx.lineStyle(6, 0xe6d4ff, 0.35 + Math.sin(time / 200) * 0.15).strokeEllipse(sl.x, sl.y, SEAL_R * 2, (SEAL_R * 2) / 1.5);
+      }
+      if (sl.t > 0) {
+        this.fx.lineStyle(26, INK_N, 0.9).beginPath().arc(sl.x, sl.y - 170, 70, -Math.PI / 2, Math.PI * 1.5).strokePath();
+        this.fx.lineStyle(16, 0xffe066, 1).beginPath().arc(sl.x, sl.y - 170, 70, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * sl.t) / SEAL_MS).strokePath();
+      }
+    }
     for (const e of this.enemies) {
       const blink = time % 200 < 100 ? 0.55 : 0.3;
       if (e.phase === "windup") {
@@ -2668,6 +2776,11 @@ export class BattleScene extends Phaser.Scene {
       const r = p.kind === "airdrop" || p.kind === "chest" || p.kind === "orb" ? 5 : 3.5;
       g.fillStyle(color, 1).fillRect(mx + p.x * s - r, my + p.y * s - r, r * 2, r * 2);
     }
+    for (const sl of this.seals) {
+      if (sl.done) continue;
+      g.fillStyle(0xd8b8ff, 1).fillCircle(mx + sl.x * s, my + sl.y * s, 6);
+      g.lineStyle(2, INK_N, 1).strokeCircle(mx + sl.x * s, my + sl.y * s, 6);
+    }
     for (const e of this.enemies) g.fillStyle(e.toCrystal ? 0xff9a3a : 0xf26464, 1).fillCircle(mx + e.img.x * s, my + e.img.y * s, e.type.boss ? 5 : 2);
     g.fillStyle(0xffffff, 1).fillCircle(mx + this.hero.x * s, my + this.hero.y * s, 5);
     g.lineStyle(3, 0xff8a3a, 1).strokeCircle(mx + this.hero.x * s, my + this.hero.y * s, 5);
@@ -2694,7 +2807,8 @@ export class BattleScene extends Phaser.Scene {
       if (p.kind === "airdrop") arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
       if (p.kind === "dice" && tierIndex(p.tier!) >= 3) arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
     }
-    for (const e of this.enemies) if (e.type.boss) arrow(e.img.x, e.img.y, 0xb98aff);
+    for (const e of this.enemies) if (e.type.boss) arrow(e.img.x, e.img.y, 0xf26464);
+    if (this.state === "boss") for (const sl of this.seals) if (!sl.done) arrow(sl.x, sl.y, 0xd8b8ff);
   }
 
   /** DPS readout, money per second (for offline earnings) and autosave. */
