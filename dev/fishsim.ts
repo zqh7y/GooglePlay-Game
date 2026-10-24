@@ -3,7 +3,7 @@
  * prints when each upgrade maxes out and what an hour of fishing brings at a few points. Run with:
  *   npx esbuild dev/fishsim.ts --bundle --platform=node --outfile=/tmp/fishsim.js && node /tmp/fishsim.js
  */
-import { FISH_UPGRADES, FishUpId, catchSecs, expectedCatch, fishLuck, prizesOpen, upgradeCost } from "../src/data/fishing";
+import { FISH_UPGRADES, FishUpId, catchSecs, deepMult, expectedCatch, fishLuck, upgradeCost } from "../src/data/fishing";
 
 const lv = Object.fromEntries(FISH_UPGRADES.map((u) => [u.id, 0])) as Record<FishUpId, number>;
 let shells = 0;
@@ -26,7 +26,7 @@ while (t < 200 * 3600) {
     const h = 3600 / catchSecs(lv.speed);
     const p = expectedCatch(lv);
     const dice = Object.entries(p.dice).map(([k, v]) => `${k} ${(v! * h).toFixed(k < "C" ? 0 : 2)}`).join(" ");
-    console.log(`${String(marks[next]).padStart(4)} h  catch ${catchSecs(lv.speed).toFixed(1)}s luck x${fishLuck(lv.luck).toFixed(1)} open ${prizesOpen(lv.pond)}  per hour: money ${(p.cashSecs * h / 60).toFixed(0)} min of income, dice [${dice}], gems ${(p.gems * h).toFixed(1)}, potion ${(p.potionMin * h).toFixed(0)} min, shells ${(p.shells * h).toFixed(0)}`);
+    console.log(`${String(marks[next]).padStart(4)} h  catch ${catchSecs(lv.speed).toFixed(1)}s luck x${fishLuck(lv.luck).toFixed(1)} deep x${deepMult(lv.pond).toFixed(2)}  per hour: money ${(p.cashSecs * h / 60).toFixed(0)} min of income, dice [${dice}], gems ${(p.gems * h).toFixed(1)}, potion ${(p.potionMin * h).toFixed(0)} min, shells ${(p.shells * h).toFixed(0)}`);
     next++;
   }
 }

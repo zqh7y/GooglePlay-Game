@@ -7,7 +7,7 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE, heroHpAt,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -485,7 +485,7 @@ export class BattleScene extends Phaser.Scene {
       roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
     });
     this.joy = { ...NO_JOY };
-    this.heroMax = HERO_HP * villageHpMult();
+    this.heroMax = heroHpAt(save.stage) * villageHpMult();
     this.heroHp = this.heroMax;
     this.crystalMax = crystalHpAt(save.stage) * villageHpMult();
     this.crystalHp = this.crystalMax;
@@ -1298,7 +1298,7 @@ export class BattleScene extends Phaser.Scene {
     battle.skills = this.skills;
     if (id === "tough") {
       const f = this.heroHp / this.heroMax;
-      this.heroMax = HERO_HP * villageHpMult() * (1 + 0.25 * lv);
+      this.heroMax = heroHpAt(save.stage) * villageHpMult() * (1 + 0.25 * lv);
       this.heroHp = this.heroMax * f;
       this.heal(0.3);
     }

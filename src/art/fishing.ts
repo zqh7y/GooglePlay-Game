@@ -4,7 +4,8 @@ import { Toon, toon } from "./toon";
 
 /**
  * Fishing art: the prizes (`fp_<id>`, 160 x 160), the upgrade icons (`fu_<id>`, 120 x 120),
- * the shell you pay upgrades with, the tab icon and the pieces of the pond scene.
+ * the shell you pay upgrades with, the tab icon and the pieces of the pond scene (the pier is
+ * drawn in perspective by the fishing screen itself).
  */
 
 type Pt = [number, number];
@@ -403,16 +404,25 @@ function tabIcon(c: Ctx): void {
   t.tube(() => c.arc(62, 36, 6, Math.PI, Math.PI * 2.2), 4, 0xd8e0e8);
 }
 
-/** Wooden dock seen from the side: planks on top, posts going into the water. */
-function dock(c: Ctx): void {
-  const t = T(c, 5);
-  for (const x of [40, 190, 340, 470]) t.part(() => t.rect(x, 150, 34, 190, 8), 0x7a4a2a, () => t.paint("rgba(255,255,255,0.12)", () => t.rect(x - 8, 150, 8, 180, 3)));
-  t.part(() => t.rect(260, 70, 520, 56, 10), 0xc8884a, () => {
-    for (let x = 30; x < 520; x += 64) t.paint("rgba(90,50,20,0.35)", () => t.rect(x, 70, 4, 56, 1));
-    t.paint("rgba(255,255,255,0.18)", () => t.rect(260, 52, 500, 8, 3));
-    for (let x = 60; x < 520; x += 128) for (const y of [60, 80]) t.paint("#5a3a20", () => t.C(x, y, 3));
-  });
-  t.part(() => t.rect(260, 108, 520, 22, 6), 0x9a6232);
+/** A bird far away: two curved wings. */
+function bird(c: Ctx): void {
+  c.lineCap = "round";
+  c.lineWidth = 6;
+  c.strokeStyle = "#3a4a5a";
+  c.beginPath();
+  c.moveTo(4, 14);
+  c.quadraticCurveTo(14, 2, 26, 14);
+  c.quadraticCurveTo(38, 2, 48, 14);
+  c.stroke();
+}
+
+/** A see-through bubble with a shine. */
+function bubble(c: Ctx): void {
+  circle(c, 16, 16, 13);
+  fill(c, radial(c, 12, 11, 16, [[0, "rgba(255,255,255,0.55)"], [0.6, "rgba(200,240,255,0.15)"], [1, "rgba(200,240,255,0.35)"]]));
+  outline(c, 2.5, "rgba(230,250,255,0.8)");
+  ellipse(c, 11, 10, 4, 2.5, -0.6);
+  fill(c, "rgba(255,255,255,0.9)");
 }
 
 function bobber(c: Ctx): void {
@@ -515,7 +525,8 @@ export function makeFishTextures(scene: Phaser.Scene): void {
   for (const [id, draw] of Object.entries(PRIZE_ART)) canvasTexture(scene, `fp_${id}`, 160, 160, draw);
   for (const [id, draw] of Object.entries(UP_ART)) canvasTexture(scene, `fu_${id}`, 120, 120, draw);
   canvasTexture(scene, "fish_shell", 64, 64, shell);
-  canvasTexture(scene, "fish_dock", 520, 250, dock);
+  canvasTexture(scene, "fish_bird", 52, 20, bird);
+  canvasTexture(scene, "fish_bubble", 32, 32, bubble);
   canvasTexture(scene, "fish_bobber", 48, 64, bobber);
   canvasTexture(scene, "fish_shadow", 172, 80, shadow);
   canvasTexture(scene, "fish_hills", 1080, 260, (c) => hills(c, 1080));

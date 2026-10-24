@@ -41,21 +41,21 @@ export const PRIZES: Prize[] = [
   { id: "oyster", name: "Pearl Oyster", kind: "gems", amount: 1, weight: 0.6, pow: 0.15, row: 1 },
   { id: "luckPotion", name: "Luck Potion", kind: "luckPotion", amount: 1, weight: 1.4, pow: 0.15, row: 1 },
   { id: "salmon", name: "Fat Salmon", kind: "cash", amount: 2.5, weight: 3, pow: 0.25, row: 1 },
-  // row 2: rare catches
-  { id: "speedPotion", name: "Speed Potion", kind: "speedPotion", amount: 2, weight: 1.4, pow: 0.45, row: 2 },
-  { id: "dieC", name: "Coral Die", kind: "dice", amount: 1, tier: "C", weight: 1, pow: 0.45, row: 2 },
-  { id: "chest", name: "Sunken Chest", kind: "cash", amount: 10, weight: 0.9, pow: 0.45, row: 2 },
-  { id: "clover", name: "Sea Clover", kind: "lucky", amount: 3, weight: 0.5, pow: 0.45, row: 2 },
+  // row 2: rare catches (from here down: tiny chances at first that luck lifts a lot)
+  { id: "speedPotion", name: "Speed Potion", kind: "speedPotion", amount: 2, weight: 0.42, pow: 0.6, row: 2 },
+  { id: "dieC", name: "Coral Die", kind: "dice", amount: 1, tier: "C", weight: 0.3, pow: 0.6, row: 2 },
+  { id: "chest", name: "Sunken Chest", kind: "cash", amount: 10, weight: 0.27, pow: 0.6, row: 2 },
+  { id: "clover", name: "Sea Clover", kind: "lucky", amount: 3, weight: 0.15, pow: 0.6, row: 2 },
   // row 3: epic catches
-  { id: "bottle", name: "Message Bottle", kind: "boost", amount: 1, weight: 0.2, pow: 0.75, row: 3 },
-  { id: "swordfish", name: "Swordfish Die", kind: "dice", amount: 1, tier: "D", weight: 0.1, pow: 0.75, row: 3 },
-  { id: "koi", name: "Golden Koi", kind: "cash", amount: 60, weight: 0.04, pow: 0.75, row: 3 },
-  { id: "crown", name: "Mermaid Crown", kind: "gems", amount: 10, weight: 0.006, pow: 0.75, row: 3 },
+  { id: "bottle", name: "Message Bottle", kind: "boost", amount: 1, weight: 0.05, pow: 0.9, row: 3 },
+  { id: "swordfish", name: "Swordfish Die", kind: "dice", amount: 1, tier: "D", weight: 0.025, pow: 0.9, row: 3 },
+  { id: "koi", name: "Golden Koi", kind: "cash", amount: 60, weight: 0.01, pow: 0.9, row: 3 },
+  { id: "crown", name: "Mermaid Crown", kind: "gems", amount: 10, weight: 0.0015, pow: 0.9, row: 3 },
   // row 4: legends (the chances hide behind question marks)
-  { id: "dieE", name: "Sun Die", kind: "dice", amount: 1, tier: "E", weight: 0.006, pow: 1, row: 4 },
-  { id: "kraken", name: "Kraken Die", kind: "dice", amount: 1, tier: "S", weight: 0.0007, pow: 1, row: 4 },
-  { id: "trident", name: "Titan Trident", kind: "dice", amount: 1, tier: "SSS", weight: 0.00002, pow: 1, row: 4 },
-  { id: "leviathan", name: "Leviathan Heart", kind: "jackpot", amount: 1, tier: "uSSS", gems: 100, weight: 0.000001, pow: 1, row: 4 },
+  { id: "dieE", name: "Sun Die", kind: "dice", amount: 1, tier: "E", weight: 0.0008, pow: 1.1, row: 4 },
+  { id: "kraken", name: "Kraken Die", kind: "dice", amount: 1, tier: "S", weight: 0.00009, pow: 1.1, row: 4 },
+  { id: "trident", name: "Titan Trident", kind: "dice", amount: 1, tier: "SSS", weight: 0.000004, pow: 1.1, row: 4 },
+  { id: "leviathan", name: "Leviathan Heart", kind: "jackpot", amount: 1, tier: "uSSS", gems: 100, weight: 0.0000002, pow: 1.1, row: 4 },
 ];
 
 export const PRIZE_BY_ID: Record<string, Prize> = Object.fromEntries(PRIZES.map((p) => [p.id, p]));
@@ -88,8 +88,8 @@ export interface FishUpgrade {
 
 export const catchSecs = (lv: number) => Math.max(5, 60 * 0.9 ** lv);
 export const fishLuck = (lv: number) => 30 ** (lv / 30);
-export const BASE_PRIZES = 8;
-export const prizesOpen = (lv: number) => Math.min(PRIZES.length, BASE_PRIZES + lv);
+/** Deeper Water: the Rare, Epic and Legend rows bite more often. */
+export const deepMult = (lv: number) => 1 + lv / 12;
 export const doubleChance = (lv: number) => 0.02 * lv;
 export const goldMult = (lv: number) => 1 + 0.1 * lv;
 export const netMult = (lv: number) => 1 + 0.05 * lv;
@@ -105,7 +105,7 @@ const lk = (l: number) => (l >= 10 ? `x${Math.round(l)}` : `x${l.toFixed(1)}`);
 export const FISH_UPGRADES: FishUpgrade[] = [
   { id: "speed", name: "Quick Reel", icon: "fu_speed", max: 24, cost: 4, growth: 1.42, show: (l) => secs(catchSecs(l)), desc: "Catch something sooner" },
   { id: "luck", name: "Lucky Bait", icon: "fu_luck", max: 30, cost: 6, growth: 1.385, show: (l) => lk(fishLuck(l)), desc: "Rare prizes bite more often" },
-  { id: "pond", name: "Deeper Water", icon: "fu_pond", max: PRIZES.length - BASE_PRIZES, cost: 25, growth: 2.15, show: (l) => `${prizesOpen(l)}/${PRIZES.length}`, desc: "More kinds of prizes to catch" },
+  { id: "pond", name: "Deeper Water", icon: "fu_pond", max: 12, cost: 25, growth: 2.15, show: (l) => `x${deepMult(l).toFixed(2)}`, desc: "Rare, Epic and Legend prizes bite more often" },
   { id: "hook", name: "Double Hook", icon: "fu_hook", max: 15, cost: 30, growth: 1.5, show: (l) => `${Math.round(doubleChance(l) * 100)}%`, desc: "Chance to catch two prizes at once" },
   { id: "gold", name: "Golden Line", icon: "fu_gold", max: 20, cost: 15, growth: 1.42, show: (l) => `x${goldMult(l).toFixed(1)}`, desc: "More shells from every catch" },
   { id: "net", name: "Big Net", icon: "fu_net", max: 10, cost: 60, growth: 1.7, show: (l) => `x${netMult(l).toFixed(1)}`, desc: "Dice, gems and potions come in bigger bunches" },
@@ -120,15 +120,15 @@ export const upgradeCost = (u: FishUpgrade, lv: number) => Math.ceil(u.cost * u.
 
 // ───────────────────────── catching ─────────────────────────
 
-/** The chance of each prize (0 for prizes still too deep to reach). */
-export function prizeChances(luck: number, open: number): number[] {
-  const w = PRIZES.map((p, i) => (i < open ? p.weight * luck ** p.pow : 0));
+/** The chance of each prize. Every prize can always bite; luck and Deeper Water lift the rare ones. */
+export function prizeChances(luck: number, deep = 1): number[] {
+  const w = PRIZES.map((p) => p.weight * luck ** p.pow * (p.row >= 2 ? deep : 1));
   const total = w.reduce((a, b) => a + b, 0);
   return w.map((x) => x / total);
 }
 
-export function rollPrize(luck: number, open: number, r = Math.random()): number {
-  const ch = prizeChances(luck, open);
+export function rollPrize(luck: number, deep: number, r = Math.random()): number {
+  const ch = prizeChances(luck, deep);
   let x = r;
   for (let i = 0; i < ch.length; i++) {
     x -= ch[i];
@@ -167,9 +167,9 @@ export interface Haul {
 export function expectedCatch(lv: Record<FishUpId, number>): Haul {
   const luck = fishLuck(lv.luck);
   const every = superEvery(lv.super);
-  const open = prizesOpen(lv.pond);
-  const ch = prizeChances(luck, open);
-  const chS = prizeChances(luck * SUPER_LUCK, open);
+  const deep = deepMult(lv.pond);
+  const ch = prizeChances(luck, deep);
+  const chS = prizeChances(luck * SUPER_LUCK, deep);
   const mult = (1 + doubleChance(lv.hook)) * (1 + shinyChance(lv.shiny) * (SHINY_MULT - 1));
   const out: Haul = { shells: 0, cashSecs: 0, dice: {}, gems: 0, potionMin: 0 };
   PRIZES.forEach((p, i) => {

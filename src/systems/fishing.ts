@@ -1,7 +1,7 @@
 import { BOOSTS } from "../data/boosts";
 import {
   FIRST_CATCH_SHELLS, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours, doubleChance, fishLuck, goldMult,
-  netMult, prizesOpen, rollPrize, shinyChance, superEvery, upgradeCost,
+  deepMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
 } from "../data/fishing";
 import { questEvent } from "./goals";
 import { save } from "./save";
@@ -32,7 +32,7 @@ export interface Catch {
 export const fishLv = (id: FishUpId) => save.fishing.lv[id] ?? 0;
 export const catchMs = () => catchSecs(fishLv("speed")) * 1000;
 export const currentLuck = () => fishLuck(fishLv("luck"));
-export const openPrizes = () => prizesOpen(fishLv("pond"));
+export const currentDeep = () => deepMult(fishLv("pond"));
 /** Catches left until the next SUPER catch (1 = the next one). */
 export const superIn = () => Math.max(1, superEvery(fishLv("super")) - save.fishing.superCount);
 
@@ -109,9 +109,9 @@ export function fishOnce(): Catch[] {
   const isSuper = f.superCount >= superEvery(fishLv("super"));
   if (isSuper) f.superCount = 0;
   const luck = currentLuck() * (isSuper ? SUPER_LUCK : 1);
-  const open = openPrizes();
-  const out = [land(rollPrize(luck, open), isSuper, false)];
-  if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, open), isSuper, true));
+  const deep = currentDeep();
+  const out = [land(rollPrize(luck, deep), isSuper, false)];
+  if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, deep), isSuper, true));
   out.forEach(pay);
   questEvent("fish", out.length);
   return out;

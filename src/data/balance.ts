@@ -34,6 +34,8 @@ export const HERO_BASE_DMG = 6;
 /** Hero adds this share of the team's pet damage to each bullet. */
 export const HERO_TEAM_SHARE = 0.2;
 export const HERO_HP = 100;
+/** Your health grows with the stage as fast as the monsters' bites (5% a stage), so a touch hurts the same everywhere. */
+export const heroHpAt = (stage: number) => HERO_HP * (1 + 0.05 * (stage - 1));
 
 export const CRYSTAL_HP = 800;
 /** The crystal toughens up as fast as the monsters' bites grow (5% a stage). */

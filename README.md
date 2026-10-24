@@ -299,7 +299,8 @@ hour of fishing brings.
   you fight or roll, and while you are away (until the Cooler Box is full).
   - **One catch every 60 s** at first, down to **every 5 s**. Every catch also brings **shells**, which buy
     the fishing upgrades.
-  - **The prizes**, 4 per row and 5 rows, from junk to legends:
+  - **The prizes**, 4 per row and 5 rows, from junk to legends. **Every prize can bite from the start**:
+    the deep rows just have microscopic chances that grow with Lucky Bait and Deeper Water.
 
     | Row | Prizes |
     |---|---|
@@ -310,15 +311,20 @@ hour of fishing brings.
     | Legend | Sun Die (E), Kraken Die (S), Titan Trident (SSS die), Leviathan Heart (uSSS die + 100 gems) |
 
     Money prizes are worth a few seconds to minutes of what fighting earns you right now.
-  - **Each tile shows its chance in %**, bottom right, in living colours: commons softly pulse, rarer rows
-    shift through their colours, legends run a rainbow. Below 0.01% the number hides: **?** under 0.01%,
-    **??** under 0.001%, **???** under 0.0001%, and under 0.00001% a scrambling, flickering mystery. A prize
-    you have never caught is a dark silhouette; tap a tile for its name, reward, chance and how many you
-    caught. Your first catch of each prize brings bonus shells.
-  - **The scene**: sky, drifting clouds, hills, glittering water with waves, lily pads, reeds, fish shadows
-    swimming about. The bobber bobs and sends out ripples; as a bite nears, a fish swims up and nibbles, then
-    a "!" pops over your hero, the bobber goes under with a splash, the rod bends, and the prize leaps out
-    of the water in a spray of drops. Commons bounce and fly to their tile; rare, shiny, super and first-ever
+  - **The board** shows each prize as just its picture floating over its shadow (no boxes), with its
+    **chance in %** at the picture's bottom right in a running **rainbow** (faster for rarer rows; epic and
+    legend pictures glow). Below 0.01% the number hides: **?** under 0.01%, **??** under 0.001%, **???** under
+    0.0001%, and under 0.00001% a scrambling, flickering mystery. Tap a prize for its name, reward, chance and
+    how many you caught. Your first catch of each prize brings bonus shells.
+  - **The scene is in 3D perspective**: a wooden pier reaches from the front corner out over the water, its
+    planks shrinking into the distance, with posts, mooring posts and a coil of rope, and your hero sits at
+    its end. Waves roll in from the horizon and spread as they come closer, the hills and sun are mirrored in
+    the water, the sun lays a glittering path, a haze sits on the horizon, birds and clouds drift by, lily
+    pads and fish shadows are smaller the farther they are, and reeds stand in front. The view sways gently
+    (far things move less than near ones). The bobber floats far out and sends out ripples; as a bite nears,
+    a fish swims up and nibbles, then a "!" pops over your hero, the bobber goes under with a splash, the rod
+    bends, and the prize **leaps out and flies at you**, growing as it comes closer with its shadow sliding
+    over the water. Commons bounce and fly to their place on the board; rare, shiny, super and first-ever
     catches get a **full-screen reveal** (rays, name, what you got, tags; legends flash and shake, tap to go
     on). Then the rod swings and the bobber plops back in.
   - **Upgrades** (paid in shells):
@@ -327,7 +333,7 @@ hour of fishing brings.
     |---|---|---|
     | Quick Reel | 24 | A catch every 60 s → 5 s |
     | Lucky Bait | 30 | Fishing luck x1 → x30 (lifts the rare rows; commons stay common) |
-    | Deeper Water | 12 | Prizes in reach: 8 → all 20 |
+    | Deeper Water | 12 | Rare, Epic and Legend prizes x1 → x2 more likely |
     | Double Hook | 15 | Up to 30% chance of two prizes at once |
     | Golden Line | 20 | Up to x3 shells |
     | Big Net | 10 | Up to x1.5 dice, gems and potions per prize |

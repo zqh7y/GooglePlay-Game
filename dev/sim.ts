@@ -130,6 +130,19 @@ let dice = 10;
 let fails = 0;
 let rushed = 0;
 const cleared = (how: string) => {
+  // DUMP_AT=n prints a save of the simulated player that just cleared stage n, set to stage n (to replay it for real)
+  if (process.env.DUMP_AT && stage === Number(process.env.DUMP_AT)) {
+    const team = pets.map((p, i) => [i, p.level] as [number, number]).filter(([, l]) => l > 0);
+    const dump = {
+      stage, bestStage: stage, how,
+      pets: Object.fromEntries(team.map(([i, l]) => [PET_LIST[i].id, { level: l, copies: 0 }])),
+      tree: Object.fromEntries([...owned].filter((id) => id !== "start").map((id) => [id, 1])),
+      fishing: { lv: fish, shells: 0, nextAt: 0, catches: 0, superCount: 0, caught: {} },
+      best: team.map(([i]) => i).sort((a, b) => PET_LIST[b].damage * levelMult(pets[b].level) - PET_LIST[a].damage * levelMult(pets[a].level)).slice(0, 3).map((i) => PET_LIST[i].id),
+    };
+    console.log("DUMP " + JSON.stringify(dump));
+    console.log(`SIMDPS ${teamDps().dps.toExponential(3)} need@min0 ${((1000 / spawnGap(0)) * group(0, stage) * monsterHp(avgBase, stage, 0) * 0.7).toExponential(3)}`);
+  }
   if (marks.has(stage)) {
     const { best } = teamDps();
     report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   forge ${sum("forge")}   fish speed ${fish.speed} luck ${fish.luck}   ${how}`);

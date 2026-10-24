@@ -1,14 +1,14 @@
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
-import { INK_N, darken, lighten, rgba } from "../art/draw";
+import { INK_N, lighten, rgba } from "../art/draw";
 import { makeFishTextures } from "../art/fishing";
 import { panelTexture } from "../art/ui";
 import { BOOSTS } from "../data/boosts";
 import {
-  BASE_PRIZES, FISH_UPGRADES, FishUpgrade, PRIZES, Prize, ROW_COLORS, ROW_NAMES, SHINY_MULT, SUPER_LUCK, chanceLabel, doubleChance, goldMult,
-  netMult, prizeChances, upgradeCost,
+  FISH_UPGRADES, FishUpgrade, PRIZES, Prize, ROW_COLORS, ROW_NAMES, SHINY_MULT, SUPER_LUCK, chanceLabel, doubleChance, goldMult, netMult, prizeChances,
+  upgradeCost,
 } from "../data/fishing";
-import { Catch, buyFish, canBuyFish, cashFor, catchMs, currentLuck, fishLv, openPrizes, superIn } from "../systems/fishing";
+import { Catch, buyFish, canBuyFish, cashFor, catchMs, currentDeep, currentLuck, fishLv, superIn } from "../systems/fishing";
 import { persist, save } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { fmt } from "./format";
@@ -36,33 +36,15 @@ export function prizeGift(p: Prize, c?: Catch): string {
   }
 }
 
-/** Short amount for a prize tile. */
-function tileAmount(p: Prize): string {
-  const net = netMult(fishLv("net"));
-  const k = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
-  switch (p.kind) {
-    case "shells": return `+${Math.round(p.amount * goldMult(fishLv("gold")))}`;
-    case "cash": return `+${fmt(cashFor(p.amount))}`;
-    case "dice": case "jackpot": return `x${k(p.amount * net)}`;
-    case "gems": return `+${k(p.amount * net)}`;
-    case "luckPotion": case "speedPotion": return `${k(p.amount * net)}m`;
-    case "lucky": return `x${k(p.amount * net)}`;
-    case "boost": return "x1";
-  }
-}
-
 const hsv = (h: number, s: number, v: number) => Phaser.Display.Color.HSVToRGB(((h % 1) + 1) % 1, s, v).color;
-const ROW_HUE = [0.58, 0.3, 0.57, 0.78, 0];
 const GLYPHS = "?#%&@!*$?";
 
+/** A prize on the board: just its picture floating over a shadow, and its chance at the bottom right. */
 interface Tile {
   c: Phaser.GameObjects.Container;
   icon: Phaser.GameObjects.Image;
-  amount: Phaser.GameObjects.Text;
+  shadow: Phaser.GameObjects.Ellipse;
   chance: Phaser.GameObjects.Text;
-  lock: Phaser.GameObjects.Container;
-  flash: Phaser.GameObjects.Graphics;
-  glow: Phaser.GameObjects.Graphics | null;
   mystery: number;
   x: number;
   y: number;
@@ -70,39 +52,57 @@ interface Tile {
   scrambleAt: number;
 }
 
+/** A fish swimming under the surface, in pond space (x across, z = distance). */
 interface Shadow {
   img: Phaser.GameObjects.Image;
-  vx: number;
-  vy: number;
+  X: number;
+  Z: number;
+  vX: number;
+  vZ: number;
   turnAt: number;
 }
 
 type Phase = "cast" | "wait" | "bite" | "reel" | "show";
 
-const TILE_W = 246;
-const TILE_H = 124;
+const COL_W = 270;
+const ROW_H = 128;
+/** Where things stand in the pond: x across (pixels at distance 1), z distance, y height above the water. */
+const PIER = { x1: -700, x2: -330, top: 46, zEnd: 1.95 };
+const HERO_AT = { X: -500, Z: 1.9 };
+const BOB_AT = { X: 230, Z: 3.4 };
 
 /**
- * The fishing screen. Top: every prize in the pond (4 x 5, junk to legends) with its chance in
- * living colors (the rarest hide behind question marks). Middle: the hero fishing on the dock;
- * each catch jumps out of the water and flies to its tile, rare ones get a big reveal.
- * Bottom: time to the next catch, shells, and the upgrades.
+ * The fishing screen. Top: every prize (4 x 5, junk to legends) floating over its shadow with its
+ * chance in rainbow colors at its bottom right (the rarest hide behind question marks). Middle:
+ * the pond in perspective: water rolling in from the horizon, reflections, the pier reaching out with
+ * the hero at its end, fish swimming at different depths; each catch leaps out of the water towards
+ * you and flies up to its prize, rare ones get a big reveal. Bottom: time to the next catch, shells,
+ * and the upgrades.
  */
 export class FishScreen extends Screen {
   private tiles: Tile[] = [];
   private head!: Phaser.GameObjects.Text;
   private pond!: Phaser.GameObjects.Container;
+  private far!: Phaser.GameObjects.Container;
+  private front!: Phaser.GameObjects.Container;
   private pondTop = 0;
   private pondH = 0;
   private skyH = 0;
+  /** camera height: the pond's perspective (see P) */
+  private hc = 0;
+  private readonly vpx = 560;
+  private sunX = 880;
   private waves!: Phaser.GameObjects.Graphics;
+  private glints!: Phaser.GameObjects.Graphics;
   private rod!: Phaser.GameObjects.Graphics;
   private hero!: Phaser.GameObjects.Image;
   private bobber!: Phaser.GameObjects.Image;
-  private bobberRest = { x: 0, y: 0 };
+  private bobberRest = { x: 0, y: 0, k: 1 };
   private clouds: Phaser.GameObjects.Image[] = [];
+  private birds: { img: Phaser.GameObjects.Image; v: number }[] = [];
   private lilies: Phaser.GameObjects.Image[] = [];
   private shadows: Shadow[] = [];
+  private bubbles: Phaser.GameObjects.Image[] = [];
   private superGlow!: Phaser.GameObjects.Image;
   private superText!: Phaser.GameObjects.Text;
   private bang!: Phaser.GameObjects.Container;
@@ -123,31 +123,40 @@ export class FishScreen extends Screen {
   private slack = 1;
   private reveal: Phaser.GameObjects.Container | null = null;
   private rippleT = 0;
-  private sparkleT = 0;
   private refreshT = 0;
   private lastLuck = -1;
-  private lastOpen = -1;
+  private lastDeep = -1;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, null);
     makeFishTextures(scene);
     const { width: W } = scene.scale;
     const L = host.L;
+    const top = L.headerBottom + 8;
+    const gridBottom = top + 60 + 5 * ROW_H;
+    // deep water behind the prizes, with light shafts and bubbles drifting up
     const back = scene.add.graphics();
-    back.fillGradientStyle(0x123a5c, 0x123a5c, 0x0e2a44, 0x0e2a44, 1).fillRect(0, 0, W, L.navTop);
+    back.fillGradientStyle(0x1d5a86, 0x1d5a86, 0x0b2340, 0x0b2340, 1).fillRect(0, 0, W, L.navTop);
     back.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, L.navTop), Phaser.Geom.Rectangle.Contains);
     this.root.add(back);
-    const top = L.headerBottom + 8;
+    const shafts = scene.add.graphics();
+    for (const [x, w, a] of [[160, 120, 0.07], [430, 80, 0.05], [700, 150, 0.06], [960, 90, 0.05]] as [number, number, number][]) {
+      shafts.fillStyle(0xbfe8ff, a).fillPoints([new Phaser.Math.Vector2(x, 0), new Phaser.Math.Vector2(x + w, 0), new Phaser.Math.Vector2(x + w * 2.2 - 60, gridBottom), new Phaser.Math.Vector2(x + w * 0.4 - 60, gridBottom)], true);
+    }
+    scene.tweens.add({ targets: shafts, alpha: 0.5, duration: 2600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.root.add(shafts);
+    for (let i = 0; i < 14; i++) {
+      const b = scene.add.image(Phaser.Math.Between(20, W - 20), Phaser.Math.Between(top, gridBottom), "fish_bubble").setScale(0.3 + Math.random() * 0.5).setAlpha(0.5);
+      this.bubbles.push(b);
+      this.root.add(b);
+    }
     // ── the prizes
-    this.root.add(scene.add.image(W / 2, top + 30 + 340, panelTexture(scene, "glass", 1050, 740)));
-    this.root.add(text(scene, 46, top + 34, "PRIZES", 40, "#ffe066").setOrigin(0, 0.5));
-    this.head = text(scene, W - 46, top + 34, "", 30, "#bfe8ff").setOrigin(1, 0.5);
+    this.root.add(text(scene, 46, top + 30, "PRIZES", 40, "#ffe066").setOrigin(0, 0.5));
+    this.head = text(scene, W - 46, top + 30, "", 30, "#bfe8ff").setOrigin(1, 0.5);
     this.root.add(this.head);
-    const x0 = (W - (4 * TILE_W + 3 * 10)) / 2;
-    const y0 = top + 70;
-    PRIZES.forEach((p, i) => this.tiles.push(this.makeTile(p, i, x0 + TILE_W / 2 + (i % 4) * (TILE_W + 10), y0 + TILE_H / 2 + Math.floor(i / 4) * (TILE_H + 8))));
+    PRIZES.forEach((p, i) => this.tiles.push(this.makeTile(p, i, 135 + (i % 4) * COL_W, top + 60 + ROW_H / 2 + Math.floor(i / 4) * ROW_H)));
     // ── the pond
-    this.pondTop = y0 + 5 * TILE_H + 4 * 8 + 16;
+    this.pondTop = gridBottom + 10;
     const pondBottom = L.navTop - 236;
     this.pondH = pondBottom - this.pondTop;
     this.buildPond(W);
@@ -173,110 +182,79 @@ export class FishScreen extends Screen {
     scene.game.events.on("fish-caught", this.onCatch, this);
   }
 
-  // ───────────────────────── prize tiles ─────────────────────────
+  // ───────────────────────── the prizes ─────────────────────────
 
   private makeTile(p: Prize, i: number, x: number, y: number): Tile {
     const s = this.scene;
     const color = ROW_COLORS[p.row];
-    const bg = s.add.graphics();
-    bg.fillStyle(darken(color, 0.72), 0.85).fillRoundedRect(-TILE_W / 2, -TILE_H / 2, TILE_W, TILE_H, 20);
-    bg.fillStyle(color, 0.16).fillRoundedRect(-TILE_W / 2 + 6, -TILE_H / 2 + 6, TILE_W - 12, TILE_H / 2 - 6, 14);
-    bg.lineStyle(5, color, 0.95).strokeRoundedRect(-TILE_W / 2, -TILE_H / 2, TILE_W, TILE_H, 20);
-    let glow: Phaser.GameObjects.Graphics | null = null;
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    // epic and legend prizes glow softly behind
     if (p.row >= 3) {
-      glow = s.add.graphics();
-      glow.lineStyle(12, lighten(color, 0.3), 1).strokeRoundedRect(-TILE_W / 2 - 4, -TILE_H / 2 - 4, TILE_W + 8, TILE_H + 8, 24);
-      s.tweens.add({ targets: glow, alpha: 0.15, duration: 700 + p.row * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const glow = s.add.image(-30, -6, "glow").setTint(color).setScale(0.55).setAlpha(0.45);
+      s.tweens.add({ targets: glow, alpha: 0.15, scale: 0.48, duration: 800 + p.row * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      parts.push(glow);
     }
-    const icon = s.add.image(-64, 0, prizeIcon(p));
-    icon.setScale(92 / Math.max(icon.width, icon.height));
-    const amount = text(s, 112, -32, "", 28).setOrigin(1, 0.5);
-    const chance = text(s, 112, 30, "", 32).setOrigin(1, 0.5);
-    const flash = s.add.graphics();
-    flash.fillStyle(0xffffff, 1).fillRoundedRect(-TILE_W / 2, -TILE_H / 2, TILE_W, TILE_H, 20);
-    flash.setAlpha(0);
-    const need = i - BASE_PRIZES + 1;
-    const lock = s.add.container(0, 0, [
-      s.add.rectangle(0, 0, TILE_W - 8, TILE_H - 8, 0x0a1420, 0.72),
-      s.add.image(-64, -2, "icon_lock").setScale(0.62),
-      text(s, 40, -16, "Deeper", 26, "#bfe8ff"),
-      text(s, 40, 18, `Water ${need}`, 26, "#bfe8ff"),
-    ]);
-    const parts: Phaser.GameObjects.GameObject[] = [bg, icon, amount, chance, flash, lock];
-    if (glow) parts.unshift(glow);
-    const c = s.add.container(x, y, parts).setSize(TILE_W, TILE_H).setInteractive({ useHandCursor: true });
-    c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.94, duration: 60 }));
+    const shadow = s.add.ellipse(-30, 44, 76, 16, 0x000000, 0.35);
+    const icon = s.add.image(-30, -6, prizeIcon(p));
+    icon.setScale(100 / Math.max(icon.width, icon.height));
+    const chance = text(s, 2, 38, "", 34).setOrigin(0, 0.5);
+    parts.push(shadow, icon, chance);
+    const c = s.add.container(x, y, parts).setSize(240, ROW_H).setInteractive({ useHandCursor: true });
+    // float gently: the picture bobs over its shadow, each a little out of step
+    s.tweens.add({
+      targets: icon, y: -16, duration: 1300 + (i % 5) * 110, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: i * 90,
+      onUpdate: () => shadow.setScale(1 - (-6 - icon.y) * 0.025).setAlpha(0.35 - (-6 - icon.y) * 0.012),
+    });
+    c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
     c.on("pointerout", () => c.setScale(1));
     c.on("pointerup", () => {
       c.setScale(1);
       this.showPrize(i);
     });
     this.root.add(c);
-    return { c, icon, amount, chance, lock, flash, glow, mystery: 0, x, y, scrambleAt: 0 };
+    return { c, icon, shadow, chance, mystery: 0, x, y, scrambleAt: 0 };
   }
 
-  /** Chances, amounts, locks and silhouettes (prizes never caught are dark shapes). */
   private refreshTiles(): void {
-    const open = openPrizes();
     const luck = currentLuck();
-    const ch = prizeChances(luck, open);
-    this.head.setText(`LUCK x${luck >= 10 ? Math.round(luck) : luck.toFixed(1)}  •  ${open}/${PRIZES.length} PRIZES`);
-    PRIZES.forEach((p, i) => {
+    const deep = currentDeep();
+    const ch = prizeChances(luck, deep);
+    this.head.setText(`LUCK x${luck >= 10 ? Math.round(luck) : luck.toFixed(1)}  •  DEEP x${deep.toFixed(2)}`);
+    PRIZES.forEach((_, i) => {
       const t = this.tiles[i];
-      const isOpen = i < open;
-      t.lock.setVisible(!isOpen);
-      t.amount.setVisible(isOpen).setText(tileAmount(p));
-      fitText(t.amount, 120);
-      t.chance.setVisible(isOpen);
-      const known = (save.fishing.caught[p.id] ?? 0) > 0;
-      if (known) t.icon.clearTint();
-      else t.icon.setTintFill(0x1c2c44);
-      if (!isOpen) return;
       const lbl = chanceLabel(ch[i]);
       t.mystery = lbl.mystery;
       if (lbl.mystery < 4) t.chance.setText(lbl.text);
-      t.chance.setFontSize(lbl.mystery ? 40 : 30);
-      fitText(t.chance, 130);
+      t.chance.setFontSize(lbl.mystery ? 44 : 34);
+      fitText(t.chance, 150);
     });
     this.lastLuck = luck;
-    this.lastOpen = open;
+    this.lastDeep = deep;
   }
 
-  /** The chances shimmer: commons softly, rarer rows through more colors, mysteries scramble. */
+  /** Every chance runs through the rainbow (rarer rows faster); the question marks wobble, the deepest scramble. */
   private animateTiles(time: number): void {
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i];
-      if (!t.chance.visible) continue;
       const row = PRIZES[i].row;
-      const ph = time / 1000 + i * 0.37;
+      const h = time / (2600 - row * 380) + i * 0.13;
+      t.chance.setTint(hsv(h, 0.55, 1), hsv(h + 0.12, 0.55, 1), hsv(h + 0.24, 0.6, 1), hsv(h + 0.36, 0.6, 1));
       if (t.mystery === 0) {
-        if (row === 0) {
-          const v = 0.85 + 0.15 * Math.sin(ph * 2);
-          t.chance.setTint(hsv(0.58, 0.15, v));
-        } else if (row === 4) {
-          const h = ph * 0.5;
-          t.chance.setTint(hsv(h, 0.6, 1), hsv(h + 0.15, 0.6, 1), hsv(h + 0.3, 0.6, 1), hsv(h + 0.45, 0.6, 1));
-        } else {
-          const h = ROW_HUE[row] + 0.06 * Math.sin(ph * 1.5);
-          t.chance.setTint(hsv(h, 0.45, 1), hsv(h + 0.05, 0.3, 1), hsv(h - 0.05, 0.55, 1), hsv(h, 0.45, 1));
-        }
         t.chance.setAngle(0);
         continue;
       }
-      // question marks: they wobble, glow and change color; the deepest ones scramble
-      const h = ph * (0.2 + 0.15 * t.mystery);
-      t.chance.setTint(hsv(h, 0.55, 1), hsv(h + 0.2, 0.55, 1), hsv(h + 0.4, 0.55, 1), hsv(h + 0.6, 0.55, 1));
+      const ph = time / 1000 + i * 0.37;
       t.chance.setAngle(Math.sin(ph * (2 + t.mystery)) * (4 + 2 * t.mystery));
       if (t.mystery === 4) {
         if (time - t.scrambleAt > 90) {
           t.scrambleAt = time;
-          let s = "";
-          for (let k = 0; k < 4; k++) s += GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-          t.chance.setText(s);
-          fitText(t.chance, 130);
+          let str = "";
+          for (let k = 0; k < 4; k++) str += GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+          t.chance.setText(str);
+          fitText(t.chance, 150);
         }
         t.chance.setAlpha(0.65 + 0.35 * Math.abs(Math.sin(ph * 7)));
-        t.chance.setX(112 + (Math.random() - 0.5) * 4);
+        t.chance.setX(2 + (Math.random() - 0.5) * 4);
       }
     }
   }
@@ -285,84 +263,119 @@ export class FishScreen extends Screen {
     sfx.click();
     const s = this.scene;
     const p = PRIZES[i];
-    const open = i < openPrizes();
     const caught = save.fishing.caught[p.id] ?? 0;
     const color = ROW_COLORS[p.row];
-    const m = this.host.showModal(modal(s, 820, 900, caught ? p.name : "???", "blue"));
+    const m = this.host.showModal(modal(s, 820, 880, p.name, "blue"));
     const icon = s.add.image(0, -200, prizeIcon(p));
     icon.setScale(230 / Math.max(icon.width, icon.height));
-    if (!caught) icon.setTintFill(0x2a3a54);
     const rays = s.add.image(0, -200, "rays").setTint(color).setAlpha(0.45).setScale(0.75);
     s.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
     s.tweens.add({ targets: icon, y: -214, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    const lbl = chanceLabel(prizeChances(currentLuck(), openPrizes())[i]);
-    const chance = !open ? "Not in reach yet" : lbl.mystery === 4 ? "A complete mystery..." : lbl.mystery ? `Chance: ${lbl.text}  (very, very rare)` : `Chance: ${lbl.text} per catch`;
+    const lbl = chanceLabel(prizeChances(currentLuck(), currentDeep())[i]);
+    const chance = lbl.mystery === 4 ? "Chance: a complete mystery..." : lbl.mystery ? `Chance: ${lbl.text}  (tiny, tiny)` : `Chance: ${lbl.text} per catch`;
     m.body.add([
       rays, icon,
       text(s, 0, -40, ROW_NAMES[p.row].toUpperCase(), 40, rgba(lighten(color, 0.2))),
-      label(s, 0, 40, caught ? `You get: ${prizeGift(p)}` : "Catch it once to see what it is!", 36, "#4a2f1d", 700),
+      label(s, 0, 40, `You get: ${prizeGift(p)}`, 36, "#4a2f1d", 700),
       label(s, 0, 120, chance, 32, "#7a5236", 700),
-      label(s, 0, 190, caught ? `Caught ${fmt(caught)} ${caught === 1 ? "time" : "times"}` : "Never caught", 30, "#9a7a5a"),
-      label(s, 0, 260, open ? "Lucky Bait makes rare prizes bite more often" : `Unlock it with Deeper Water level ${i - BASE_PRIZES + 1}`, 26, "#9a7a5a", 700),
-      button(s, 0, 360, 360, 110, "green", "OK", () => m.close(), { size: 40 }),
+      label(s, 0, 190, caught ? `Caught ${fmt(caught)} ${caught === 1 ? "time" : "times"}` : "Never caught yet", 30, "#9a7a5a"),
+      label(s, 0, 260, p.row >= 2 ? "Lucky Bait and Deeper Water make it bite more often" : "Always easy to catch", 26, "#9a7a5a", 700),
+      button(s, 0, 350, 360, 110, "green", "OK", () => m.close(), { size: 40 }),
     ]);
   }
 
-  // ───────────────────────── the pond ─────────────────────────
+  // ───────────────────────── the pond, in perspective ─────────────────────────
+
+  /** Pond space to screen: x across and y height above the water, at distance z (1 = the bottom edge). */
+  private P(X: number, Z: number, Y = 0): [number, number] {
+    return [this.vpx + X / Z, this.skyH + (this.hc - Y) / Z];
+  }
 
   private buildPond(W: number): void {
     const s = this.scene;
     const h = this.pondH;
-    const skyH = Math.round(h * 0.34);
+    const skyH = Math.round(h * 0.3);
     this.skyH = skyH;
+    this.hc = h - skyH + 10;
     const pond = s.add.container(0, this.pondTop);
     this.pond = pond;
+    // sky, and the water getting lighter and hazier towards the horizon
     const g = s.add.graphics();
-    g.fillGradientStyle(0x7cc8f2, 0x7cc8f2, 0xd8f3ff, 0xd8f3ff, 1).fillRect(0, 0, W, skyH);
-    g.fillGradientStyle(0x62bfe8, 0x62bfe8, 0x225f9c, 0x225f9c, 1).fillRect(0, skyH, W, h - skyH);
+    g.fillGradientStyle(0x6cbcf0, 0x6cbcf0, 0xd8f3ff, 0xd8f3ff, 1).fillRect(0, 0, W, skyH);
+    g.fillGradientStyle(0xa8e2f8, 0xa8e2f8, 0x3f9ad8, 0x3f9ad8, 1).fillRect(0, skyH, W, (h - skyH) * 0.45);
+    g.fillGradientStyle(0x3f9ad8, 0x3f9ad8, 0x174a80, 0x174a80, 1).fillRect(0, skyH + (h - skyH) * 0.45 - 1, W, (h - skyH) * 0.55 + 1);
     pond.add(g);
-    const sun = s.add.image(900, skyH * 0.34, "glow").setTint(0xfff3a8).setScale(0.9).setAlpha(0.9);
+    // far away: sun, clouds, hills and their reflection (they sway the least)
+    const far = s.add.container(0, 0);
+    this.far = far;
+    const sunY = skyH * 0.36;
+    const sun = s.add.image(this.sunX, sunY, "glow").setTint(0xfff3a8).setScale(0.9).setAlpha(0.9);
     s.tweens.add({ targets: sun, scale: 1, duration: 2200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    pond.add([sun, s.add.circle(900, skyH * 0.34, 42, 0xfff7c0)]);
-    for (let i = 0; i < 3; i++) {
-      const c = s.add.image(150 + i * 360, skyH * (0.18 + 0.16 * (i % 2)), "fish_cloud").setScale(0.7 + 0.2 * (i % 2)).setAlpha(0.95);
+    far.add([sun, s.add.circle(this.sunX, sunY, 40, 0xfff7c0)]);
+    for (let i = 0; i < 4; i++) {
+      const c = s.add.image(80 + i * 300, skyH * (0.14 + 0.13 * (i % 3)), "fish_cloud").setScale(0.45 + 0.18 * (i % 3)).setAlpha(0.9);
       this.clouds.push(c);
-      pond.add(c);
+      far.add(c);
     }
-    pond.add(s.add.image(0, skyH + 4, "fish_hills").setOrigin(0, 1).setScale(1, Math.min(1, (skyH * 0.8) / 260)));
-    // the far shore's reflection, then the ripples drawn every frame
-    pond.add(s.add.rectangle(0, skyH, W, 10, 0xffffff, 0.35).setOrigin(0));
+    const hillK = Math.min(1, (skyH * 0.75) / 260);
+    far.add(s.add.image(-20, skyH + 2, "fish_hills").setOrigin(0, 1).setScale(1.04, hillK));
+    far.add(s.add.image(-20, skyH, "fish_hills").setOrigin(0, 1).setScale(1.04, -hillK * 0.55).setAlpha(0.22).setTint(0x8fd0f0));
+    far.add(s.add.image(this.sunX, skyH + (h - skyH) * 0.2, "glow").setTint(0xfff3a8).setScale(0.5, 1.6).setAlpha(0.25));
+    for (let i = 0; i < 2; i++) {
+      const b = s.add.image(-60 - i * 400, skyH * (0.25 + 0.2 * i), "fish_bird").setScale(0.5 - 0.15 * i);
+      this.birds.push({ img: b, v: 0.7 - 0.25 * i });
+      far.add(b);
+    }
+    pond.add(far);
+    // a white haze along the horizon
+    const haze = s.add.graphics();
+    haze.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0, 0, 0.45, 0.45).fillRect(0, skyH - 24, W, 24);
+    haze.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.45, 0.45, 0, 0).fillRect(0, skyH, W, 30);
+    pond.add(haze);
+    // waves rolling in, and the sun's glitter path (drawn every frame)
     this.waves = s.add.graphics();
-    pond.add(this.waves);
-    const water = (f: number) => skyH + (h - skyH) * f;
-    for (const [x, f, k] of [[560, 0.72, 0.9], [990, 0.3, 0.75], [140, 0.86, 0.8]] as [number, number, number][]) {
-      const lily = s.add.image(x, water(f), "fish_lily").setScale(k);
+    this.glints = s.add.graphics();
+    pond.add([this.waves, this.glints]);
+    // lily pads and fish shadows at their distances
+    for (const [X, Z] of [[700, 1.6], [-60, 3.8], [880, 3], [180, 6.5], [620, 8]] as [number, number][]) {
+      const [x, y] = this.P(X, Z);
+      const lily = s.add.image(x, y, "fish_lily").setScale(1.5 / Z);
       this.lilies.push(lily);
       pond.add(lily);
     }
-    for (let i = 0; i < 3; i++) {
-      const img = s.add.image(500 + i * 180, water(0.35 + i * 0.2), "fish_shadow").setAlpha(0.2).setScale(0.6 + 0.15 * i);
-      this.shadows.push({ img, vx: (i % 2 ? 1 : -1) * (30 + i * 12), vy: 0, turnAt: 0 });
+    for (let i = 0; i < 4; i++) {
+      const img = s.add.image(0, 0, "fish_shadow").setAlpha(0.22);
+      this.shadows.push({ img, X: -100 + i * 260, Z: 1.6 + i * 1.1, vX: (i % 2 ? 1 : -1) * 120, vZ: 0, turnAt: 0 });
       pond.add(img);
     }
-    this.superGlow = s.add.image(0, 0, "glow").setTint(0xffd23f).setAlpha(0).setScale(1.2, 0.5);
+    this.superGlow = s.add.image(0, 0, "glow").setTint(0xffd23f).setAlpha(0);
     pond.add(this.superGlow);
-    pond.add(s.add.image(W - 70, h + 6, "fish_reeds").setOrigin(0.5, 1).setScale(Math.min(1, h / 420)));
-    // the dock, the hero on it with a bucket, the rod and line, the bobber
-    pond.add(s.add.image(-30, skyH - 52, "fish_dock").setOrigin(0));
-    pond.add(s.add.image(190, skyH - 4, "fish_bucket").setOrigin(0.5, 0.95));
-    this.hero = s.add.image(350, skyH - 6, "hero").setOrigin(0.5, 0.95).setScale(1.15);
-    s.tweens.add({ targets: this.hero, scaleY: 1.12, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // the pier reaching out over the water
+    const pier = s.add.graphics();
+    this.drawPier(pier);
+    pond.add(pier);
+    const [bx, by] = this.P(-640, 1.72, PIER.top);
+    pond.add(s.add.image(bx, by, "fish_bucket").setOrigin(0.5, 0.95).setScale(1.25 / 1.72));
+    const [hx, hy] = this.P(HERO_AT.X, HERO_AT.Z, PIER.top);
+    this.hero = s.add.image(hx, hy, "hero").setOrigin(0.5, 0.95).setScale(2 / HERO_AT.Z);
+    s.tweens.add({ targets: this.hero, scaleY: this.hero.scaleY * 0.975, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     pond.add(this.hero);
     this.rod = s.add.graphics();
     pond.add(this.rod);
-    this.bobberRest = { x: 780, y: water(0.42) };
-    this.bobber = s.add.image(this.bobberRest.x, this.bobberRest.y, "fish_bobber").setOrigin(0.5, 0.75);
+    const [rx, ry] = this.P(BOB_AT.X, BOB_AT.Z);
+    this.bobberRest = { x: rx, y: ry, k: 2.4 / BOB_AT.Z };
+    this.bobber = s.add.image(rx, ry, "fish_bobber").setOrigin(0.5, 0.75).setScale(this.bobberRest.k);
     pond.add(this.bobber);
-    this.superText = text(s, this.bobberRest.x, this.bobberRest.y - 110, "SUPER BITE!", 40, "#ffe066").setAlpha(0);
+    this.superText = text(s, rx, ry - 90, "SUPER BITE!", 38, "#ffe066").setAlpha(0);
     pond.add(this.superText);
-    this.bang = s.add.container(350, skyH - 230, [s.add.circle(0, 0, 40, 0xffffff).setStrokeStyle(6, INK_N), text(s, 0, -2, "!", 62, "#ff4a4a")]).setScale(0);
+    this.bang = s.add.container(hx, hy - this.hero.displayHeight - 50, [s.add.circle(0, 0, 38, 0xffffff).setStrokeStyle(6, INK_N), text(s, 0, -2, "!", 58, "#ff4a4a")]).setScale(0);
     pond.add(this.bang);
+    // close to you: tall reeds in front (they sway the most)
+    const front = s.add.container(0, 0);
+    this.front = front;
+    front.add(s.add.image(W - 50, h + 20, "fish_reeds").setOrigin(0.5, 1).setScale(Math.min(1.5, h / 330)));
+    front.add(s.add.image(W - 190, h + 30, "fish_reeds").setOrigin(0.5, 1).setScale(Math.min(1.1, h / 450)).setFlipX(true));
+    pond.add(front);
     // what the line is like right now
     const chip = (x: number, icon: string) => {
       const t = text(s, x + 34, 40, "", 30).setOrigin(0, 0.5);
@@ -372,11 +385,65 @@ export class FishScreen extends Screen {
     chip(20, "icon_clock");
     chip(232, "fu_hook");
     chip(444, "fu_super");
-    // a frame around the scene
     const frame = s.add.graphics();
     frame.lineStyle(10, INK_N, 1).strokeRoundedRect(4, 0, W - 8, h, 26);
     pond.add(frame);
+    // nothing spills over the edges
+    const mask = s.make.graphics({}, false);
+    mask.fillStyle(0xffffff).fillRect(4, this.pondTop, W - 8, h);
+    pond.setMask(mask.createGeometryMask());
     this.root.add(pond);
+  }
+
+  /** Planks in perspective (thinner further away), the side beam, posts going into the water with their reflections. */
+  private drawPier(g: Phaser.GameObjects.Graphics): void {
+    const V = (X: number, Z: number, Y: number) => new Phaser.Math.Vector2(...this.P(X, Z, Y));
+    const { x1, x2, top, zEnd } = PIER;
+    const z0 = Math.max(0.5, (this.hc - top) / (this.pondH + 40 - this.skyH));
+    // a soft shade on the water along the pier
+    g.fillStyle(0x0a2a50, 0.25).fillPoints([V(x2, z0, 0), V(x2 + 120, z0, 0), V(x2 + 50, zEnd, 0), V(x2, zEnd, 0)], true);
+    // posts (with wobbly reflections) along the side we can see
+    for (let z = zEnd - 0.04; z > z0; z -= 0.32) {
+      const w = 30 / z;
+      const [px, py] = this.P(x2 - 14, z, top - 22);
+      const [, wy] = this.P(x2 - 14, z, 0);
+      for (let k = 0; k < 6; k++) g.fillStyle(0x3a2412, 0.22 - k * 0.03).fillRect(px - w / 2 + Math.sin(k * 1.7) * 4, wy + (k * 14) / z, w, 12 / z);
+      g.fillStyle(0x5a3a20, 1).fillRect(px - w / 2, py, w, wy - py + 10 / z);
+      g.fillStyle(0x7a5232, 1).fillRect(px - w / 2, py, w * 0.4, wy - py + 10 / z);
+      g.fillStyle(0xffffff, 0.35).fillRect(px - w / 2 - 2, wy + 4 / z, w + 4, 3);
+    }
+    // the side beam
+    g.fillStyle(0x6e4426, 1).fillPoints([V(x2, z0, top), V(x2, zEnd, top), V(x2, zEnd, top - 24), V(x2, z0, top - 24)], true);
+    g.fillStyle(0x000000, 0.2).fillPoints([V(x2, z0, top - 14), V(x2, zEnd, top - 14), V(x2, zEnd, top - 24), V(x2, z0, top - 24)], true);
+    // the planks: same size in the world, so they shrink into the distance
+    let n = 0;
+    for (let z = z0; z < zEnd; z += 0.085) {
+      const z2 = Math.min(zEnd, z + 0.07);
+      const light = n++ % 2 ? 0xc8884a : 0xd49556;
+      g.fillStyle(light, 1).fillPoints([V(x1, z, top), V(x2, z, top), V(x2, z2, top), V(x1, z2, top)], true);
+      g.fillStyle(0xffffff, 0.12).fillPoints([V(x1, z, top), V(x2, z, top), V(x2, z + 0.012, top), V(x1, z + 0.012, top)], true);
+      g.fillStyle(0x5a3a20, 0.8).fillPoints([V(x1, z2, top), V(x2, z2, top), V(x2, z2 + 0.015, top), V(x1, z2 + 0.015, top)], true);
+      for (const X of [x1 + 30, x2 - 30]) {
+        const [nx, ny] = this.P(X, (z + z2) / 2, top);
+        g.fillStyle(0x4a2f1d, 1).fillCircle(nx, ny, 5 / z);
+      }
+    }
+    g.lineStyle(5, INK_N, 1).strokePoints([V(x2, z0, top), V(x2, zEnd, top), V(x1, zEnd, top)]);
+    // two mooring posts at the end, one with a coil of rope
+    for (const X of [x1 + 40, x2 - 40]) {
+      const z = zEnd - 0.03;
+      const w = 34 / z;
+      const [px, py] = this.P(X, z, top + 58);
+      const [, by] = this.P(X, z, top);
+      g.fillStyle(0x5a3a20, 1).fillRect(px - w / 2, py, w, by - py);
+      g.fillStyle(0x8a5a32, 1).fillRect(px - w / 2, py, w * 0.45, by - py);
+      g.fillStyle(0xa8743e, 1).fillEllipse(px, py, w, w * 0.4);
+      g.lineStyle(3, INK_N, 1).strokeRect(px - w / 2, py, w, by - py);
+      if (X === x1 + 40) {
+        g.lineStyle(7, 0xe8d0a0, 1).strokeEllipse(px, by - w * 0.6, w * 1.4, w * 0.5);
+        g.lineStyle(7, 0xd8bc88, 1).strokeEllipse(px, by - w * 1.0, w * 1.2, w * 0.42);
+      }
+    }
   }
 
   /** Rod from the hero's hand: it bends when something pulls and swings when you cast. */
@@ -386,11 +453,10 @@ export class FishScreen extends Screen {
     const k = this.hero.scaleX;
     const hx = this.hero.x + HERO_HAND.x * k;
     const hy = this.hero.y + HERO_HAND.y * k;
-    const len = 330;
-    const a = -0.95 + this.bend * 0.6 + this.swing + Math.sin(time / 900) * 0.02;
+    const len = 290 * k;
+    const a = -0.9 + this.bend * 0.6 + this.swing + Math.sin(time / 900) * 0.02;
     const tx = hx + Math.cos(a) * len;
     const ty = hy + Math.sin(a) * len;
-    // a curved rod: the middle lags behind the tip
     const mx = hx + Math.cos(a - this.bend * 0.3) * len * 0.55;
     const my = hy + Math.sin(a - this.bend * 0.3) * len * 0.55;
     const pts: Phaser.Math.Vector2[] = [];
@@ -398,16 +464,18 @@ export class FishScreen extends Screen {
       const t = i / 14;
       pts.push(new Phaser.Math.Vector2((1 - t) * (1 - t) * hx + 2 * (1 - t) * t * mx + t * t * tx, (1 - t) * (1 - t) * hy + 2 * (1 - t) * t * my + t * t * ty));
     }
-    g.lineStyle(16, INK_N, 1).strokePoints(pts);
-    g.lineStyle(9, 0xc8884a, 1).strokePoints(pts.slice(0, 9));
-    g.lineStyle(7, 0xe8c070, 1).strokePoints(pts.slice(8));
-    g.fillStyle(0xd8e0e8, 1).fillCircle(hx + Math.cos(a) * 40, hy + Math.sin(a) * 40, 12);
-    g.lineStyle(4, INK_N, 1).strokeCircle(hx + Math.cos(a) * 40, hy + Math.sin(a) * 40, 12);
-    // the line: slack to the bobber, tight to a prize being pulled out
+    g.lineStyle(14 * k, INK_N, 1).strokePoints(pts);
+    g.lineStyle(8 * k, 0xc8884a, 1).strokePoints(pts.slice(0, 9));
+    g.lineStyle(6 * k, 0xe8c070, 1).strokePoints(pts.slice(8));
+    g.lineStyle(2 * k, 0xffffff, 0.5).strokePoints(pts.slice(1, 12));
+    const rx = hx + Math.cos(a) * 36 * k;
+    const ry = hy + Math.sin(a) * 36 * k;
+    g.fillStyle(0xd8e0e8, 1).fillCircle(rx, ry, 11 * k);
+    g.lineStyle(4, INK_N, 1).strokeCircle(rx, ry, 11 * k);
     const end = this.lineTo ?? { x: this.bobber.x, y: this.bobber.y - this.bobber.displayHeight * 0.7 };
     if (this.bobber.visible || this.lineTo) {
       const cx = (tx + end.x) / 2;
-      const cy = (ty + end.y) / 2 + 90 * this.slack;
+      const cy = (ty + end.y) / 2 + 80 * this.slack;
       const line: Phaser.Math.Vector2[] = [];
       for (let i = 0; i <= 16; i++) {
         const t = i / 16;
@@ -418,46 +486,63 @@ export class FishScreen extends Screen {
     return { tx, ty };
   }
 
+  /** Lines of ripples roll in from the horizon, spreading and growing as they come closer; the sun glitters on them. */
   private drawWaves(time: number): void {
     const g = this.waves;
     g.clear();
     const W = this.scene.scale.width;
     const top = this.skyH;
-    const h = this.pondH - top;
-    for (let k = 0; k < 7; k++) {
-      const y0 = top + 22 + (k / 7) * (h - 30) + Math.sin(time / 1700 + k) * 6;
-      const amp = 4 + k * 1.2;
-      g.lineStyle(3 + k * 0.4, 0xffffff, 0.12 + 0.04 * (k % 3));
-      g.beginPath();
-      for (let x = -20; x <= W + 20; x += 30) {
-        const y = y0 + Math.sin(x / (90 + k * 14) + time / (700 + k * 90) + k) * amp;
-        if (x === -20) g.moveTo(x, y);
-        else g.lineTo(x, y);
+    const wh = this.pondH - top;
+    const N = 16;
+    for (let i = 0; i < N; i++) {
+      const u = (i / N + time / 14000) % 1;
+      const y = top + 6 + wh * u ** 1.8;
+      const amp = 1 + 8 * u;
+      const seg = 18 + 150 * u;
+      const gap = seg * (0.7 + 0.3 * Math.sin(i * 2.1));
+      const off = (i * 137 + time * 0.012 * (0.4 + u)) % (seg + gap);
+      g.lineStyle(1.5 + 5 * u, 0xffffff, Math.min(0.42, 0.08 + 0.6 * u) * (1 - Math.max(0, u - 0.85) / 0.15));
+      for (let x = -off; x < W; x += seg + gap) {
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x + seg * 0.5, y - amp);
+        g.lineTo(x + seg, y);
+        g.strokePath();
       }
-      g.strokePath();
+    }
+    const gl = this.glints;
+    gl.clear();
+    const tick = Math.floor(time / 140);
+    for (let k = 0; k < 26; k++) {
+      const r = Math.sin(k * 12.9898 + tick * 78.233) * 43758.5453;
+      const rnd = r - Math.floor(r);
+      const u = (k / 26) ** 1.4;
+      const y = top + 8 + wh * 0.75 * u;
+      const x = this.sunX + this.far.x + (rnd - 0.5) * (30 + 260 * u);
+      gl.fillStyle(0xffffff, 0.35 + 0.5 * rnd).fillEllipse(x, y, 6 + 34 * u * rnd, 2 + 3 * u);
     }
   }
 
-  private ripple(x: number, y: number, big = false): void {
+  private ripple(x: number, y: number, k: number, big = false): void {
     const s = this.scene;
-    const r = s.add.image(x, y, "ring").setScale(big ? 0.5 : 0.25, big ? 0.17 : 0.09).setAlpha(0.8);
+    const r = s.add.image(x, y, "ring").setScale((big ? 0.5 : 0.25) * k, (big ? 0.15 : 0.08) * k).setAlpha(0.8);
     this.pond.add(r);
-    this.pond.bringToTop(this.bobber);
-    s.tweens.add({ targets: r, scaleX: big ? 1.8 : 1, scaleY: big ? 0.6 : 0.33, alpha: 0, duration: big ? 900 : 1300, ease: "Quad.out", onComplete: () => r.destroy() });
+    this.pond.moveBelow(r, this.bobber);
+    s.tweens.add({ targets: r, scaleX: (big ? 1.8 : 1) * k, scaleY: (big ? 0.55 : 0.3) * k, alpha: 0, duration: big ? 900 : 1300, ease: "Quad.out", onComplete: () => r.destroy() });
   }
 
-  /** Water drops flying up from a point. */
-  private splash(x: number, y: number, n: number): void {
+  /** Water drops flying up from a point (smaller far away). */
+  private splash(x: number, y: number, n: number, k: number): void {
     const s = this.scene;
     for (let i = 0; i < n; i++) {
-      const d = s.add.image(x, y, "fish_drop").setScale(0.6 + Math.random() * 0.7);
+      const d = s.add.image(x, y, "fish_drop").setScale((0.6 + Math.random() * 0.7) * k);
       this.pond.add(d);
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
-      const v = 120 + Math.random() * 180;
+      const v = (120 + Math.random() * 180) * k;
       s.tweens.add({ targets: d, x: x + Math.cos(a) * v, duration: 600, ease: "Linear" });
       s.tweens.add({ targets: d, y: y + Math.sin(a) * v, duration: 300, ease: "Quad.out", yoyo: true, onComplete: () => d.destroy() });
     }
-    this.ripple(x, y, true);
+    this.ripple(x, y, k, true);
   }
 
   // ───────────────────────── the catch ─────────────────────────
@@ -487,18 +572,20 @@ export class FishScreen extends Screen {
     const k = { b: this.bend };
     s.tweens.add({ targets: k, b: 1, duration: 140, onUpdate: () => (this.bend = k.b) });
     this.slack = 0;
-    const bx = this.bobber.x;
-    const by = this.bobber.y;
-    this.splash(bx, by, 10);
+    this.splash(this.bobberRest.x, this.bobberRest.y, 10, this.bobberRest.k);
     this.superGlow.setAlpha(0);
     s.time.delayedCall(this.hurry ? 160 : 320, () => {
       sfx.reel();
       this.bobber.setVisible(false);
-      this.showGroup(group, 0, bx, by);
+      this.showGroup(group, 0);
     });
   }
 
-  private showGroup(group: Catch[], i: number, bx: number, by: number): void {
+  /**
+   * Each prize leaps out where the bobber was and comes flying at you: it grows as it gets closer,
+   * with its shadow sliding over the water under it, and a spray of drops behind.
+   */
+  private showGroup(group: Catch[], i: number): void {
     const s = this.scene;
     if (i >= group.length) {
       this.lineTo = null;
@@ -507,32 +594,43 @@ export class FishScreen extends Screen {
     }
     const c = group[i];
     const p = PRIZES[c.prize];
-    const img = s.add.image(bx, by, prizeIcon(p));
-    const size = 120 / Math.max(img.width, img.height);
-    img.setScale(size * 0.4);
-    this.pond.add(img);
-    this.lineTo = { x: bx, y: by };
-    const spot = { x: 600, y: this.skyH - 170 };
+    const img = s.add.image(0, 0, prizeIcon(p));
+    const base = 120 / Math.max(img.width, img.height);
+    const shade = s.add.ellipse(0, 0, 90, 22, 0x0a2a50, 0.4);
+    this.pond.add([shade, img]);
+    const end = { X: 60, Z: 1.25, Y: this.hc * 0.42 };
     const k = { t: 0 };
     this.phase = "show";
+    const place = () => {
+      const t = k.t;
+      const Z = 1 / (1 / BOB_AT.Z + (1 / end.Z - 1 / BOB_AT.Z) * t);
+      const X = BOB_AT.X + (end.X - BOB_AT.X) * t;
+      const Y = end.Y * t + Math.sin(t * Math.PI) * this.hc * 0.3;
+      const [x, y] = this.P(X, Z, Y);
+      const [sx, sy] = this.P(X, Z, 0);
+      img.setPosition(x, y).setScale(base * (1.6 / Z)).setAngle(t * 360);
+      shade.setPosition(sx, sy).setScale(1.3 / Z).setAlpha(0.4 * (1 - Math.min(0.8, Y / this.hc)));
+    };
+    place();
     s.tweens.add({
-      targets: k, t: 1, duration: this.hurry ? 380 : 560, ease: "Quad.out",
+      targets: k, t: 1, duration: this.hurry ? 420 : 620, ease: "Quad.out",
       onUpdate: () => {
-        img.setPosition(bx + (spot.x - bx) * k.t, by + (spot.y - by) * k.t - Math.sin(k.t * Math.PI) * 140).setAngle(k.t * 360).setScale(size * (0.4 + 0.8 * k.t));
+        place();
         this.lineTo = { x: img.x, y: img.y };
-        if (Math.random() < 0.4) {
-          const d = s.add.image(img.x, img.y, "fish_drop").setScale(0.5);
+        if (Math.random() < 0.45) {
+          const d = s.add.image(img.x, img.y, "fish_drop").setScale(img.scale * 2);
           this.pond.add(d);
-          s.tweens.add({ targets: d, y: d.y + 80, alpha: 0, duration: 420, onComplete: () => d.destroy() });
+          s.tweens.add({ targets: d, y: d.y + 90, alpha: 0, duration: 420, onComplete: () => d.destroy() });
         }
       },
       onComplete: () => {
+        shade.destroy();
         this.lineTo = null;
         this.slack = 1;
         const k2 = { b: this.bend };
         s.tweens.add({ targets: k2, b: 0, duration: 260, ease: "Back.out", onUpdate: () => (this.bend = k2.b) });
         const big = p.row >= 2 || c.shiny || c.super || !(save.fishing.caught[p.id] > 1);
-        const after = () => this.flyToTile(img, c, () => this.showGroup(group, i + 1, bx, by));
+        const after = () => this.flyToTile(img, c, () => this.showGroup(group, i + 1));
         if (big && !(this.hurry && p.row < 3 && !c.shiny && save.fishing.caught[p.id] > 1)) this.bigReveal(c, img, after);
         else this.smallPop(c, img, after);
       },
@@ -545,8 +643,8 @@ export class FishScreen extends Screen {
     const p = PRIZES[c.prize];
     sfx.catch(p.row);
     const base = img.scale;
-    s.tweens.add({ targets: img, scale: base * 1.3, duration: 120, yoyo: true });
-    const t = text(s, img.x, img.y - 90, prizeGift(p, c), 36, rgba(lighten(ROW_COLORS[p.row], 0.35)));
+    s.tweens.add({ targets: img, scale: base * 1.25, duration: 120, yoyo: true });
+    const t = text(s, img.x, img.y - img.displayHeight * 0.7, prizeGift(p, c), 36, rgba(lighten(ROW_COLORS[p.row], 0.35)));
     fitText(t, 520);
     this.pond.add(t);
     s.tweens.add({ targets: t, y: t.y - 60, alpha: 0, delay: 500, duration: 400, onComplete: () => t.destroy() });
@@ -598,7 +696,6 @@ export class FishScreen extends Screen {
       s.tweens.add({ targets: flash, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
       s.cameras.main.shake(400, 0.008);
     }
-    // sparkles bursting around it
     for (let k = 0; k < 8 + p.row * 4; k++) {
       const sp = s.add.image(W / 2, H * 0.42, "spark").setTint(k % 2 ? color : 0xffffff).setScale(0.6);
       root.add(sp);
@@ -626,7 +723,7 @@ export class FishScreen extends Screen {
     s.time.delayedCall(350, () => dim.on("pointerup", finish));
   }
 
-  /** The prize flies up into its tile, which flashes. */
+  /** The prize flies up to its place on the board, which pops. */
   private flyToTile(img: Phaser.GameObjects.Image, c: Catch, done: () => void): void {
     const s = this.scene;
     const t = this.tiles[c.prize];
@@ -635,14 +732,15 @@ export class FishScreen extends Screen {
     this.root.add(img);
     img.setPosition(img.x, img.y + this.pondTop);
     s.tweens.add({
-      targets: img, x: t.x - 64, y: t.y, scale: (92 / Math.max(img.width, img.height)), angle: 0, duration: this.hurry ? 320 : 460, ease: "Cubic.in",
+      targets: img, x: t.x + t.icon.x, y: t.y + t.icon.y, scale: t.icon.scale, angle: 0, duration: this.hurry ? 320 : 460, ease: "Cubic.in",
       onComplete: () => {
         img.destroy();
         sfx.coin();
-        t.flash.setAlpha(0.8);
-        s.tweens.add({ targets: t.flash, alpha: 0, duration: 380 });
-        t.c.setScale(1.15);
-        s.tweens.add({ targets: t.c, scale: 1, duration: 260, ease: "Back.out" });
+        t.c.setScale(1.3);
+        s.tweens.add({ targets: t.c, scale: 1, duration: 300, ease: "Back.out" });
+        const ring = s.add.circle(t.x + t.icon.x, t.y + t.icon.y, 50).setStrokeStyle(8, ROW_COLORS[p.row]);
+        this.root.add(ring);
+        s.tweens.add({ targets: ring, scale: 1.8, alpha: 0, duration: 380, onComplete: () => ring.destroy() });
         if (p.kind === "cash") this.host.coinShower(t.x, t.y, 4);
         this.refreshTiles();
       },
@@ -650,7 +748,7 @@ export class FishScreen extends Screen {
     s.time.delayedCall(this.hurry ? 120 : 220, done);
   }
 
-  /** Swing the rod back and forward: the bobber flies out and plops into the water. */
+  /** Swing the rod back and forward: the bobber flies out and plops into the water far away. */
   private cast(): void {
     const s = this.scene;
     this.phase = "cast";
@@ -664,19 +762,20 @@ export class FishScreen extends Screen {
       sfx.cast();
       const { tx, ty } = this.drawRod(s.time.now);
       const end = this.bobberRest;
-      this.bobber.setVisible(true).setPosition(tx, ty).setAngle(0);
+      this.bobber.setVisible(true).setPosition(tx, ty).setAngle(0).setScale(this.hero.scaleX * 1.1);
       this.slack = 0.3;
       const f = { t: 0 };
       s.tweens.add({
         targets: f, t: 1, duration: this.hurry ? 300 : 460, ease: "Sine.in",
         onUpdate: () => {
-          this.bobber.setPosition(tx + (end.x - tx) * f.t, ty + (end.y - ty) * f.t - Math.sin(f.t * Math.PI) * 160).setAngle(f.t * 360);
+          this.bobber.setPosition(tx + (end.x - tx) * f.t, ty + (end.y - ty) * f.t - Math.sin(f.t * Math.PI) * 160).setAngle(f.t * 360)
+            .setScale(this.hero.scaleX * 1.1 + (end.k - this.hero.scaleX * 1.1) * f.t);
           this.slack = 0.3 + 0.7 * f.t;
         },
         onComplete: () => {
           this.bobber.setAngle(0);
           sfx.plop();
-          this.splash(end.x, end.y, 6);
+          this.splash(end.x, end.y, 6, end.k);
           this.phase = "wait";
         },
       });
@@ -747,7 +846,7 @@ export class FishScreen extends Screen {
     this.swing = 0;
     this.lineTo = null;
     this.slack = 1;
-    this.bobber.setVisible(true).setPosition(this.bobberRest.x, this.bobberRest.y).setAngle(0);
+    this.bobber.setVisible(true).setPosition(this.bobberRest.x, this.bobberRest.y).setAngle(0).setScale(this.bobberRest.k);
     this.refreshTiles();
   }
 
@@ -760,13 +859,13 @@ export class FishScreen extends Screen {
   update(time: number): void {
     if (!this.visible) return;
     const s = this.scene;
+    const W = s.scale.width;
     const now = Date.now();
     const left = Math.max(0, save.fishing.nextAt - now);
-    // live numbers
     this.refreshT -= 16;
     if (this.refreshT <= 0) {
       this.refreshT = 250;
-      if (currentLuck() !== this.lastLuck || openPrizes() !== this.lastOpen) this.refreshTiles();
+      if (currentLuck() !== this.lastLuck || currentDeep() !== this.lastDeep) this.refreshTiles();
       const secs = catchMs() / 1000;
       this.chips[0].setText(secs >= 10 ? `${Math.round(secs)}s` : `${secs.toFixed(1)}s`);
       this.chips[1].setText(`${Math.round(doubleChance(fishLv("hook")) * 100)}%`);
@@ -780,56 +879,60 @@ export class FishScreen extends Screen {
     drawBar(this.bar, 120, this.pondTop + this.pondH + 14 + 24, 900, 40, Phaser.Math.Clamp(f, 0, 1), left < 1000 ? 0xffe066 : 0x5ac8ff);
     this.barText.setText(left < 900 ? "Something's biting...!" : `Next catch in ${Math.ceil(left / 1000)}s`);
     this.animateTiles(time);
-    // the pond
-    this.drawWaves(time);
-    const W = s.scale.width;
-    for (const c of this.clouds) {
-      c.x += 0.25;
-      if (c.x > W + 120) c.x = -120;
+    for (const b of this.bubbles) {
+      b.y -= 0.6 + b.scale;
+      b.x += Math.sin(time / 600 + b.y / 50) * 0.3;
+      if (b.y < this.host.L.headerBottom) b.y = this.pondTop - 10;
     }
-    this.lilies.forEach((l, i) => l.setAngle(Math.sin(time / 1300 + i) * 4).setY(l.y + Math.sin(time / 700 + i) * 0.08));
-    const water = this.skyH + 40;
+    // the camera sways a little: far things move less than near ones
+    const sway = Math.sin(time / 2600) * 10;
+    this.far.x = -sway * 0.5;
+    this.front.x = sway * 1.3;
+    this.drawWaves(time);
+    for (const c of this.clouds) {
+      c.x += 0.12 + c.scale * 0.2;
+      if (c.x > W + 140) c.x = -140;
+    }
+    for (const b of this.birds) {
+      b.img.x += b.v;
+      b.img.y += Math.sin(time / 300 + b.v * 10) * 0.25;
+      b.img.setScale(b.img.scaleX, Math.abs(b.img.scaleX) * (0.6 + 0.4 * Math.abs(Math.sin(time / 140 + b.v * 5))));
+      if (b.img.x > W + 80) b.img.x = -80 - Math.random() * 600;
+    }
+    this.lilies.forEach((l, i) => l.setAngle(Math.sin(time / 1300 + i) * 3));
+    // fish swim about at their depths; when a bite is near, one heads for the bobber
     for (const sh of this.shadows) {
       if (time > sh.turnAt) {
         sh.turnAt = time + 2500 + Math.random() * 4000;
-        sh.vx = (Math.random() < 0.5 ? -1 : 1) * (25 + Math.random() * 40);
-        sh.vy = (Math.random() - 0.5) * 16;
+        sh.vX = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120);
+        sh.vZ = (Math.random() - 0.5) * 0.5;
       }
-      // when a bite is coming, one fish heads for the bobber
       if ((this.phase === "bite" || left < 1500) && sh === this.shadows[0]) {
-        const dx = this.bobber.x + 60 - sh.img.x;
-        const dy = this.bobber.y + 30 - sh.img.y;
-        sh.vx = Phaser.Math.Clamp(dx * 2, -160, 160);
-        sh.vy = Phaser.Math.Clamp(dy * 2, -80, 80);
+        sh.vX = Phaser.Math.Clamp((BOB_AT.X + 70 - sh.X) * 2, -260, 260);
+        sh.vZ = Phaser.Math.Clamp((BOB_AT.Z + 0.05 - sh.Z) * 2, -1, 1);
       }
-      sh.img.x = Phaser.Math.Clamp(sh.img.x + sh.vx / 60, 420, W - 60);
-      sh.img.y = Phaser.Math.Clamp(sh.img.y + sh.vy / 60, water, this.pondH - 50);
-      sh.img.setFlipX(sh.vx > 0);
+      sh.X = Phaser.Math.Clamp(sh.X + sh.vX / 60, -250, 1300);
+      sh.Z = Phaser.Math.Clamp(sh.Z + sh.vZ / 60, 1.25, 7);
+      const [x, y] = this.P(sh.X, sh.Z, -14);
+      sh.img.setPosition(x, y).setScale(1.1 / sh.Z).setFlipX(sh.vX > 0).setAlpha(0.12 + 0.12 / sh.Z);
     }
     this.rippleT -= 16;
     if (this.phase === "wait" && this.rippleT <= 0) {
       this.rippleT = 1400;
-      this.ripple(this.bobber.x, this.bobber.y);
-    }
-    this.sparkleT -= 16;
-    if (this.sparkleT <= 0) {
-      this.sparkleT = 260;
-      const sp = s.add.image(Phaser.Math.Between(420, W - 40), Phaser.Math.Between(water, this.pondH - 30), "spark").setScale(0).setAlpha(0.9);
-      this.pond.add(sp);
-      this.pond.bringToTop(this.bobber);
-      s.tweens.add({ targets: sp, scale: 0.4, angle: 90, duration: 300, yoyo: true, onComplete: () => sp.destroy() });
+      this.ripple(this.bobber.x, this.bobber.y, this.bobberRest.k);
     }
     // a SUPER catch is next: the water around the bobber glows gold
     const superNext = superIn() === 1;
-    this.superGlow.setPosition(this.bobberRest.x, this.bobberRest.y).setAlpha(superNext && this.phase !== "show" ? 0.45 + 0.25 * Math.sin(time / 180) : 0);
+    const k = this.bobberRest.k;
+    this.superGlow.setPosition(this.bobberRest.x, this.bobberRest.y).setScale(1.4 * k, 0.45 * k).setAlpha(superNext && this.phase !== "show" ? 0.45 + 0.25 * Math.sin(time / 180) : 0);
     this.superText.setAlpha(superNext && this.phase === "wait" ? 0.75 + 0.25 * Math.sin(time / 150) : 0);
     // bobbing, nibbling, biting
     if (this.phase === "wait" || this.phase === "bite") {
-      const nibble = left < 1500 ? Math.max(0, Math.sin(time / 60)) * 10 * (1 - left / 1500) : 0;
-      this.bobber.setPosition(this.bobberRest.x, this.bobberRest.y + Math.sin(time / 420) * 4 + nibble).setAlpha(1);
+      const nibble = left < 1500 ? Math.max(0, Math.sin(time / 60)) * 10 * k * (1 - left / 1500) : 0;
+      this.bobber.setPosition(this.bobberRest.x, this.bobberRest.y + Math.sin(time / 420) * 3 * k + nibble).setAlpha(1);
       if (left < 1500 && this.phase === "wait") this.phase = "bite";
     } else if (this.phase === "reel" && this.bobber.visible) {
-      this.bobber.y += (this.bobberRest.y + 24 - this.bobber.y) * 0.3;
+      this.bobber.y += (this.bobberRest.y + 20 * k - this.bobber.y) * 0.3;
       this.bobber.setAlpha(0.5);
     }
     if ((this.phase === "wait" || this.phase === "bite") && this.queue.length) this.reel(this.queue.shift()!);
