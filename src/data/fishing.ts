@@ -1,4 +1,5 @@
-import { Tier } from "./tiers";
+import { BOOSTS, BoostId } from "./boosts";
+import { DICE_TIERS, Tier } from "./tiers";
 
 /**
  * Fishing: an AFK reward grind. The hero sits on the dock and catches one prize every so often
@@ -183,4 +184,51 @@ export function expectedCatch(lv: Record<FishUpId, number>): Haul {
     if (p.kind === "luckPotion") out.potionMin += c * p.amount * netMult(lv.net);
   });
   return out;
+}
+
+// ───────────────────────── the fishing event ─────────────────────────
+
+/**
+ * The fishing event (its card is in the battle lobby): every catch fills the event bar, and each
+ * round has 10 rewards for your next fights: dice, gems, battle boosts, luck potions, lucky rolls,
+ * shells, and a big prize at the end. Then the next round starts, with bigger goals and rewards.
+ */
+export type EventRewardKind = "shells" | "dice" | "gems" | "boost" | "luckPotion" | "lucky" | "grand";
+
+export interface EventReward {
+  kind: EventRewardKind;
+  /** shells, dice, gems, boosts, potion minutes or lucky rolls (grand: dice of `tier`, plus `gems`) */
+  amount: number;
+  tier?: Tier;
+  gems?: number;
+  boost?: BoostId;
+}
+
+/** Catches each of a round's rewards needs, counted from the start of the round. */
+export const EVENT_STEPS = [5, 12, 20, 30, 42, 56, 72, 90, 110, 135];
+export const EVENT_REWARDS = EVENT_STEPS.length;
+/** Each round asks 1.5x more catches than the one before, up to round 12. */
+const roundScale = (round: number) => 1.5 ** Math.min(11, round - 1);
+export const eventGoal = (round: number, k: number) => Math.round(EVENT_STEPS[k] * roundScale(round));
+/** The dice the event gives: the crystal's tier for your stage (the big prize is one tier better). */
+export const stageDiceTier = (stage: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.length - 1, Math.floor((stage - 1) / 20))];
+
+export function eventReward(round: number, k: number, stage: number): EventReward {
+  // shells grow with the rounds, but not as fast as the goals (fishing pays most of your money)
+  const g = Math.min(8, roundScale(round));
+  const tier = stageDiceTier(stage);
+  const up = DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), DICE_TIERS.indexOf(tier) + 1)];
+  const boost = (n: number) => BOOSTS[(round + n) % BOOSTS.length].id;
+  switch (k) {
+    case 0: return { kind: "shells", amount: Math.round(15 * g) };
+    case 1: return { kind: "dice", amount: 2, tier };
+    case 2: return { kind: "gems", amount: 2 + Math.min(round, 6) };
+    case 3: return { kind: "boost", amount: 1, boost: boost(0) };
+    case 4: return { kind: "luckPotion", amount: Math.min(15, 4 + round) };
+    case 5: return { kind: "shells", amount: Math.round(40 * g) };
+    case 6: return { kind: "dice", amount: 3, tier };
+    case 7: return { kind: "lucky", amount: 3 };
+    case 8: return { kind: "boost", amount: 2, boost: boost(2) };
+    default: return { kind: "grand", amount: 1, tier: up, gems: 5 + Math.min(round, 10) };
+  }
 }

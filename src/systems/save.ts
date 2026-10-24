@@ -97,9 +97,11 @@ export interface FishingState {
   superCount: number;
   /** prize id -> how many you caught */
   caught: Record<string, number>;
+  /** the fishing event: which round, catches in this round, rewards of this round claimed */
+  event: { round: number; points: number; claimed: number };
 }
 
-export const freshFishing = (): FishingState => ({ lv: {}, shells: 0, nextAt: 0, catches: 0, superCount: 0, caught: {} });
+export const freshFishing = (): FishingState => ({ lv: {}, shells: 0, nextAt: 0, catches: 0, superCount: 0, caught: {}, event: { round: 1, points: 0, claimed: 0 } });
 
 const STORAGE_KEY = "dice-idle-save-v3";
 /** Roll 1, 3 or 10 dice at once. */

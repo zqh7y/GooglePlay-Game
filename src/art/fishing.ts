@@ -548,3 +548,120 @@ export function makeFishTextures(scene: Phaser.Scene): void {
 export function makeFishIcon(scene: Phaser.Scene): void {
   canvasTexture(scene, "icon_fish", 96, 96, tabIcon);
 }
+
+// ───────────────────────── the fishing event (its card in the lobby) ─────────────────────────
+
+/** The event card: a little lake at sunset in a golden frame (the fish and the text go on top). */
+function eventCard(c: Ctx, w: number, h: number): void {
+  const r = 30;
+  const shape = (inset: number) => {
+    c.beginPath();
+    c.roundRect(inset, inset, w - inset * 2, h - inset * 2, r - inset * 0.5);
+  };
+  shape(3);
+  fill(c, INK);
+  c.save();
+  shape(9);
+  c.clip();
+  const water = h * 0.5;
+  c.fillStyle = linear(c, 0, 0, 0, water, [[0, "#ff9ac8"], [0.55, "#ffd29a"], [1, "#fff0c8"]]);
+  c.fillRect(0, 0, w, water);
+  // the sun going down behind far hills
+  c.fillStyle = radial(c, w * 0.68, water - 14, 70, [[0, "rgba(255,250,210,1)"], [0.3, "rgba(255,230,150,0.8)"], [1, "rgba(255,200,150,0)"]]);
+  c.fillRect(0, 0, w, water);
+  circle(c, w * 0.68, water - 14, 20);
+  fill(c, "#fff6c8");
+  c.fillStyle = "#7ab86a";
+  c.beginPath();
+  c.moveTo(0, water);
+  c.quadraticCurveTo(w * 0.25, water - 34, w * 0.5, water - 8);
+  c.quadraticCurveTo(w * 0.75, water - 30, w, water - 6);
+  c.lineTo(w, water);
+  c.fill();
+  c.fillStyle = linear(c, 0, water, 0, h, [[0, "#6fd0ff"], [0.5, "#2f8ad8"], [1, "#1a4a90"]]);
+  c.fillRect(0, water, w, h - water);
+  // the sun's path on the water and a few waves
+  c.fillStyle = "rgba(255,240,190,0.55)";
+  for (let k = 0; k < 6; k++) c.fillRect(w * 0.68 - 26 + k * 3 - (k % 2) * 8, water + 8 + k * 14, 52 - k * 4, 4);
+  c.strokeStyle = "rgba(255,255,255,0.45)";
+  c.lineWidth = 3;
+  c.lineCap = "round";
+  for (const [x, y, len] of [[30, water + 40, 40], [140, water + 70, 50], [50, water + 100, 60], [170, water + 120, 40]] as [number, number, number][]) {
+    c.beginPath();
+    c.moveTo(x, y);
+    c.quadraticCurveTo(x + len / 4, y - 6, x + len / 2, y);
+    c.quadraticCurveTo(x + (len * 3) / 4, y + 6, x + len, y);
+    c.stroke();
+  }
+  // a dark band at the bottom for the title
+  c.fillStyle = linear(c, 0, h - 96, 0, h, [[0, "rgba(10,30,70,0)"], [1, "rgba(10,30,70,0.75)"]]);
+  c.fillRect(0, h - 96, w, 96);
+  // shine across the top left
+  c.fillStyle = "rgba(255,255,255,0.25)";
+  c.beginPath();
+  c.moveTo(0, 0);
+  c.lineTo(w * 0.55, 0);
+  c.lineTo(0, h * 0.4);
+  c.fill();
+  c.restore();
+  // golden frame
+  shape(9);
+  c.lineWidth = 7;
+  c.strokeStyle = linear(c, 0, 0, w, h, [[0, "#fff3a0"], [0.5, "#ffc23a"], [1, "#e88a1a"]]);
+  c.stroke();
+  shape(14);
+  c.lineWidth = 2;
+  c.strokeStyle = "rgba(90,50,10,0.5)";
+  c.stroke();
+}
+
+/** A red ribbon with notched tails ("EVENT" goes on it). */
+function eventRibbon(c: Ctx, w: number, h: number): void {
+  const tail = 26;
+  const band = (dy: number, x0: number, x1: number) => {
+    c.beginPath();
+    c.moveTo(x0, 6 + dy);
+    c.lineTo(x1, 6 + dy);
+    c.lineTo(x1, h - 8 + dy);
+    c.lineTo(x0, h - 8 + dy);
+    c.closePath();
+  };
+  // the tails, folded behind
+  for (const side of [-1, 1]) {
+    const x = side < 0 ? 4 : w - 4;
+    c.beginPath();
+    c.moveTo(x, 14);
+    c.lineTo(x - side * (tail + 18), 14);
+    c.lineTo(x - side * (tail + 18), h - 2);
+    c.lineTo(x, h - 2);
+    c.lineTo(x - side * 14, (h + 12) / 2);
+    c.closePath();
+    fill(c, "#9a1e2e");
+    outline(c, 5);
+  }
+  band(0, tail, w - tail);
+  fill(c, linear(c, 0, 6, 0, h - 8, [[0, "#ff6a6a"], [0.5, "#e8434f"], [1, "#b02a38"]]));
+  outline(c, 6);
+  c.fillStyle = "rgba(255,255,255,0.3)";
+  c.fillRect(tail + 6, 12, w - tail * 2 - 12, 7);
+  c.strokeStyle = "#ffd23f";
+  c.lineWidth = 3;
+  c.setLineDash([8, 6]);
+  c.strokeRect(tail + 7, 14, w - tail * 2 - 14, h - 30);
+  c.setLineDash([]);
+}
+
+/** A fish leaping (it flies over the card's water). */
+function leapingFish(c: Ctx): void {
+  const t = T(c, 5);
+  c.save();
+  c.translate(60, 40);
+  fish(t, 0, 0, 92, 0xffa23a, "#fff3d0", "#ff6a2a", true);
+  c.restore();
+}
+
+export function makeEventTextures(scene: Phaser.Scene): void {
+  canvasTexture(scene, "event_card", 240, 270, (c) => eventCard(c, 240, 270));
+  canvasTexture(scene, "event_ribbon", 220, 64, (c) => eventRibbon(c, 220, 64));
+  canvasTexture(scene, "event_fish", 120, 80, leapingFish);
+}

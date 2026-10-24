@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { INK_N, canvasTexture, linear } from "../art/draw";
+import { INK_N, canvasTexture, linear, starPath } from "../art/draw";
 import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, dieTexture, panelTexture, pillTexture } from "../art/ui";
@@ -75,6 +75,112 @@ function flameTexture(scene: Phaser.Scene): string {
 }
 
 /**
+ * The Roll screen's sky (drawn at half size, it is all soft): night over a sea of clouds, a nebula,
+ * stars and the moon, and the floating lands of the story far away, each with its crystal glowing.
+ */
+function rollSky(scene: Phaser.Scene, w: number, h: number): string {
+  return canvasTexture(scene, `roll_sky_${w}_${h}`, w, h, (c) => {
+    const horizon = h * 0.8;
+    c.fillStyle = linear(c, 0, 0, 0, h, [[0, "#0e0a30"], [0.32, "#24186a"], [0.6, "#53309a"], [0.76, "#a45ab4"], [0.84, "#f0a0c0"], [1, "#ffd8d0"]]);
+    c.fillRect(0, 0, w, h);
+    const blob = (x: number, y: number, r: number, col: string) => {
+      const g = c.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, col);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g;
+      c.fillRect(x - r, y - r, r * 2, r * 2);
+    };
+    // a soft nebula
+    blob(w * 0.18, h * 0.22, w * 0.42, "rgba(110,80,255,0.28)");
+    blob(w * 0.88, h * 0.4, w * 0.48, "rgba(255,80,200,0.2)");
+    blob(w * 0.55, h * 0.08, w * 0.3, "rgba(80,200,255,0.14)");
+    blob(w * 0.4, h * 0.55, w * 0.4, "rgba(255,150,220,0.12)");
+    // stars, thicker towards the top
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 220; i++) {
+      const y = rnd() ** 1.6 * horizon * 0.95;
+      c.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.7})`;
+      c.beginPath();
+      c.arc(rnd() * w, y, 0.4 + rnd() * 1.2, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "rgba(255,255,255,0.85)";
+    for (let i = 0; i < 12; i++) {
+      starPath(c, rnd() * w, rnd() * horizon * 0.7, 3 + rnd() * 4, 0.3, 4);
+      c.fill();
+    }
+    // the moon
+    const [mx, my] = [w * 0.85, h * 0.21];
+    blob(mx, my, 90, "rgba(255,240,210,0.35)");
+    c.fillStyle = "#fff4dc";
+    c.beginPath();
+    c.arc(mx, my, 30, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(220,200,240,0.5)";
+    for (const [dx, dy, r] of [[-8, -6, 6], [10, 8, 4], [4, -14, 3]]) {
+      c.beginPath();
+      c.arc(mx + dx, my + dy, r, 0, Math.PI * 2);
+      c.fill();
+    }
+    // the floating lands, far away, each crystal still glowing
+    const land = (x: number, y: number, s: number, crystal: string) => {
+      blob(x, y - 18 * s, 40 * s, crystal.replace("1)", "0.45)"));
+      c.fillStyle = "rgba(42,22,80,0.9)";
+      c.beginPath();
+      c.ellipse(x, y, 44 * s, 9 * s, 0, 0, Math.PI * 2);
+      c.fill();
+      c.beginPath();
+      c.moveTo(x - 44 * s, y);
+      c.lineTo(x - 20 * s, y + 30 * s);
+      c.lineTo(x - 6 * s, y + 24 * s);
+      c.lineTo(x + 2 * s, y + 58 * s);
+      c.lineTo(x + 16 * s, y + 26 * s);
+      c.lineTo(x + 44 * s, y);
+      c.fill();
+      for (const [dx, th] of [[-30, 16], [-20, 22], [24, 18], [33, 12]]) {
+        c.beginPath();
+        c.moveTo(x + dx * s - 6 * s, y - 2 * s);
+        c.lineTo(x + dx * s, y - th * s);
+        c.lineTo(x + dx * s + 6 * s, y - 2 * s);
+        c.fill();
+      }
+      c.fillStyle = crystal;
+      c.beginPath();
+      c.moveTo(x, y - 24 * s);
+      c.lineTo(x + 6 * s, y - 8 * s);
+      c.lineTo(x, y);
+      c.lineTo(x - 6 * s, y - 8 * s);
+      c.fill();
+    };
+    land(w * 0.1, h * 0.43, 0.8, "rgba(255,122,184,1)");
+    land(w * 0.91, h * 0.37, 0.95, "rgba(122,216,255,1)");
+    land(w * 0.78, h * 0.765, 0.6, "rgba(90,240,138,1)");
+    land(w * 0.22, h * 0.775, 0.45, "rgba(255,201,58,1)");
+    // the sea of clouds, three rows, lit from the glow on the horizon
+    const clouds = (y: number, r0: number, col: string, top: string) => {
+      for (let x = -20; x < w + 40; x += r0 * 0.9) {
+        const r = r0 * (0.7 + rnd() * 0.6);
+        const cy = y + (rnd() - 0.5) * r0 * 0.4;
+        c.fillStyle = col;
+        c.beginPath();
+        c.arc(x, cy, r, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = top;
+        c.beginPath();
+        c.arc(x - r * 0.15, cy - r * 0.25, r * 0.7, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.fillStyle = col;
+      c.fillRect(0, y, w, h - y);
+    };
+    clouds(horizon + 6, 30, "rgba(176,120,200,1)", "rgba(206,150,220,0.8)");
+    clouds(horizon + 40, 40, "rgba(226,160,212,1)", "rgba(246,196,226,0.85)");
+    clouds(horizon + 86, 52, "rgba(250,214,232,1)", "rgba(255,240,246,0.9)");
+  });
+}
+
+/**
  * The rolling screen, built to feel great to press: a big die inside a ring that charges up
  * to the next lucky roll, meters for the SUPER ROLL and the roll gift, a hot streak, a die
  * that glows up through the rarity colours before a big pull, confetti and records.
@@ -97,6 +203,11 @@ export class RollScreen extends Screen {
   private die: Phaser.GameObjects.Image;
   private dieY: number;
   private dieRays: Phaser.GameObjects.Image;
+  /** the glow behind the die, in the colour of the dice you roll with */
+  private tierGlow: Phaser.GameObjects.Image;
+  private glowTier: Tier | "" = "";
+  /** dice drifting up through the sky */
+  private floaters: { img: Phaser.GameObjects.Image; v: number; spin: number }[] = [];
   private ring: Phaser.GameObjects.Graphics;
   private luckText: Phaser.GameObjects.Text;
   private chips: Phaser.GameObjects.Text;
@@ -125,7 +236,7 @@ export class RollScreen extends Screen {
   private btnY: number;
 
   constructor(scene: Phaser.Scene, host: Host) {
-    super(scene, host, "roll");
+    super(scene, host, null);
     const s = scene;
     const W = s.scale.width;
     const top = host.L.headerBottom;
@@ -134,6 +245,29 @@ export class RollScreen extends Screen {
     makePickupTextures(s);
     // tall phones: spread things out instead of leaving a gap
     const extra = Math.max(0, bottom - 1480);
+
+    // the sky: painted once, with twinkling stars, dice drifting up and now and then a shooting star
+    r.add(s.add.image(0, 0, rollSky(s, W / 2, Math.ceil(bottom / 2))).setOrigin(0).setScale(2).setInteractive());
+    for (let i = 0; i < 16; i++) {
+      const st = s.add.image(Math.random() * W, top + Math.random() * (bottom - top) * 0.55, "spark").setScale(0.25 + Math.random() * 0.3);
+      s.tweens.add({ targets: st, alpha: { from: 1, to: 0.1 }, scale: st.scale * 0.5, duration: 700 + Math.random() * 1400, yoyo: true, repeat: -1, delay: Math.random() * 2000 });
+      r.add(st);
+    }
+    DICE_TIERS.forEach((tier) => {
+      const img = s.add.image(Math.random() * W, top + Math.random() * (bottom - top), `die_${tier}`).setScale(0.35 + Math.random() * 0.3).setAlpha(0.2 + Math.random() * 0.12);
+      this.floaters.push({ img, v: 0.25 + Math.random() * 0.35, spin: (Math.random() - 0.5) * 0.4 });
+      r.add(img);
+    });
+    const shoot = s.add.image(-100, 0, "spark").setScale(0.5, 0.18).setAlpha(0);
+    r.add(shoot);
+    s.time.addEvent({
+      delay: 5200, loop: true, callback: () => {
+        if (!this.visible) return;
+        const y = top + 60 + Math.random() * 300;
+        shoot.setPosition(Math.random() * W * 0.5, y).setAlpha(1).setAngle(18).setScale(1.4, 0.16);
+        s.tweens.add({ targets: shoot, x: shoot.x + 520, y: y + 170, alpha: 0, duration: 700, ease: "Quad.in" });
+      },
+    });
 
     // drifting sparkles behind everything
     r.add(s.add.particles(0, 0, "spark", {
@@ -167,6 +301,8 @@ export class RollScreen extends Screen {
     // the big die inside its lucky ring, on a glowing pedestal
     const dieY = top + 462 + extra * 0.35;
     this.dieY = dieY;
+    this.tierGlow = s.add.image(W / 2, dieY, "glow").setScale(3.4).setAlpha(0.5);
+    s.tweens.add({ targets: this.tierGlow, alpha: 0.3, scale: 3.1, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.dieRays = s.add.image(W / 2, dieY, "rays").setScale(0.9).setAlpha(0.25).setTint(0xffe066);
     s.tweens.add({ targets: this.dieRays, angle: 360, duration: 16000, repeat: -1 });
     const ped = s.add.graphics();
@@ -175,7 +311,7 @@ export class RollScreen extends Screen {
     this.ring = s.add.graphics();
     this.die = s.add.image(W / 2, dieY, dieTexture(s, dieSkin(), 5)).setScale(DIE_SCALE);
     s.tweens.add({ targets: this.die, y: dieY - 16, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    r.add([this.dieRays, ped, this.ring, this.die]);
+    r.add([this.tierGlow, this.dieRays, ped, this.ring, this.die]);
 
     // hot streak badge
     this.streakText = text(s, 34, -14, "", 46, "#ffe066");
@@ -286,6 +422,15 @@ export class RollScreen extends Screen {
   update(time: number): void {
     if (!this.visible) return;
     const W = this.scene.scale.width;
+    if (save.diceTier !== this.glowTier) {
+      this.glowTier = save.diceTier;
+      this.tierGlow.setTint(TIER_INFO[save.diceTier].color);
+    }
+    for (const f of this.floaters) {
+      f.img.y -= f.v;
+      f.img.angle += f.spin;
+      if (f.img.y < this.host.L.headerBottom - 60) f.img.setPosition(Math.random() * W, this.host.L.navTop + 60);
+    }
     const p = luckParts();
     this.luckText.setText(`Luck ${luckText(luck())}`);
     const chips = [`Best: ${oneIn(save.bestRoll)}`];

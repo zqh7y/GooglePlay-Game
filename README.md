@@ -64,8 +64,8 @@ hour of fishing brings.
   roll or the SUPER ROLL).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
-- **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll**, **Fish** and **Upgrades** (the
-  honeycomb tree), all described below. The **Map** (from Battle) shows the 100-stage journey:
+- **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the
+  honeycomb tree), all described below. Fishing is an **event** inside the Battle lobby (see Fishing). The **Map** (from Battle) shows the 100-stage journey:
   - a road through the five lands, each with its own colours, trees, banner and sparkles, and clouds drifting by
   - every 5th stage shows its boss (a dark shape until you get there), and cleared stages get a gold star
   - lands you haven't reached are hidden in fog
@@ -73,6 +73,9 @@ hour of fishing brings.
 - **Top bar**: one slim row with settings, money, gems and dice. Tap money or gems to open the Shop, or
   dice to open Roll. During a fight only the money stays.
 - **The Roll screen**:
+  - It sits in a **night sky over a sea of clouds**: a nebula, twinkling stars, the moon, now and then a
+    shooting star, dice of every tier drifting up, and the story's floating lands far away with their
+    crystals still glowing. Behind the die a big glow takes the colour of the dice you roll with.
   - The die sits inside a **lucky ring**. Each roll lights one segment; when the ring is full and gold,
     the next roll is a lucky roll.
   - Two meters fill as you roll:
@@ -314,8 +317,18 @@ hour of fishing brings.
   then the numbers as icons: time, monsters defeated, damage, DPS, money, airdrops, damage taken, shots,
   and the dice you found.
 - **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and skill airdrops.
-- **Fishing** (the Fish tab): your hero sits on a dock and fishes, **all the time**: on this screen, while
-  you fight or roll, and while you are away (until the Cooler Box is full).
+- **Fishing** is the **FISHING EVENT**, a card on the right of the Battle lobby (a little lake at sunset with
+  a fish leaping out, an EVENT ribbon, the bar to the next reward, "CLAIM!" and a "!" when something is
+  waiting). Tap it to open the event; the arrow at the top goes back to the lobby. Your hero sits on a dock
+  and fishes, **all the time**: on this screen, while you fight or roll, and while you are away (until the
+  Cooler Box is full).
+  - **Event rewards, for your next fights**: every catch (offline ones too) fills the EVENT bar under the
+    pond. Each round has **10 rewards** at 5, 12, 20, 30, 42, 56, 72, 90, 110 and 135 catches: shells, dice
+    of your stage's tier, gems, a Battle Boost, a luck potion, more shells, more dice, lucky rolls, two
+    Battle Boosts, and a **BIG PRIZE** (a die one tier better plus gems). Tap the bar to claim what is ready
+    (they pop up big), or to see the whole round. Then the next round starts, asking 1.5x more catches each
+    time (up to round 12) with more shells and gems. With the event, the simulator reaches stage 100 at
+    about 98 h and the Titan Forge at about 114 h.
   - **One catch every 60 s** at first, down to **every 5 s**. Every catch also brings **shells**, which buy
     the fishing upgrades.
   - **The prizes**, 4 per row and 5 rows, from junk to legends. **Every prize can bite from the start**:
@@ -362,8 +375,8 @@ hour of fishing brings.
     | Cooler Box | 22 | Fishes on while you are away for 2 h → 24 h |
 
   - Coming back after a while shows **GONE FISHING**: how long the line fished and everything it caught.
-    Rare catches made while you are on another screen pop up as a note. The Fish tab gets a "!" when an
-    upgrade is affordable, and there are fishing quests.
+    Rare catches made while you are on another screen pop up as a note. The event card gets a "!" when a
+    reward is ready or an upgrade is affordable, and there are fishing quests.
 - **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
@@ -430,10 +443,10 @@ hour of fishing brings.
 | `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups |
 | `src/art/skills.ts` | The skill icons, the medal every skill and gadget sits on, the card shine |
 | `src/ui/badge.ts` | The living medal (icon, tier chip, level, glow, bob) used on cards, the HUD and Stats |
-| `src/data/fishing.ts` | Fishing prizes, rows, chances and how they show, upgrades (shared with the simulators) |
-| `src/systems/fishing.ts` | The fishing line: catches, payouts, offline catches, buying upgrades |
-| `src/ui/fishScreen.ts` | The Fish screen: prize grid with living chances, the animated pond, catch reveals, upgrades |
-| `src/art/fishing.ts` | Prize pictures, upgrade icons, shells, dock, bobber, fish shadows, hills, lily pads, reeds, bucket |
+| `src/data/fishing.ts` | Fishing prizes, rows, chances and how they show, upgrades, the event's goals and rewards (shared with the simulators) |
+| `src/systems/fishing.ts` | The fishing line: catches, payouts, offline catches, buying upgrades, claiming event rewards |
+| `src/ui/fishScreen.ts` | The Fishing Event screen: prize grid with living chances, the animated pond, catch reveals, the event bar, its rewards and claims, upgrades |
+| `src/art/fishing.ts` | Prize pictures, upgrade icons, shells, dock, bobber, fish shadows, hills, lily pads, reeds, bucket, the event card, ribbon and leaping fish |
 | `src/art/places.ts` | The boss seals |
 | `src/art/gadgets.ts` | The gadgets (icons and the things they throw), the glue puddle, popcorn kernel and black hole |
 | `src/art/mutations.ts` | The mutation badges over monsters |

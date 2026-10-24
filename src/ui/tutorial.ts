@@ -19,6 +19,8 @@ export interface TutorialHost {
   startButton(): [number, number] | null;
   rollButton(): [number, number] | null;
   tabSpot(tab: Tab): [number, number];
+  /** the fishing event's card in the lobby */
+  eventSpot(): [number, number] | null;
   /** in a fight: the nearest bones / meat, the crystal, the nearest open seal */
   spot(kind: "food" | "crystal" | "seal"): [number, number] | null;
 }
@@ -136,8 +138,13 @@ export class Tutorial {
       onTab("pets", "Tap a pet to see its power and equip it. Extra copies level it up!"),
       tabStep("upgrades", "Money from fights buys upgrades: luck, damage, more pets..."),
       onTab("upgrades", "The glowing hexagons are the ones you can buy right now."),
-      tabStep("fish", "One more thing: your hero goes fishing, all the time!"),
-      onTab("fish", "Catches come in even while you're away. Upgrade the line with shells."),
+      {
+        when: () => lobby() && !host.modalOpen(),
+        text: () => "One more thing: the FISHING EVENT! Your hero fishes all the time, even while you're away.",
+        target: () => host.eventSpot(),
+        done: () => host.tab() === "fish",
+      },
+      onTab("fish", "Every catch fills the EVENT bar. Claim its rewards: dice, gems and boosts for your next fights!"),
       {
         when: () => !host.modalOpen(),
         text: () => "That's everything! Clear stages, roll rare pets and reach STAGE 100. Good luck!",

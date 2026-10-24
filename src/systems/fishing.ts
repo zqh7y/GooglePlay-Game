@@ -1,7 +1,7 @@
 import { BOOSTS } from "../data/boosts";
 import {
-  FIRST_CATCH_SHELLS, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours, doubleChance, fishLuck, goldMult,
-  deepMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
+  EVENT_REWARDS, EventReward, FIRST_CATCH_SHELLS, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours,
+  deepMult, doubleChance, eventGoal, eventReward, fishLuck, goldMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
 } from "../data/fishing";
 import { questEvent } from "./goals";
 import { save } from "./save";
@@ -113,6 +113,8 @@ export function fishOnce(): Catch[] {
   const out = [land(rollPrize(luck, deep), isSuper, false)];
   if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, deep), isSuper, true));
   out.forEach(pay);
+  // every catch fills the event bar
+  f.event.points += out.length;
   questEvent("fish", out.length);
   return out;
 }
@@ -161,4 +163,70 @@ export function buyFish(id: FishUpId): boolean {
   // a quicker reel also brings the next catch closer
   if (id === "speed") save.fishing.nextAt -= wasMs - catchMs();
   return true;
+}
+
+// ───────────────────────── the fishing event ─────────────────────────
+
+/** The next reward of the event round and how far along it is. */
+export function eventNext(): { k: number; reward: EventReward; from: number; goal: number } {
+  const e = save.fishing.event;
+  const k = Math.min(e.claimed, EVENT_REWARDS - 1);
+  return { k, reward: eventReward(e.round, k, save.stage), from: k ? eventGoal(e.round, k - 1) : 0, goal: eventGoal(e.round, k) };
+}
+
+/** How many event rewards are waiting to be claimed. */
+export function eventReady(): number {
+  const e = save.fishing.event;
+  let n = 0;
+  for (let k = e.claimed; k < EVENT_REWARDS && e.points >= eventGoal(e.round, k); k++) n++;
+  return n;
+}
+
+export function payEventReward(r: EventReward): void {
+  const now = Date.now();
+  switch (r.kind) {
+    case "shells":
+      save.fishing.shells += r.amount;
+      break;
+    case "dice":
+      save.dice[r.tier!] += r.amount;
+      break;
+    case "gems":
+      save.gems += r.amount;
+      break;
+    case "boost":
+      save.boosts[r.boost!] = (save.boosts[r.boost!] ?? 0) + r.amount;
+      break;
+    case "luckPotion":
+      save.potionUntil = Math.max(now, save.potionUntil) + r.amount * 60000;
+      break;
+    case "lucky":
+      save.luckyBoost += r.amount;
+      break;
+    case "grand":
+      save.dice[r.tier!] += r.amount;
+      save.gems += r.gems ?? 0;
+      break;
+  }
+}
+
+/**
+ * Claim every event reward that is ready. After the 10th the next round starts (catches beyond its
+ * goal carry over). Returns what was paid.
+ */
+export function claimEvent(): EventReward[] {
+  const e = save.fishing.event;
+  const out: EventReward[] = [];
+  while (e.claimed < EVENT_REWARDS && e.points >= eventGoal(e.round, e.claimed)) {
+    const r = eventReward(e.round, e.claimed, save.stage);
+    payEventReward(r);
+    out.push(r);
+    e.claimed++;
+    if (e.claimed >= EVENT_REWARDS) {
+      e.points -= eventGoal(e.round, EVENT_REWARDS - 1);
+      e.round++;
+      e.claimed = 0;
+    }
+  }
+  return out;
 }

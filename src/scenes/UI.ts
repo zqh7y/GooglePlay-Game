@@ -21,9 +21,9 @@ import {
 } from "../systems/goals";
 import { RollResult, rollMany } from "../systems/roll";
 import { classChances, topLuck } from "../data/luck";
-import { makeFishIcon } from "../art/fishing";
+import { makeEventTextures, makeFishIcon, makeFishTextures } from "../art/fishing";
 import { PRIZES, ROW_COLORS } from "../data/fishing";
-import { Catch, anyFishUpgrade, fishAway, fishTick } from "../systems/fishing";
+import { Catch, anyFishUpgrade, eventNext, eventReady, fishAway, fishTick } from "../systems/fishing";
 import { FishScreen, prizeGift, prizeIcon } from "../ui/fishScreen";
 import { makeOnlineTextures } from "../art/online";
 import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
@@ -75,7 +75,6 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "pets", icon: "icon_paw", label: "Pets" },
   { id: "battle", icon: "icon_sword", label: "Battle" },
   { id: "roll", icon: "icon_dice", label: "Roll" },
-  { id: "fish", icon: "icon_fish", label: "Fish" },
   { id: "upgrades", icon: "icon_tree", label: "Upgrades" },
 ];
 
@@ -149,6 +148,11 @@ export class UIScene extends Phaser.Scene implements Host {
   private questCount!: Phaser.GameObjects.Text;
   private questGlow!: Phaser.GameObjects.Image;
   private badges: { obj: Phaser.GameObjects.Container; show: () => boolean }[] = [];
+  /** the fishing event's card in the lobby */
+  private eventCard!: Phaser.GameObjects.Container;
+  private eventBar!: Phaser.GameObjects.Graphics;
+  private eventText!: Phaser.GameObjects.Text;
+  private eventGlow!: Phaser.GameObjects.Image;
   private badgeTimer = 0;
   private nav: Record<Tab, NavTab> = {} as Record<Tab, NavTab>;
   private navBar!: Phaser.GameObjects.Graphics;
@@ -237,6 +241,7 @@ export class UIScene extends Phaser.Scene implements Host {
       battleButton: () => (this.lobby.visible ? spotOf(this.goBtn) : null),
       startButton: () => spotOf(this.startBtn),
       rollButton: () => this.rollScreen.rollButtonSpot(),
+      eventSpot: () => this.eventSpot(),
       tabSpot: (tab) => {
         const p = this.tabPos(tab);
         return [p.x, p.y];
@@ -381,6 +386,8 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   tabPos(tab: Tab): { x: number; y: number } {
+    // fishing is an event in the battle lobby
+    if (tab === "fish") return { x: this.eventCard.x, y: this.eventCard.y };
     const i = TABS.findIndex((t) => t.id === tab);
     return { x: (this.W / TABS.length) * (i + 0.5), y: this.L.navTop + this.L.navH / 2 };
   }
@@ -478,7 +485,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.gear.setVisible(tab !== "battle" || battle.mode === "lobby");
     for (const t of TABS) {
       const n = this.nav[t.id];
-      const active = t.id === tab;
+      // the fishing event belongs to the battle lobby
+      const active = t.id === tab || (tab === "fish" && t.id === "battle");
       n.bg.setVisible(active);
       this.tweens.add({ targets: n.icon, scale: active ? 1 : 0.72, y: active ? -30 : -14, duration: 160, ease: "Back.out" });
       n.label.setAlpha(active ? 1 : 0.75).setFontSize(active ? 32 : 26);
@@ -626,6 +634,7 @@ export class UIScene extends Phaser.Scene implements Host {
       this.toast(save.afk ? "AFK on: your hero walks around and picks up dice" : "AFK off: walk with the joystick", "#b6f59a");
     });
     side(5, "icon_trophy", "Ranks", () => showLeaderboard(this, this, () => (this.openModal = null)));
+    this.buildEventCard();
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
     this.afkLabel = afk.list[2] as Phaser.GameObjects.Text;
     this.refreshAfk();
@@ -666,6 +675,84 @@ export class UIScene extends Phaser.Scene implements Host {
     this.overlay = this.add.graphics();
     this.joyG = this.add.graphics();
     this.hud.add([this.mini, this.overlay, this.joyG]);
+  }
+
+  /**
+   * The fishing event's card on the right of the lobby: a little lake at sunset with a fish leaping
+   * out of it, the bar to the next event reward, and a "!" when a reward or an upgrade is waiting.
+   */
+  private buildEventCard(): void {
+    makeFishTextures(this);
+    makeEventTextures(this);
+    const x = this.W - 136;
+    const y = this.L.hudBottom + 525;
+    this.eventGlow = this.add.image(0, 0, "glow").setTint(0xffd23f).setScale(1.5, 1.6).setAlpha(0);
+    this.tweens.add({ targets: this.eventGlow, alpha: { from: 0.25, to: 0.75 }, duration: 600, yoyo: true, repeat: -1 });
+    const card = this.add.image(0, 0, "event_card");
+    const fish = this.add.image(-60, 24, "event_fish").setScale(0.72).setAlpha(0);
+    const ripple = (rx: number) => {
+      const r = this.add.image(rx, 30, "ring").setScale(0.12, 0.04).setAlpha(0.9);
+      c.addAt(r, 2);
+      this.tweens.add({ targets: r, scaleX: 0.45, scaleY: 0.12, alpha: 0, duration: 700, onComplete: () => r.destroy() });
+    };
+    // the fish leaps out of the lake, now and then
+    const leap = { k: 0 };
+    let landed = false;
+    this.tweens.add({
+      targets: leap, k: 1, duration: 1000, repeat: -1, repeatDelay: 1700,
+      onRepeat: () => {
+        landed = false;
+        ripple(-60);
+      },
+      onUpdate: () => {
+        const k = leap.k;
+        fish.setPosition(-60 + 120 * k, 26 - Math.sin(k * Math.PI) * 84).setAngle(-45 + 90 * k).setAlpha(k < 0.04 || k > 0.96 ? 0 : 1);
+        if (k > 0.95 && !landed) {
+          landed = true;
+          ripple(60);
+        }
+      },
+    });
+    // a shine sweeps across the card
+    const shine = this.add.image(-200, 0, "card_shine").setAlpha(0.5).setScale(1, 1.2);
+    const mask = this.make.graphics({}, false);
+    mask.fillStyle(0xffffff).fillRoundedRect(x - 112, y - 127, 224, 254, 24);
+    shine.setMask(mask.createGeometryMask());
+    this.tweens.add({ targets: shine, x: 200, duration: 900, repeat: -1, repeatDelay: 2600, ease: "Sine.inOut" });
+    const ribbon = this.add.image(0, -126, "event_ribbon").setScale(0.84);
+    const word = text(this, 0, -132, "EVENT", 32, "#fff3c8");
+    this.tweens.add({ targets: [ribbon, word], scale: "*=1.06", duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.eventBar = this.add.graphics();
+    this.eventText = text(this, 0, 104, "", 22);
+    const c = this.add.container(x, y, [this.eventGlow, card, fish, shine, ribbon, word, text(this, 0, 66, "FISHING", 36), this.eventBar, this.eventText])
+      .setSize(240, 270).setInteractive({ useHandCursor: true });
+    c.on("pointerdown", () => this.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
+    c.on("pointerout", () => c.setScale(1));
+    c.on("pointerup", () => {
+      c.setScale(1);
+      this.setTab("fish");
+    });
+    this.eventCard = c;
+    this.lobby.add(c);
+    this.addBadge(x + 104, y - 112, () => eventReady() > 0 || anyFishUpgrade());
+    this.refreshEventCard();
+  }
+
+  private refreshEventCard(): void {
+    const e = save.fishing.event;
+    const ready = eventReady();
+    const n = eventNext();
+    this.eventBar.clear();
+    const f = ready ? 1 : (e.points - n.from) / Math.max(1, n.goal - n.from);
+    drawBar(this.eventBar, -92, 92, 184, 24, Phaser.Math.Clamp(f, 0, 1), ready ? 0xffd23f : 0x5ac8ff);
+    this.eventText.setText(ready ? "CLAIM!" : `${fmt(e.points)}/${fmt(n.goal)}`).setColor(ready ? "#ffe066" : "#ffffff");
+    fitText(this.eventText, 176);
+    this.eventGlow.setVisible(ready > 0);
+  }
+
+  /** Where the event card is (the tutorial points at it). */
+  private eventSpot(): [number, number] | null {
+    return battle.mode === "lobby" && this.tab === "battle" && !this.mapOpen ? [this.eventCard.x, this.eventCard.y] : null;
   }
 
   private addBadge(x: number, y: number, show: () => boolean): void {
@@ -1173,7 +1260,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0);
     this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady() || save.newPets.length > 0);
     this.nav.upgrades.badge.setVisible(TREE.some((n) => canBuy(n)));
-    this.nav.fish.badge.setVisible(anyFishUpgrade());
+    this.refreshEventCard();
     const dice = totalDice();
     this.nav.roll.badge.setVisible(dice > 0 && (dice >= 10 || save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1));
     const ready = save.quests.find(questDone);

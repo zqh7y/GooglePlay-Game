@@ -1,19 +1,20 @@
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
 import { INK_N, lighten, rgba } from "../art/draw";
-import { makeFishTextures } from "../art/fishing";
+import { makeEventTextures, makeFishTextures } from "../art/fishing";
 import { panelTexture } from "../art/ui";
-import { BOOSTS } from "../data/boosts";
+import { BOOSTS, BOOST_BY_ID } from "../data/boosts";
 import {
-  FISH_UPGRADES, FishUpgrade, PRIZES, Prize, ROW_COLORS, ROW_NAMES, SHINY_MULT, SUPER_LUCK, chanceLabel, doubleChance, goldMult, netMult, prizeChances,
-  upgradeCost,
+  EVENT_REWARDS, EventReward, FISH_UPGRADES, FishUpgrade, PRIZES, Prize, ROW_COLORS, ROW_NAMES, SHINY_MULT, SUPER_LUCK, chanceLabel, doubleChance, eventGoal,
+  eventReward, goldMult, netMult, prizeChances, upgradeCost,
 } from "../data/fishing";
-import { Catch, buyFish, canBuyFish, cashFor, catchMs, currentDeep, currentLuck, fishLv, superIn } from "../systems/fishing";
+import { TIER_INFO } from "../data/tiers";
+import { Catch, buyFish, canBuyFish, cashFor, catchMs, claimEvent, currentDeep, currentLuck, eventNext, eventReady, fishLv, superIn } from "../systems/fishing";
 import { persist, save } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { fmt } from "./format";
 import { Host, Screen } from "./screens";
-import { Button, button, drawBar, fitText, label, modal, text } from "./widgets";
+import { Button, button, drawBar, fitText, iconButton, label, modal, text } from "./widgets";
 
 /** The picture of a prize: dice prizes show their die. */
 export const prizeIcon = (p: Prize) => (p.kind === "dice" ? `die_${p.tier}` : `fp_${p.id}`);
@@ -35,6 +36,35 @@ export function prizeGift(p: Prize, c?: Catch): string {
     case "boost": return c?.boost ? BOOSTS.find((b) => b.id === c.boost)!.name : "a battle boost";
   }
 }
+
+/** The picture of an event reward. */
+export function eventRewardIcon(r: EventReward): string {
+  switch (r.kind) {
+    case "shells": return "fish_shell";
+    case "dice": return `die_${r.tier}`;
+    case "gems": return "icon_gem";
+    case "boost": return BOOST_BY_ID[r.boost!].icon;
+    case "luckPotion": return "icon_potion";
+    case "lucky": return "fp_clover";
+    case "grand": return "icon_gift";
+  }
+}
+
+/** An event reward in a few words. */
+export function eventRewardText(r: EventReward): string {
+  switch (r.kind) {
+    case "shells": return `${fmt(r.amount)} shells`;
+    case "dice": return `${r.amount} ${r.tier} dice`;
+    case "gems": return `${r.amount} gems`;
+    case "boost": return `${r.amount}x ${BOOST_BY_ID[r.boost!].name}`;
+    case "luckPotion": return `${r.amount} min luck potion`;
+    case "lucky": return `${r.amount} lucky rolls`;
+    case "grand": return `${r.tier} die + ${r.gems} gems`;
+  }
+}
+
+/** A short amount for the corner of a reward icon. */
+const rewardAmount = (r: EventReward) => (r.kind === "grand" ? r.tier! : r.kind === "luckPotion" ? `${r.amount}m` : `x${fmt(r.amount)}`);
 
 const hsv = (h: number, s: number, v: number) => Phaser.Display.Color.HSVToRGB(((h % 1) + 1) % 1, s, v).color;
 const GLYPHS = "?#%&@!*$?";
@@ -110,6 +140,12 @@ export class FishScreen extends Screen {
   private shellText!: Phaser.GameObjects.Text;
   private upBtn!: Button;
   private upBadge!: Phaser.GameObjects.Container;
+  private eventBar!: Phaser.GameObjects.Graphics;
+  private eventText!: Phaser.GameObjects.Text;
+  private eventRound!: Phaser.GameObjects.Text;
+  private eventIcon!: Phaser.GameObjects.Image;
+  private eventAmount!: Phaser.GameObjects.Text;
+  private eventGlow!: Phaser.GameObjects.Image;
   private phase: Phase = "wait";
   /** casts waiting to be shown (each is one or two catches) */
   private queue: Catch[][] = [];
@@ -128,6 +164,7 @@ export class FishScreen extends Screen {
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, null);
     makeFishTextures(scene);
+    makeEventTextures(scene);
     const { width: W } = scene.scale;
     const L = host.L;
     const top = L.headerBottom + 8;
@@ -135,35 +172,159 @@ export class FishScreen extends Screen {
     // the whole screen is the pond's world: the prizes float in its sky, with nothing behind them
     this.root.add(scene.add.zone(0, 0, W, L.navTop).setOrigin(0).setInteractive());
     this.pondTop = 0;
-    const pondBottom = L.navTop - 236;
+    const pondBottom = L.navTop - 340;
     this.pondH = pondBottom;
     this.skyH = gridBottom + 24;
     this.buildPond(W);
-    // ── the prizes
-    this.root.add(text(scene, 46, top + 30, "PRIZES", 40, "#ffe066").setOrigin(0, 0.5));
+    // ── the event's title, with the way back to the lobby (the event lives there)
+    this.root.add(iconButton(scene, 64, top + 30, "icon_back", 78, () => host.setTab("battle")));
+    this.root.add(text(scene, 118, top + 30, "FISHING EVENT", 40, "#ffe066").setOrigin(0, 0.5));
     this.head = text(scene, W - 46, top + 30, "", 30, "#ffffff").setOrigin(1, 0.5);
     this.root.add(this.head);
     PRIZES.forEach((p, i) => this.tiles.push(this.makeTile(p, i, 135 + (i % 4) * COL_W, top + 60 + ROW_H / 2 + Math.floor(i / 4) * ROW_H)));
-    // ── next catch, shells, upgrades
+    // ── next catch, the event's rewards, shells and upgrades
     const by = pondBottom + 14;
     this.bar = scene.add.graphics();
     this.barText = text(scene, W / 2 + 40, by + 44, "", 30);
     this.root.add([
-      scene.add.image(W / 2, by + 104, panelTexture(scene, "glass", 1050, 200)),
+      scene.add.image(W / 2, by + 156, panelTexture(scene, "glass", 1050, 304)),
       scene.add.image(70, by + 44, "fish_bobber").setScale(1.05),
       this.bar, this.barText,
     ]);
-    const shellPill = scene.add.container(200, by + 146, [
+    this.buildEventRow(W / 2, by + 144);
+    const shellPill = scene.add.container(200, by + 250, [
       scene.add.image(0, 0, panelTexture(scene, "glass", 320, 92)),
       scene.add.image(-110, 0, "fish_shell").setScale(1.1),
     ]);
     this.shellText = text(scene, -60, 0, "", 44).setOrigin(0, 0.5);
     shellPill.add(this.shellText);
-    this.upBtn = button(scene, 700, by + 146, 600, 104, "green", "UPGRADES", () => this.showUpgrades(), { size: 44, icon: "fu_speed", iconSize: 70 });
-    this.upBadge = scene.add.container(990, by + 104, [scene.add.circle(0, 0, 22, 0xf03e3e).setStrokeStyle(5, INK_N), text(scene, 0, -1, "!", 30)]);
+    this.upBtn = button(scene, 700, by + 250, 600, 104, "green", "UPGRADES", () => this.showUpgrades(), { size: 44, icon: "fu_speed", iconSize: 70 });
+    this.upBadge = scene.add.container(990, by + 208, [scene.add.circle(0, 0, 22, 0xf03e3e).setStrokeStyle(5, INK_N), text(scene, 0, -1, "!", 30)]);
     scene.tweens.add({ targets: this.upBadge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.root.add([shellPill, this.upBtn, this.upBadge]);
     scene.game.events.on("fish-caught", this.onCatch, this);
+  }
+
+  // ───────────────────────── the event ─────────────────────────
+
+  /** The event bar: how far to the next reward (its picture on the right); tap to claim or see them all. */
+  private buildEventRow(x: number, y: number): void {
+    const s = this.scene;
+    const bg = s.add.graphics();
+    bg.fillStyle(0x0a2a50, 0.55).fillRoundedRect(-505, -46, 1010, 92, 22);
+    bg.lineStyle(3, 0xffd23f, 0.8).strokeRoundedRect(-505, -46, 1010, 92, 22);
+    this.eventGlow = s.add.image(0, 0, "glow").setTint(0xffd23f).setScale(4.2, 0.55).setAlpha(0);
+    s.tweens.add({ targets: this.eventGlow, alpha: { from: 0.2, to: 0.6 }, duration: 520, yoyo: true, repeat: -1 });
+    const ribbon = s.add.image(-410, -10, "event_ribbon").setScale(0.62);
+    const word = text(s, -410, -14, "EVENT", 26, "#fff3c8");
+    this.eventRound = text(s, -410, 28, "", 20, "#9ae6ff");
+    this.eventBar = s.add.graphics();
+    this.eventText = text(s, -40, 24, "", 24);
+    this.eventIcon = s.add.image(400, -4, "fish_shell");
+    this.eventAmount = text(s, 446, 26, "", 24, "#ffe066").setOrigin(1, 0.5);
+    const c = s.add.container(x, y, [this.eventGlow, bg, ribbon, word, this.eventRound, this.eventBar, this.eventText, this.eventIcon, this.eventAmount])
+      .setSize(1010, 92).setInteractive({ useHandCursor: true });
+    c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.97, duration: 60 }));
+    c.on("pointerout", () => c.setScale(1));
+    c.on("pointerup", () => {
+      c.setScale(1);
+      if (eventReady()) this.claim();
+      else this.showEvent();
+    });
+    s.tweens.add({ targets: this.eventIcon, angle: { from: -6, to: 6 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.root.add(c);
+  }
+
+  private refreshEvent(): void {
+    const e = save.fishing.event;
+    const ready = eventReady();
+    const n = eventNext();
+    this.eventRound.setText(`ROUND ${e.round}`);
+    this.eventBar.clear();
+    const f = ready ? 1 : (e.points - n.from) / Math.max(1, n.goal - n.from);
+    drawBar(this.eventBar, -320, -30, 560, 30, Phaser.Math.Clamp(f, 0, 1), ready ? 0xffd23f : 0x5ac8ff);
+    this.eventText.setText(ready ? (ready > 1 ? `${ready} REWARDS READY! TAP TO CLAIM` : "REWARD READY! TAP TO CLAIM") : `Next reward: ${fmt(e.points)} / ${fmt(n.goal)} catches`);
+    this.eventText.setColor(ready ? "#ffe066" : "#ffffff");
+    fitText(this.eventText, 560);
+    this.eventIcon.setTexture(eventRewardIcon(n.reward));
+    this.eventIcon.setScale(74 / Math.max(this.eventIcon.width, this.eventIcon.height));
+    this.eventAmount.setText(rewardAmount(n.reward));
+    this.eventGlow.setVisible(ready > 0);
+  }
+
+  /** Every reward of this round: done, ready or how many catches away. */
+  private showEvent(): void {
+    sfx.click();
+    const s = this.scene;
+    const e = save.fishing.event;
+    const h = 1500;
+    const m = this.host.showModal(modal(s, 960, h, "FISHING EVENT", "blue"));
+    const ready = eventReady();
+    const last = eventGoal(e.round, EVENT_REWARDS - 1);
+    const bar = s.add.graphics();
+    drawBar(bar, -400, -h / 2 + 196, 800, 36, Math.min(1, e.points / last), 0x5ac8ff);
+    m.body.add([
+      label(s, 0, -h / 2 + 110, `Round ${e.round}: every catch counts, even while you are away.\nThe rewards help your next fights!`, 30, "#7a5236", 860),
+      bar, text(s, 0, -h / 2 + 196, `${fmt(e.points)} / ${fmt(last)} catches`, 26),
+    ]);
+    for (let k = 0; k < EVENT_REWARDS; k++) {
+      const r = eventReward(e.round, k, save.stage);
+      const col = k % 2;
+      const row = Math.floor(k / 2);
+      const x = col ? 220 : -220;
+      const y = -h / 2 + 330 + row * 196;
+      const done = k < e.claimed;
+      const open = !done && e.points >= eventGoal(e.round, k);
+      const big = k === EVENT_REWARDS - 1;
+      const parts: Phaser.GameObjects.GameObject[] = [s.add.image(0, 0, panelTexture(s, "row", 420, 176)).setAlpha(done ? 0.55 : 1)];
+      if (open || big) {
+        const glow = s.add.image(-120, -6, "glow").setTint(big ? 0xff9a3a : 0xffd23f).setScale(0.6).setAlpha(0.6);
+        s.tweens.add({ targets: glow, alpha: 0.2, duration: 600, yoyo: true, repeat: -1 });
+        parts.push(glow);
+      }
+      const icon = s.add.image(-120, -6, eventRewardIcon(r)).setAlpha(done ? 0.5 : 1);
+      icon.setScale((big ? 104 : 88) / Math.max(icon.width, icon.height));
+      parts.push(icon, text(s, -80, 40, rewardAmount(r), 24, "#ffe066").setOrigin(1, 0.5));
+      parts.push(fitText(label(s, 60, -34, eventRewardText(r), 26, "#4a2f1d").setOrigin(0.5), 230));
+      if (done) parts.push(s.add.image(150, 40, "icon_check").setScale(0.5), label(s, 40, 40, "Claimed", 24, "#3f9a4f"));
+      else if (open) parts.push(label(s, 60, 40, "READY!", 30, "#e8434f"));
+      else parts.push(label(s, 60, 40, `${fmt(eventGoal(e.round, k))} catches`, 24, "#9a7a5a"));
+      if (big) parts.push(text(s, 60, 6, "BIG PRIZE", 22, "#ff8a2a"));
+      m.body.add(s.add.container(x, y, parts));
+    }
+    m.body.add(button(s, 0, h / 2 - 100, 460, 110, ready ? "green" : "grey", ready ? "CLAIM" : "OK", () => {
+      m.close();
+      if (ready) this.claim();
+    }, { size: 40 }));
+  }
+
+  /** Claim what is ready: the rewards pop up big, then into your pockets. */
+  private claim(): void {
+    const got = claimEvent();
+    if (!got.length) return;
+    persist();
+    sfx.gift();
+    sfx.fanfare();
+    buzz(60);
+    const s = this.scene;
+    const n = got.length;
+    const rowH = 130;
+    const h = 330 + n * rowH;
+    const m = this.host.showModal(modal(s, 820, h, "EVENT REWARDS!", "orange"));
+    got.forEach((r, i) => {
+      const y = -h / 2 + 170 + i * rowH;
+      const glow = s.add.image(-260, y, "glow").setTint(r.kind === "dice" || r.kind === "grand" ? TIER_INFO[r.tier!].color : 0xffd23f).setScale(0.55).setAlpha(0.6);
+      const icon = s.add.image(-260, y, eventRewardIcon(r));
+      icon.setScale(96 / Math.max(icon.width, icon.height));
+      const lbl = fitText(label(s, -180, y, eventRewardText(r), 36, "#4a2f1d").setOrigin(0, 0.5), 520);
+      const row = s.add.container(0, 0, [glow, icon, lbl]).setAlpha(0);
+      m.body.add(row);
+      s.tweens.add({ targets: row, alpha: 1, duration: 200, delay: 150 + i * 160 });
+      s.tweens.add({ targets: icon, scale: { from: 0, to: icon.scale }, duration: 360, delay: 150 + i * 160, ease: "Back.out" });
+    });
+    if (save.fishing.event.claimed === 0) m.body.add(text(s, 0, h / 2 - 190, `Round ${save.fishing.event.round} starts: bigger rewards!`, 30, "#3f9a4f"));
+    m.body.add(button(s, 0, h / 2 - 90, 360, 110, "green", "GREAT!", () => m.close(), { size: 40 }));
+    this.refreshEvent();
   }
 
   // ───────────────────────── the prizes ─────────────────────────
@@ -856,6 +1017,7 @@ export class FishScreen extends Screen {
       this.shellText.setText(fmt(save.fishing.shells));
       fitText(this.shellText, 190);
       this.upBadge.setVisible(FISH_UPGRADES.some((u: FishUpgrade) => canBuyFish(u.id)));
+      this.refreshEvent();
     }
     const f = 1 - left / catchMs();
     this.bar.clear();
