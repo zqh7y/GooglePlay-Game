@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { DICE_TIERS, TIER_INFO, Tier } from "../data/tiers";
 import { FONT } from "../ui/widgets";
+import { makeSkillTextures } from "./skills";
 import { INK, Ctx, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, linear, outline, radial, rgba, rr, starPath } from "./draw";
 
 /** Bones and meat (XP), dice of every tier, airdrops, map power-ups and skill icons. */
@@ -343,143 +344,6 @@ function shield(ctx: Ctx): void {
   fill(ctx, "rgba(255,255,255,0.35)");
 }
 
-/** Skill icon glyphs (drawn on a 120 x 120 canvas, centred). */
-const GLYPHS: Record<string, (ctx: Ctx) => void> = {
-  damage: (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(30, 70);
-    ctx.lineTo(70, 30);
-    ctx.lineTo(92, 26);
-    ctx.lineTo(88, 48);
-    ctx.lineTo(48, 88);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 30, 90, 90, 30, [[0, "#ff8a3a"], [1, "#ffe066"]]), 6);
-    for (const [x, y] of [[26, 94], [18, 80], [40, 102]]) {
-      circle(ctx, x, y, 6);
-      fillOutline(ctx, "#ffd23f", 4);
-    }
-  },
-  firerate: (ctx) => {
-    for (const y of [36, 60, 84]) {
-      rr(ctx, 22 + (y - 36) / 3, y - 9, 56, 18, 9);
-      fillOutline(ctx, "#ffd23f", 5);
-      ctx.beginPath();
-      ctx.moveTo(84 + (y - 36) / 3, y);
-      ctx.lineTo(70 + (y - 36) / 3, y - 9);
-      ctx.lineTo(70 + (y - 36) / 3, y + 9);
-      ctx.closePath();
-      fillOutline(ctx, "#ff8a3a", 4);
-    }
-  },
-  mag: (ctx) => {
-    for (let i = 0; i < 3; i++) {
-      rr(ctx, 40 + i * 14, 12, 11, 22, 5);
-      fillOutline(ctx, "#ffd23f", 3);
-    }
-    ctx.beginPath();
-    ctx.moveTo(36, 30);
-    ctx.lineTo(84, 30);
-    ctx.quadraticCurveTo(84, 80, 98, 106);
-    ctx.lineTo(56, 108);
-    ctx.quadraticCurveTo(40, 80, 36, 30);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 30, 0, 108, [[0, "#6a7280"], [1, "#2e323c"]]), 5);
-    for (const y of [52, 72]) {
-      ctx.beginPath();
-      ctx.moveTo(48, y);
-      ctx.lineTo(80, y);
-      outline(ctx, 3, "rgba(255,255,255,0.3)");
-    }
-  },
-  reload: (ctx) => {
-    ctx.lineCap = "round";
-    for (const [w, c] of [[18, INK], [10, "#7ad651"]] as [number, string][]) {
-      ctx.beginPath();
-      ctx.arc(60, 60, 36, -0.4, Math.PI * 1.6);
-      ctx.lineWidth = w;
-      ctx.strokeStyle = c;
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(104, 34);
-    ctx.lineTo(96, 66);
-    ctx.lineTo(70, 46);
-    ctx.closePath();
-    fillOutline(ctx, "#7ad651", 5);
-    rr(ctx, 50, 44, 20, 34, 9);
-    fillOutline(ctx, "#ffd23f", 4);
-  },
-  range: (ctx) => {
-    circle(ctx, 60, 60, 38);
-    fillOutline(ctx, "rgba(90,200,255,0.35)", 6);
-    circle(ctx, 60, 60, 18);
-    outline(ctx, 5);
-    ctx.beginPath();
-    for (const [x1, y1, x2, y2] of [[60, 14, 60, 40], [60, 80, 60, 106], [14, 60, 40, 60], [80, 60, 106, 60]]) {
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-    }
-    outline(ctx, 6);
-    circle(ctx, 60, 60, 5);
-    fill(ctx, "#ff4a4a");
-  },
-  boom: (ctx) => {
-    starPath(ctx, 60, 62, 48, 0.55, 10);
-    fillOutline(ctx, linear(ctx, 0, 14, 0, 110, [[0, "#ffe066"], [1, "#ff5a3a"]]), 6);
-    starPath(ctx, 60, 62, 24, 0.55, 8);
-    fill(ctx, "#fff6c8");
-  },
-  mend: (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(48, 20);
-    ctx.lineTo(70, 20);
-    ctx.lineTo(82, 52);
-    ctx.lineTo(60, 104);
-    ctx.lineTo(36, 52);
-    ctx.closePath();
-    fillOutline(ctx, linear(ctx, 0, 20, 0, 104, [[0, "#c8f4ff"], [1, "#3a9ae8"]]), 5);
-    rr(ctx, 74, 66, 36, 12, 4);
-    fillOutline(ctx, "#7ad651", 4);
-    rr(ctx, 86, 54, 12, 36, 4);
-    fillOutline(ctx, "#7ad651", 4);
-  },
-  shards: (ctx) => {
-    for (const [x, y, r, sc] of [[40, 64, -0.5, 1], [76, 50, 0.4, 1.15], [62, 92, 0.1, 0.8]] as [number, number, number, number][]) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(r);
-      ctx.scale(sc, sc);
-      ctx.beginPath();
-      ctx.moveTo(0, -30);
-      ctx.lineTo(14, -4);
-      ctx.lineTo(0, 30);
-      ctx.lineTo(-14, -4);
-      ctx.closePath();
-      fillOutline(ctx, linear(ctx, 0, -30, 0, 30, [[0, "#f2e6ff"], [1, "#9a6aff"]]), 5);
-      ctx.restore();
-    }
-  },
-  fort: (ctx) => {
-    rr(ctx, 18, 44, 84, 62, 6);
-    fillOutline(ctx, linear(ctx, 0, 44, 0, 106, [[0, "#e0b07a"], [1, "#b07a46"]]), 5);
-    for (const x of [18, 46, 74]) {
-      rr(ctx, x, 30, 20, 20, 3);
-      fillOutline(ctx, "#d8a46c", 4);
-    }
-    rr(ctx, 54, 60, 12, 46, 2);
-    fill(ctx, "rgba(255,240,200,0.6)");
-    ctx.beginPath();
-    ctx.moveTo(60, 30);
-    ctx.lineTo(60, 8);
-    outline(ctx, 4);
-    ctx.beginPath();
-    ctx.moveTo(60, 8);
-    ctx.lineTo(84, 14);
-    ctx.lineTo(60, 20);
-    ctx.closePath();
-    fillOutline(ctx, "#ff5a5a", 3);
-  },
-};
 
 export function makePickupTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "xp_bone", 100, 84, (ctx) => {
@@ -510,7 +374,7 @@ export function makePickupTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "airdrop", 120, 104, crate);
   canvasTexture(scene, "parachute", 160, 132, parachute);
   canvasTexture(scene, "shield", 300, 300, shield);
-  for (const [id, draw] of Object.entries(GLYPHS)) canvasTexture(scene, `sk_${id}`, 120, 120, draw);
+  makeSkillTextures(scene);
   canvasTexture(scene, "sk_luck", 120, 120, (ctx) => {
     ctx.save();
     ctx.translate(14, 4);

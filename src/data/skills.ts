@@ -3,13 +3,14 @@
  * stage ends, so every run builds up again from nothing.
  */
 export type SkillId =
-  | "mag" | "reload" | "damage" | "firerate" | "range" | "boom" | "speed" | "magnet" | "mend" | "luck" | "tough" | "shards" | "fort" | "pack";
+  | "double" | "power" | "hyper" | "bigbang" | "chain" | "zoom" | "vacuum" | "mend" | "luck" | "tough" | "shards" | "fort" | "pack" | "haunt"
+  | "snack" | "phase";
 
 export interface SkillDef {
   id: SkillId;
   name: string;
   icon: string;
-  /** badge colour */
+  /** badge colour: red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky */
   color: number;
   /** what the next level does (level = current level, 0 if new) */
   text: (level: number) => string;
@@ -20,20 +21,22 @@ export const MAX_SKILL = 5;
 export const SKILL_SLOTS = 4;
 
 export const SKILLS: SkillDef[] = [
-  { id: "mag", name: "Multi-Throw", icon: "sk_mag", color: 0xffc93a, text: (l) => (l % 2 === 0 ? "Every gadget throws one more" : "+15% gadget damage") },
-  { id: "reload", name: "Bigger Booms", icon: "sk_reload", color: 0x7ad651, text: () => "+25% explosion size (rockets, mines, bombs, grenades)" },
-  { id: "damage", name: "Power Up", icon: "sk_damage", color: 0xff8a3a, text: () => "+30% gadget damage" },
-  { id: "firerate", name: "Overclock", icon: "sk_firerate", color: 0xffe066, text: () => "Gadgets fire 15% faster" },
-  { id: "range", name: "Long Reach", icon: "sk_range", color: 0x5ac8ff, text: () => "+20% gadget reach" },
-  { id: "boom", name: "Boom Throws", icon: "sk_boom", color: 0xff5a4a, text: (l) => (l === 0 ? "Shuriken and balls explode on hit" : "Bigger, stronger blasts") },
-  { id: "speed", name: "Swift Boots", icon: "icon_boot", color: 0x4fd0b0, text: () => "+12% move speed" },
-  { id: "magnet", name: "Magnet", icon: "pk_magnet", color: 0x8a9aff, text: () => "Grab bones and meat from 50% farther" },
-  { id: "mend", name: "Crystal Mend", icon: "sk_mend", color: 0x67c3ff, text: () => "Crystal heals 35% and slowly regrows" },
-  { id: "luck", name: "Lucky Drops", icon: "sk_luck", color: 0x3fd08a, text: () => "Better gadgets in airdrops, and more often" },
-  { id: "tough", name: "Thick Cardboard", icon: "pk_heart", color: 0xff6a8a, text: () => "+25% max health, heal 30%" },
-  { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xb98aff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
+  { id: "double", name: "Double Trouble", icon: "sk_double", color: 0xffc93a, text: (l) => (l % 2 === 0 ? "Every gadget throws one more" : "+15% gadget damage") },
+  { id: "power", name: "Sharp Corners", icon: "sk_power", color: 0xff6a4a, text: () => "+30% gadget damage" },
+  { id: "hyper", name: "Hyper Hands", icon: "sk_hyper", color: 0xffe066, text: () => "Gadgets fire 15% faster" },
+  { id: "bigbang", name: "Big Bang", icon: "sk_bigbang", color: 0xff8a3a, text: () => "+25% size for blasts, bubbles and glue" },
+  { id: "chain", name: "Chain Reaction", icon: "sk_chain", color: 0xff4a6a, text: (l) => (l === 0 ? "Defeated monsters burst and hurt the ones around them" : "Bigger, stronger bursts") },
+  { id: "haunt", name: "Spooky Aura", icon: "sk_haunt", color: 0xb98aff, text: (l) => (l === 0 ? "Monsters close to you get hurt and slowed" : "Wider and stronger aura") },
+  { id: "phase", name: "Ghost Phase", icon: "sk_phase", color: 0x9a7aff, text: (l) => (l === 0 ? "Every 7s: turn see-through (no damage) and let out a shockwave" : "Phase 1s sooner, bigger shockwave") },
+  { id: "snack", name: "Ghost Snacks", icon: "sk_snack", color: 0xff8ab0, text: () => "Every monster you defeat heals you a little" },
+  { id: "tough", name: "Thick Cardboard", icon: "sk_tough", color: 0x5aa8ff, text: () => "+25% max health, heal 30%" },
   { id: "fort", name: "Box Fort", icon: "sk_fort", color: 0xc8935a, text: () => "Stand still: take 12% less damage, gadgets 10% faster" },
-  { id: "pack", name: "Pack Leader", icon: "icon_paw", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
+  { id: "zoom", name: "Zoomies", icon: "sk_zoom", color: 0x4fd0b0, text: () => "+12% move speed" },
+  { id: "vacuum", name: "Ghost Vacuum", icon: "sk_vacuum", color: 0x8a9aff, text: () => "Grab bones and meat from 50% farther" },
+  { id: "pack", name: "Pet Party", icon: "sk_pack", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
+  { id: "mend", name: "Crystal Glue", icon: "sk_mend", color: 0x67c3ff, text: () => "Crystal heals 35% and slowly regrows" },
+  { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xd8a8ff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
+  { id: "luck", name: "Lucky Box", icon: "sk_luck", color: 0x3fd08a, text: () => "Better gadgets in airdrops, and more often" },
 ];
 
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<SkillId, SkillDef>;

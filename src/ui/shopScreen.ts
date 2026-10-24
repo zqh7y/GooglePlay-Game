@@ -91,7 +91,7 @@ interface Deal {
 const DEALS: Deal[] = [
   { title: "MEGA DICE BOX", desc: "20 A dice + 8 B dice + 2 C dice", icons: ["die_A", "die_B", "die_C"], was: 140, gems: 55, rewards: () => [diceReward("A", 20), diceReward("B", 8), diceReward("C", 2)] },
   { title: "LUCKY BUNDLE", desc: "3 Luck Potions + 5 B dice", icons: ["icon_potion", "icon_clover", "die_B"], was: 60, gems: 25, rewards: () => [potionReward(potionMinutes() * 3), diceReward("B", 5)] },
-  { title: "BOOST PACK", desc: "2 of every Battle Boost", icons: ["gd_rocket", "pk_heart", "skill_orb"], was: 90, gems: 35, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x2", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 2) })) },
+  { title: "BOOST PACK", desc: "2 of every Battle Boost", icons: ["gd_bubble", "pk_heart", "skill_orb"], was: 90, gems: 35, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x2", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 2) })) },
   { title: "RARE ROLLER", desc: "4 C dice + 1 D die", icons: ["die_C", "die_D", "die_C"], was: 120, gems: 50, rewards: () => [diceReward("C", 4), diceReward("D", 1)] },
   { title: "TREASURE TRIO", desc: "3 Silver Chests in one", icons: ["chest_silver", "chest_silver", "chest_silver"], was: 75, gems: 35, rewards: () => [0, 1, 2].flatMap(() => CHESTS[1].rewards()) },
 ];

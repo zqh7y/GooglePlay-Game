@@ -5,7 +5,7 @@ import { Tier, tierIndex } from "./tiers";
  * Airdrops bring a gadget of some tier (A to SSS): a new kind fills a free slot, the same
  * kind upgrades to the better tier or gains a level.
  */
-export type GadgetKind = "shuriken" | "saw" | "rocket" | "mine" | "drone" | "boomerang" | "ball" | "grenade";
+export type GadgetKind = "shuriken" | "wisp" | "bubble" | "glue" | "kite" | "boomerang" | "popcorn" | "grenade";
 
 export interface GadgetBase {
   kind: GadgetKind;
@@ -14,26 +14,26 @@ export interface GadgetBase {
   color: number;
   /** damage per hit, times the hero's damage */
   dmg: number;
-  /** milliseconds between uses (saws: between hits on the same monster) */
+  /** milliseconds between uses */
   cd: number;
-  /** projectiles per use (saws: blades; mines: how many can lie around) */
+  /** projectiles per use (wisps: how many circle you; popcorn: kernels in the ring) */
   count: number;
   range: number;
-  /** explosion radius (0 = none) */
+  /** blast or puddle radius (0 = none) */
   radius: number;
-  /** extra monsters a projectile goes through (shuriken) or bounces to (ball) */
+  /** extra monsters a projectile goes through (shuriken, kernels) or the lightning jumps to (kite) */
   pierce: number;
   speed: number;
 }
 
 export const GADGETS: Record<GadgetKind, GadgetBase> = {
   shuriken: { kind: "shuriken", name: "Shuriken", desc: "Throws spinning stars that cut through monsters", color: 0xb8c8e0, dmg: 1.2, cd: 420, count: 1, range: 900, radius: 0, pierce: 1, speed: 1300 },
-  saw: { kind: "saw", name: "Saw Blades", desc: "Blades spin around you and shred anything close", color: 0xff9a3a, dmg: 0.7, cd: 350, count: 2, range: 190, radius: 0, pierce: 0, speed: 3.4 },
-  rocket: { kind: "rocket", name: "Rockets", desc: "Homing rockets that blow up groups", color: 0xff4a4a, dmg: 3, cd: 1500, count: 1, range: 1100, radius: 150, pierce: 0, speed: 750 },
-  mine: { kind: "mine", name: "Mines", desc: "Drops mines behind you that go off when stepped on", color: 0xe84a5a, dmg: 4, cd: 900, count: 5, range: 0, radius: 170, pierce: 0, speed: 0 },
-  drone: { kind: "drone", name: "Bomber Drone", desc: "A little drone flies over monsters and drops bombs", color: 0x5ac8ff, dmg: 2.2, cd: 1300, count: 1, range: 750, radius: 130, pierce: 0, speed: 0 },
+  wisp: { kind: "wisp", name: "Ghost Wisps", desc: "Little ghost flames circle you and dart at monsters, then come back", color: 0x7ee0ff, dmg: 1.9, cd: 700, count: 2, range: 560, radius: 0, pierce: 0, speed: 1500 },
+  bubble: { kind: "bubble", name: "Bubble Wand", desc: "Blows bubbles that trap a monster, then pop and splash everyone near", color: 0xb8e8ff, dmg: 4, cd: 1500, count: 1, range: 950, radius: 140, pierce: 0, speed: 460 },
+  glue: { kind: "glue", name: "Glue Splat", desc: "Splats sticky glue: monsters in it are slowed and keep getting hurt", color: 0xe8f0f8, dmg: 0.7, cd: 1600, count: 1, range: 700, radius: 170, pierce: 0, speed: 0 },
+  kite: { kind: "kite", name: "Storm Kite", desc: "A kite above you calls lightning that jumps from monster to monster", color: 0xffcf3a, dmg: 2.4, cd: 1100, count: 1, range: 850, radius: 0, pierce: 2, speed: 0 },
   boomerang: { kind: "boomerang", name: "Boomerang", desc: "Flies out through monsters and comes back to you", color: 0xffcf3a, dmg: 1.6, cd: 1100, count: 1, range: 650, radius: 0, pierce: 99, speed: 1100 },
-  ball: { kind: "ball", name: "Bouncy Ball", desc: "Bounces from monster to monster", color: 0xff6ad8, dmg: 1.4, cd: 1000, count: 1, range: 800, radius: 0, pierce: 3, speed: 1200 },
+  popcorn: { kind: "popcorn", name: "Popcorn Pop", desc: "Pops a ring of hot kernels in every direction", color: 0xfff0c0, dmg: 1.2, cd: 1100, count: 8, range: 520, radius: 0, pierce: 0, speed: 950 },
   grenade: { kind: "grenade", name: "Grenade", desc: "Lobs grenades into crowds. S tier and up: black holes!", color: 0x6fd25a, dmg: 3.5, cd: 1700, count: 1, range: 800, radius: 200, pierce: 0, speed: 0 },
 };
 
@@ -62,9 +62,9 @@ export function gadgetStats(kind: GadgetKind, tier: Tier, level: number): Gadget
 export function gadgetDps(kind: GadgetKind, tier: Tier, level: number): number {
   const s = gadgetStats(kind, tier, level);
   // how many monsters a use usually hits
-  const hits = { shuriken: 1 + Math.min(2, s.pierce) * 0.5, saw: 2.5, rocket: 3, mine: 3, drone: 2.5, boomerang: 2.5, ball: 1 + s.pierce * 0.7, grenade: 3.5 }[kind];
-  const count = kind === "saw" ? s.count : kind === "mine" ? 1 : s.count;
-  return (s.dmg * count * hits * 1000) / s.cd;
+  // glue hurts every half second for 4 s, about three monsters at a time; kernels often miss
+  const hits = { shuriken: 1 + Math.min(2, s.pierce) * 0.5, wisp: 1.4, bubble: 2.5, glue: 3 * 8, kite: 1 + s.pierce * 0.8, boomerang: 2.5, popcorn: 0.6 + s.pierce * 0.3, grenade: 3.5 }[kind];
+  return (s.dmg * s.count * hits * 1000) / s.cd;
 }
 
 /** What a gadget is called at a tier (grenades become black holes at S). */

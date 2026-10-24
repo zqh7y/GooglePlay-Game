@@ -195,6 +195,8 @@ interface Enemy {
   blinkT: number;
   ghostT: number;
   phased: boolean;
+  /** held in a bubble until then */
+  stunUntil: number;
 }
 
 interface Pet {
@@ -372,13 +374,12 @@ export class BattleScene extends Phaser.Scene {
   private warnedAt = 0;
 
   private gadgets: GadgetSlot[] = [];
-  private saws: { img: Phaser.GameObjects.Image; a: number }[] = [];
-  private sawHits = new Map<Enemy, number>();
-  private mines: { img: Phaser.GameObjects.Image; x: number; y: number; armAt: number; until: number; dmg: number; r: number }[] = [];
-  private drone: Phaser.GameObjects.Image | null = null;
-  private droneT = 0;
+  private wisps: { img: Phaser.GameObjects.Image; state: "orbit" | "out" | "back"; target: Enemy | null; dmg: number }[] = [];
+  private bubbles: { img: Phaser.GameObjects.Image; vx: number; vy: number; life: number; dmg: number; r: number; held: Enemy | null; popAt: number }[] = [];
+  private puddles: { img: Phaser.GameObjects.Image; x: number; y: number; r: number; until: number; dmg: number; tick: number }[] = [];
+  private kite: Phaser.GameObjects.Image | null = null;
+  private kiteT = 0;
   private rangs: { img: Phaser.GameObjects.Image; dx: number; dy: number; speed: number; went: number; max: number; back: boolean; dmg: number; hit: Set<Enemy> }[] = [];
-  private balls: { img: Phaser.GameObjects.Image; target: Enemy; left: number; dmg: number; speed: number; last: Enemy | null }[] = [];
   private holes: { img: Phaser.GameObjects.Image; x: number; y: number; r: number; until: number; dmg: number }[] = [];
 
   private pets: Pet[] = [];
@@ -397,6 +398,10 @@ export class BattleScene extends Phaser.Scene {
   private wander: [number, number] | null = null;
   /** walking into a building to start a fight */
   private entering = false;
+  /** Spooky Aura ticks, Ghost Phase timer and how long you stay see-through */
+  private hauntT = 0;
+  private ghostT = 0;
+  private phasingUntil = 0;
   private spawnTimer = 0;
   private eliteTimer = 0;
   private chestTimer = 0;
@@ -452,10 +457,10 @@ export class BattleScene extends Phaser.Scene {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
       revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
-      gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], saws: [], sawHits: new Map(), mines: [], drone: null, droneT: 0, rangs: [], balls: [], holes: [],
+      gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
-      buildings: [], nearBld: null, roamDiceT: ROAM_DICE_MS, wander: null, entering: false,
+      buildings: [], nearBld: null, roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
     });
     this.joy = { ...NO_JOY };
     this.heroMax = HERO_HP * villageHpMult();
@@ -1302,7 +1307,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private magnetMult(): number {
-    return 1 + 0.5 * this.lv("magnet");
+    return 1 + 0.5 * this.lv("vacuum");
   }
 
   private heal(frac: number): void {
@@ -1336,15 +1341,14 @@ export class BattleScene extends Phaser.Scene {
 
   private removeGadget(g: GadgetSlot): void {
     this.gadgets = battle.gadgets = this.gadgets.filter((o) => o !== g);
-    if (g.kind === "saw") {
-      this.saws.forEach((w) => w.img.destroy());
-      this.saws = [];
+    if (g.kind === "wisp") {
+      this.wisps.forEach((w) => w.img.destroy());
+      this.wisps = [];
     }
-    if (g.kind === "drone") {
-      this.drone?.destroy();
-      this.drone = null;
+    if (g.kind === "kite") {
+      this.kite?.destroy();
+      this.kite = null;
     }
-    if (g.kind === "mine") this.mines.forEach((m) => m.img.destroy()), (this.mines = []);
   }
 
   /** The first gadget is held in the hand. */
@@ -1359,24 +1363,44 @@ export class BattleScene extends Phaser.Scene {
   /** A gadget's numbers right now, with this run's skills. */
   private gStats(g: GadgetSlot): GadgetBase {
     const s = gadgetStats(g.kind, g.tier, g.level);
-    const quick = (1 + 0.15 * this.lv("firerate")) * (this.fortified ? 1 + 0.1 * this.lv("fort") : 1);
-    // Multi-Throw: odd levels throw one more, even levels hit harder
-    const multi = this.lv("mag");
+    const quick = (1 + 0.15 * this.lv("hyper")) * (this.fortified ? 1 + 0.1 * this.lv("fort") : 1);
+    // Double Trouble: odd levels throw one more, even levels hit harder
+    const multi = this.lv("double");
     return {
       ...s,
       dmg: s.dmg * (1 + 0.15 * Math.floor(multi / 2)),
       cd: s.cd / quick,
       count: s.count + Math.ceil(multi / 2),
-      range: s.range * rangeMult() * (1 + 0.2 * this.lv("range")),
-      radius: s.radius * (1 + 0.25 * this.lv("reload")),
-      speed: g.kind === "saw" ? s.speed * quick : s.speed,
+      range: s.range * rangeMult(),
+      radius: s.radius * (1 + 0.25 * this.lv("bigbang")),
+      speed: s.speed,
     };
   }
 
-  /** Thrown gadgets can explode on hit with the Boom skill. */
-  private boomOf(): { explode: number; splash: number } {
-    const boom = this.lv("boom");
-    return { explode: boom ? 60 + 20 * boom : 0, splash: boom ? 0.35 + 0.1 * boom : 0 };
+  /** Spooky Aura hurts monsters close to you; Ghost Phase makes you see-through now and then with a shockwave. */
+  private ghostSkills(delta: number): void {
+    const haunt = this.lv("haunt");
+    if (haunt) {
+      this.hauntT -= delta;
+      if (this.hauntT <= 0) {
+        this.hauntT = 500;
+        const r = this.hauntR();
+        for (const e of this.near(this.hero.x, this.hero.y, r)) this.hit(e, this.heroDamage() * 0.3 * haunt, true);
+      }
+    }
+    const phase = this.lv("phase");
+    if (!phase) return;
+    this.ghostT -= delta;
+    if (this.ghostT > 0) return;
+    this.ghostT = 7000 - 800 * (phase - 1);
+    this.phasingUntil = this.time.now + 1000;
+    this.tweens.add({ targets: this.hero, alpha: 0.4, duration: 120, yoyo: true, hold: 760 });
+    this.blast(this.hero.x, this.hero.y - 40, 240 + 20 * phase, this.heroDamage() * 2 * phase, null, 0xb98aff);
+    sfx.charge(5);
+  }
+
+  private hauntR(): number {
+    return 210 + 25 * this.lv("haunt");
   }
 
   /** Every gadget fires on its own when it is ready and something is in reach. */
@@ -1388,55 +1412,67 @@ export class BattleScene extends Phaser.Scene {
     this.handImg.setRotation(Phaser.Math.Angle.RotateTo(this.handImg.rotation, aim, 0.25));
     const base = this.heroDamage();
     for (const g of this.gadgets) {
-      if (g.kind === "saw") continue;
       g.timer -= delta;
       if (g.timer > 0) continue;
       const st = this.gStats(g);
       const dmg = base * st.dmg;
-      if (g.kind === "mine") {
-        if (this.mines.length < st.count) this.dropMine(dmg, st.radius);
-        g.timer = st.cd;
-        continue;
-      }
       const targets = this.nearestEnemies(hx, hy, st.range, Math.max(1, st.count));
       if (!targets.length) continue;
       g.timer = st.cd;
       this.stats.shots++;
       switch (g.kind) {
         case "shuriken": {
-          const { explode, splash } = this.boomOf();
           for (let i = 0; i < st.count; i++) {
             const t = targets[i % targets.length];
             const a = Math.atan2(t.img.y - t.img.displayHeight * 0.4 - hy, t.img.x - hx) + (i >= targets.length ? (Math.random() - 0.5) * 0.4 : 0);
             const img = this.add.image(hx, hy, "gd_shuriken").setDepth(9000).setScale(1.05);
-            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode, splash, hit: [], spin: 20 });
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 20 });
           }
           sfx.shoot(false);
           break;
         }
-        case "rocket":
+        case "wisp":
+          // every wisp circling you darts at a different monster
+          this.wisps.filter((w) => w.state === "orbit").forEach((w, i) => {
+            w.state = "out";
+            w.target = targets[i % targets.length];
+            w.dmg = dmg;
+          });
+          break;
+        case "bubble":
           for (let i = 0; i < st.count; i++) {
-            const t = targets[Math.floor(Math.random() * targets.length)];
-            this.time.delayedCall(i * 90, () => this.fire(hx, hy - 20, t, dmg, "gd_rocket", 0xffffff, st.radius, 1, st.speed));
+            const t = targets[i % targets.length];
+            const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i ? (Math.random() - 0.5) * 0.6 : 0);
+            const img = this.add.image(hx, hy, "gd_bubble").setDepth(9000).setScale(0.4);
+            this.tweens.add({ targets: img, scale: 1.3, duration: 300, ease: "Back.out" });
+            this.bubbles.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000 + 600, dmg, r: st.radius, held: null, popAt: 0 });
           }
+          sfx.shoot(false);
+          break;
+        case "glue":
+          for (let i = 0; i < st.count; i++) this.splatGlue(targets[i % targets.length], dmg, st.radius);
+          sfx.shoot(false);
+          break;
+        case "kite":
+          for (let i = 0; i < st.count; i++) this.lightning(targets[i % targets.length], dmg, st.pierce);
           sfx.shoot(true);
           break;
-        case "drone":
-          this.droneDrop(st, dmg);
+        case "popcorn": {
+          const off = Math.random() * Math.PI;
+          for (let i = 0; i < st.count; i++) {
+            const a = off + (i / st.count) * Math.PI * 2;
+            const img = this.add.image(hx, hy, "gd_kernel").setDepth(9000).setScale(1.3);
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 8 });
+          }
+          sfx.shoot(false);
           break;
+        }
         case "boomerang":
           for (let i = 0; i < st.count; i++) {
             const t = targets[0];
             const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i - (st.count - 1) / 2) * 0.35;
             const img = this.add.image(hx, hy, "gd_boomerang").setDepth(9000).setScale(1.25);
             this.rangs.push({ img, dx: Math.cos(a), dy: Math.sin(a), speed: st.speed, went: 0, max: st.range, back: false, dmg, hit: new Set() });
-          }
-          sfx.shoot(false);
-          break;
-        case "ball":
-          for (let i = 0; i < st.count; i++) {
-            const img = this.add.image(hx, hy, "gd_ball").setDepth(9000).setScale(1.2);
-            this.balls.push({ img, target: targets[i % targets.length], left: st.pierce, dmg, speed: st.speed, last: null });
           }
           sfx.shoot(false);
           break;
@@ -1448,32 +1484,56 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Mines go down at your feet and arm after a moment. */
-  private dropMine(dmg: number, r: number): void {
-    const x = this.hero.x;
-    const y = this.hero.y;
-    const img = this.add.image(x, y - 14, "gd_mine").setDepth(y - 5).setScale(0.3);
-    this.tweens.add({ targets: img, scale: 1.15, duration: 200, ease: "Back.out" });
-    this.mines.push({ img, x, y, armAt: this.time.now + 400, until: this.time.now + 15000, dmg, r });
+  /** A blob of glue flies onto a monster and spreads into a sticky puddle for 4 s. */
+  private splatGlue(t: Enemy, dmg: number, r: number): void {
+    const [sx, sy] = [this.hero.x, this.hero.y - 70];
+    const [tx, ty] = [t.img.x, t.img.y];
+    const blob = this.add.image(sx, sy, "gd_glue").setDepth(9200).setScale(0.8);
+    const k = { t: 0 };
+    this.tweens.add({
+      targets: k, t: 1, duration: 450,
+      onUpdate: () => blob.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 200).setAngle(k.t * 360),
+      onComplete: () => {
+        blob.destroy();
+        const img = this.add.image(tx, ty, "gd_puddle").setDepth(-600).setScale(0.2).setAlpha(0.95);
+        this.tweens.add({ targets: img, scale: r / 100, duration: 220, ease: "Back.out" });
+        this.puddles.push({ img, x: tx, y: ty, r, until: this.time.now + 4000, dmg, tick: 0 });
+      },
+    });
   }
 
-  /** The drone drops bombs on monsters below it. */
-  private droneDrop(st: GadgetBase, dmg: number): void {
-    if (!this.drone) return;
-    const d = this.drone;
-    const targets = this.nearestEnemies(d.x, d.y + 200, st.range, st.count);
-    targets.forEach((t, i) => {
-      const tx = t.img.x;
-      const ty = t.img.y;
-      const bomb = this.add.image(d.x, d.y + 20, "pk_bomb").setDepth(9200).setScale(0.95);
-      this.tweens.add({
-        targets: bomb, x: tx, y: ty - 20, angle: 200, duration: 380, delay: i * 120, ease: "Quad.in",
-        onComplete: () => {
-          bomb.destroy();
-          this.blast(tx, ty - 20, st.radius, dmg, null);
-        },
-      });
-    });
+  /** The kite calls lightning onto a monster; it jumps on to the nearest ones it has not hit yet. */
+  private lightning(first: Enemy, dmg: number, jumps: number): void {
+    let [px, py] = this.kite ? [this.kite.x, this.kite.y + 40] : [this.hero.x, this.hero.y - 220];
+    const g = this.add.graphics().setDepth(9100);
+    const hit: Enemy[] = [];
+    let cur: Enemy | undefined = first;
+    while (cur && hit.length <= jumps) {
+      const x: number = cur.img.x;
+      const y: number = cur.img.y - cur.img.displayHeight * 0.4;
+      // a jagged bolt, a wide yellow glow under a thin white core
+      const pts: [number, number][] = [[px, py]];
+      for (let k = 1; k < 6; k++) pts.push([px + ((x - px) * k) / 6 + (Math.random() - 0.5) * 50, py + ((y - py) * k) / 6 + (Math.random() - 0.5) * 50]);
+      pts.push([x, y]);
+      for (const [w, c] of [[16, 0xffe066], [6, 0xffffff]] as [number, number][]) {
+        g.lineStyle(w, c, 0.95).beginPath().moveTo(pts[0][0], pts[0][1]);
+        for (const [qx, qy] of pts.slice(1)) g.lineTo(qx, qy);
+        g.strokePath();
+      }
+      hit.push(cur);
+      this.hit(cur, dmg);
+      this.sparks.setParticleTint(0xffe066);
+      this.sparks.explode(6, x, y);
+      [px, py] = [x, y];
+      cur = this.nearestEnemies(x, y + 40, 380, 6).find((e) => !hit.includes(e));
+    }
+    this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
+  }
+
+  /** A bubble pops: a splash that hurts everything around it. */
+  private popBubble(b: { img: Phaser.GameObjects.Image; dmg: number; r: number }): void {
+    this.blast(b.img.x, b.img.y + 30, b.r, b.dmg, null, 0xb8e8ff);
+    b.img.destroy();
   }
 
   /** Grenades fly in an arc; S tier and up open a black hole that pulls monsters in before it bursts. */
@@ -1502,54 +1562,87 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  /** Everything gadgets leave behind: saws, mines, the drone, boomerangs, balls and black holes. */
+  /** Everything gadgets leave behind: wisps, the kite, bubbles, glue, boomerangs and black holes. */
   private moveGadgets(time: number, delta: number): void {
     const dt = delta / 1000;
     const fighting = this.fighting;
-    const base = this.heroDamage();
-    // saw blades circle you
-    const saw = this.gadgets.find((g) => g.kind === "saw");
-    if (saw) {
-      const st = this.gStats(saw);
-      while (this.saws.length < st.count) this.saws.push({ img: this.add.image(this.hero.x, this.hero.y, "gd_saw").setScale(1.3), a: 0 });
-      while (this.saws.length > st.count) this.saws.pop()!.img.destroy();
-      const R = st.range * (1 + 0.2 * this.lv("range"));
-      this.saws.forEach((w, i) => {
-        w.a = time / 1000 * st.speed + (i / this.saws.length) * Math.PI * 2;
-        const x = this.hero.x + Math.cos(w.a) * R;
-        const y = this.hero.y - 50 + Math.sin(w.a) * R * 0.7;
-        w.img.setPosition(x, y).setDepth(y + 50).setRotation(time / 40);
-        if (!fighting) return;
-        for (const e of this.near(x, y + 40, 90)) {
-          if (time - (this.sawHits.get(e) ?? -1e9) < st.cd) continue;
-          this.sawHits.set(e, time);
-          this.hit(e, base * st.dmg, true);
-          this.sparks.setParticleTint(0xffcf3a);
-          this.sparks.explode(2, e.img.x, e.img.y - 40);
+    // ghost wisps circle you, dart at a monster and come back
+    const wisp = this.gadgets.find((g) => g.kind === "wisp");
+    if (wisp) {
+      const st = this.gStats(wisp);
+      while (this.wisps.length < st.count) this.wisps.push({ img: this.add.image(this.hero.x, this.hero.y - 80, "gd_wisp").setScale(1.1), state: "orbit", target: null, dmg: 0 });
+      while (this.wisps.length > st.count) this.wisps.pop()!.img.destroy();
+      this.wisps.forEach((w, i) => {
+        const a = time / 600 + (i / this.wisps.length) * Math.PI * 2;
+        const ox = this.hero.x + Math.cos(a) * 150;
+        const oy = this.hero.y - 90 + Math.sin(a) * 100;
+        if (w.state === "out" && (!w.target || !this.enemies.includes(w.target))) w.state = "back";
+        if (w.state === "orbit") {
+          w.img.setPosition(ox, oy);
+        } else {
+          const t = w.target;
+          const [tx, ty] = w.state === "out" && t ? [t.img.x, t.img.y - t.img.displayHeight * 0.4] : [ox, oy];
+          const dx = tx - w.img.x;
+          const dy = ty - w.img.y;
+          const d = Math.hypot(dx, dy);
+          const step = st.speed * dt;
+          if (d > step + 30) {
+            w.img.setPosition(w.img.x + (dx / d) * step, w.img.y + (dy / d) * step);
+          } else if (w.state === "out" && t) {
+            if (fighting) this.hit(t, w.dmg);
+            this.sparks.setParticleTint(0x7ee0ff);
+            this.sparks.explode(6, tx, ty);
+            w.state = "back";
+          } else {
+            w.state = "orbit";
+          }
         }
+        w.img.setDepth(w.img.y + 60).setScale(1.1 + Math.sin(time / 120 + i) * 0.06);
       });
-      if (this.sawHits.size > 600) this.sawHits.clear();
     }
-    // the drone hovers over your shoulder
-    if (this.gadgets.some((g) => g.kind === "drone")) {
-      if (!this.drone) this.drone = this.add.image(this.hero.x, this.hero.y - 220, "gd_drone").setScale(1.3);
-      this.droneT += dt;
-      const x = this.hero.x + Math.cos(this.droneT * 1.3) * 130;
-      const y = this.hero.y - 230 + Math.sin(this.droneT * 2.6) * 18;
-      this.drone.setPosition(this.drone.x + (x - this.drone.x) * 0.1, this.drone.y + (y - this.drone.y) * 0.1).setDepth(this.hero.y + 300);
+    // the storm kite flies over your shoulder
+    if (this.gadgets.some((g) => g.kind === "kite")) {
+      if (!this.kite) this.kite = this.add.image(this.hero.x - 120, this.hero.y - 300, "gd_kite").setScale(1.2);
+      this.kiteT += dt;
+      const x = this.hero.x - 120 + Math.cos(this.kiteT * 1.1) * 60;
+      const y = this.hero.y - 300 + Math.sin(this.kiteT * 2.2) * 24;
+      this.kite.setPosition(this.kite.x + (x - this.kite.x) * 0.08, this.kite.y + (y - this.kite.y) * 0.08).setAngle(Math.sin(this.kiteT * 2) * 12).setDepth(this.hero.y + 300);
     }
-    // mines go off when a monster steps close
-    this.mines = this.mines.filter((m) => {
-      if (time > m.until) {
-        this.tweens.add({ targets: m.img, alpha: 0, duration: 200, onComplete: () => m.img.destroy() });
+    // bubbles float on; one that touches a monster holds it, then pops
+    this.bubbles = this.bubbles.filter((b) => {
+      if (b.held) {
+        if (this.enemies.includes(b.held)) b.img.setPosition(b.held.img.x, b.held.img.y - b.held.img.displayHeight * 0.45);
+        if (this.time.now < b.popAt) return true;
+        this.popBubble(b);
         return false;
       }
-      if (!fighting || time < m.armAt) return true;
-      m.img.setTint(Math.floor(time / 250) % 2 ? 0xffffff : 0xffb0b0);
-      if (!this.near(m.x, m.y, 80).length) return true;
-      m.img.destroy();
-      this.blast(m.x, m.y - 20, m.r, m.dmg, null);
+      b.img.x += b.vx * dt;
+      b.img.y += b.vy * dt;
+      b.life -= delta;
+      const e = fighting ? this.near(b.img.x, b.img.y + 50, 70)[0] : undefined;
+      if (e) {
+        b.held = e;
+        b.popAt = this.time.now + (e.type.boss ? 0 : 1100);
+        if (!e.type.boss) e.stunUntil = b.popAt;
+        this.tweens.add({ targets: b.img, scale: 1.8, duration: 160, ease: "Back.out" });
+        return true;
+      }
+      if (b.life > 0) return true;
+      this.popBubble(b);
       return false;
+    });
+    // glue puddles slow monsters down and keep hurting them
+    this.puddles = this.puddles.filter((p) => {
+      if (this.time.now > p.until) {
+        this.tweens.add({ targets: p.img, alpha: 0, duration: 300, onComplete: () => p.img.destroy() });
+        return false;
+      }
+      p.tick -= delta;
+      if (fighting && p.tick <= 0) {
+        p.tick = 500;
+        for (const e of this.near(p.x, p.y, p.r)) if (Math.hypot(e.img.x - p.x, (e.img.y - p.y) * 2) < p.r) this.hit(e, p.dmg, true);
+      }
+      return true;
     });
     // boomerangs fly out, then home back to you
     this.rangs = this.rangs.filter((b) => {
@@ -1581,45 +1674,6 @@ export class BattleScene extends Phaser.Scene {
       }
       return true;
     });
-    // bouncy balls hop from monster to monster
-    this.balls = this.balls.filter((b) => {
-      if (!this.enemies.includes(b.target)) {
-        const next = this.nearestEnemies(b.img.x, b.img.y, 500, 3).find((e) => e !== b.last);
-        if (!next) {
-          b.img.destroy();
-          return false;
-        }
-        b.target = next;
-      }
-      const tx = b.target.img.x;
-      const ty = b.target.img.y - b.target.img.displayHeight * 0.4;
-      const dx = tx - b.img.x;
-      const dy = ty - b.img.y;
-      const d = Math.hypot(dx, dy);
-      const step = b.speed * dt;
-      b.img.rotation += dt * 10;
-      if (d > step + 20) {
-        b.img.x += (dx / d) * step;
-        b.img.y += (dy / d) * step;
-        return true;
-      }
-      this.hit(b.target, b.dmg);
-      const { explode, splash } = this.boomOf();
-      if (explode) this.blast(tx, ty, explode, b.dmg * splash, b.target);
-      this.tweens.add({ targets: b.img, scaleY: 0.5, duration: 60, yoyo: true });
-      b.last = b.target;
-      if (b.left-- <= 0) {
-        b.img.destroy();
-        return false;
-      }
-      const next = this.nearestEnemies(tx, ty, 520, 4).find((e) => e !== b.last);
-      if (!next) {
-        b.img.destroy();
-        return false;
-      }
-      b.target = next;
-      return true;
-    });
     // black holes pull monsters in, then burst
     this.holes = this.holes.filter((h) => {
       for (const e of this.near(h.x, h.y, h.r)) {
@@ -1640,12 +1694,10 @@ export class BattleScene extends Phaser.Scene {
 
   /** Clear thrown things (the boss is coming). */
   private clearThrown(): void {
-    [...this.rangs, ...this.balls].forEach((b) => b.img.destroy());
-    this.mines.forEach((m) => m.img.destroy());
-    this.holes.forEach((h) => h.img.destroy());
+    [...this.rangs, ...this.bubbles, ...this.puddles, ...this.holes].forEach((b) => b.img.destroy());
     this.rangs = [];
-    this.balls = [];
-    this.mines = [];
+    this.bubbles = [];
+    this.puddles = [];
     this.holes = [];
   }
 
@@ -1758,7 +1810,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (len > 0.05) {
       this.stillFor = 0;
-      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("speed")) * delta) / 1000;
+      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * delta) / 1000;
       this.hero.setPosition(clampX(this.hero.x + vx * step), clampY(this.hero.y + vy * step)).setScale(1);
       if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
       this.walkTimer += delta;
@@ -1916,7 +1968,7 @@ export class BattleScene extends Phaser.Scene {
 
   private heroDamage(): number {
     const team = this.pets.filter((p) => p.def.kind !== "buff").reduce((s, p) => s + this.petDamage(p), 0);
-    return (HERO_BASE_DMG + team * HERO_TEAM_SHARE) * this.damageMult() * heroDmgMult() * (1 + 0.3 * this.lv("damage"));
+    return (HERO_BASE_DMG + team * HERO_TEAM_SHARE) * this.damageMult() * heroDmgMult() * (1 + 0.3 * this.lv("power"));
   }
 
   // ───────────────────────── the stage clock ─────────────────────────
@@ -2036,7 +2088,7 @@ export class BattleScene extends Phaser.Scene {
       r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
       flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0,
       muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
-      blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false,
+      blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false, stunUntil: 0,
     };
     if (elite || muts.length >= 2) {
       const color = elite ? 0xff4a4a : MUTATION_BY_ID[muts[1]].color;
@@ -2324,6 +2376,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.state === "boss" && !this.rush) this.sealsTick(delta);
     if (this.state === "lobby" && !this.rush) this.roamTick(delta);
     if (fighting) {
+      this.ghostSkills(delta);
       this.gadgetsTick(delta);
       this.petAttacks(delta);
       this.crystalShards(delta);
@@ -2373,7 +2426,7 @@ export class BattleScene extends Phaser.Scene {
       }
       e.aura?.setPosition(e.img.x, e.img.y - 10).setDepth(e.img.y - 1);
       e.badge?.setPosition(e.img.x, e.img.y - e.img.displayHeight * (e.type.flying ? 0.5 : 0.95) - 24).setDepth(e.img.y + 2);
-      if (frozen || !fighting) continue;
+      if (frozen || !fighting || this.time.now < e.stunUntil) continue;
       if (e.muts.length) this.mutantTick(e, delta);
       const heroD = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
       if (this.shielded || e.type.boss || heroD <= AGGRO) e.huntHero = true;
@@ -2387,6 +2440,8 @@ export class BattleScene extends Phaser.Scene {
       const stop = e.toCrystal ? 200 : HERO_R + e.r - 10;
       let speed = e.type.stats.speed * e.speedMult;
       if (e.type.boss) speed = this.bossMove(e, delta, dx / d, dy / d) * e.speedMult;
+      if (this.puddles.some((p) => Math.hypot(p.x - e.img.x, (p.y - e.img.y) * 2) < p.r)) speed *= e.type.boss ? 0.7 : 0.4;
+      if (this.lv("haunt") && heroD < this.hauntR()) speed *= 0.85;
       // blinkers teleport a good way toward their target every few seconds
       if (e.muts.includes("blink") && d > stop + 220) {
         e.blinkT -= delta;
@@ -2870,6 +2925,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private hurt(dmg: number): void {
+    if (this.time.now < this.phasingUntil) return;
     this.heroHp -= dmg;
     this.stats.hurt += dmg;
     this.hurtAt = this.time.now;
@@ -3090,6 +3146,15 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.killTweensOf(e.img);
     this.tweens.add({ targets: e.img, scale: e.type.boss ? 1.6 : 0, alpha: 0, angle: 30, duration: e.type.boss ? 500 : 160, onComplete: () => e.img.destroy() });
     if (sweep) return;
+    // Chain Reaction: the monster bursts (bursts can set off more bursts)
+    const chain = this.lv("chain");
+    if (chain && !e.type.boss) {
+      const [bx, by] = [e.img.x, cy];
+      this.time.delayedCall(90, () => this.blast(bx, by, 110 + 20 * chain, this.heroDamage() * 0.5 * chain, null, 0xff6a4a));
+    }
+    // Ghost Snacks: a little health back for every monster
+    const snack = this.lv("snack");
+    if (snack && this.fighting) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.003 * snack);
     this.stats.kills++;
     save.totalKills++;
     this.combo++;
@@ -3199,6 +3264,11 @@ export class BattleScene extends Phaser.Scene {
       drawBar(this.bars, p.img.x - 55, p.img.y - 128, 110, 12, p.hp / p.maxHp, p.down > 0 ? 0x9a9aa8 : p.hp / p.maxHp > 0.35 ? 0x7ad651 : 0xf26464);
     }
     if (battle.mode === "lobby") return;
+    if (this.lv("haunt") && this.fighting) {
+      const r = this.hauntR();
+      this.fx.fillStyle(0xb98aff, 0.08 + Math.sin(this.time.now / 300) * 0.03).fillEllipse(this.hero.x, this.hero.y, r * 2, r * 1.4);
+      this.fx.lineStyle(5, 0xd8b8ff, 0.4).strokeEllipse(this.hero.x, this.hero.y, r * 2, r * 1.4);
+    }
     // your health (and reload) under your feet, the crystal's health above it
     const hf = this.heroHp / this.heroMax;
     drawBar(this.bars, this.hero.x - 80, this.hero.y + 16, 160, 20, hf, hf > 0.35 ? 0x7ad651 : 0xf26464);

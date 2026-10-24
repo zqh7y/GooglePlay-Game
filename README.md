@@ -17,7 +17,8 @@ npm run build    # production build into dist/
 
 Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets (`?frame=1` / `2` for the walk
 frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, plant, rock and crystal,
-`/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses.
+`/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses,
+`/dev/places.html` the seals and the lobby buildings.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run (and tries the Boss Rush after each run) with the real numbers and prints how many
@@ -63,6 +64,7 @@ hours (and failed runs) a steady player needs per stage.
   - **A good roll stays up for 3 seconds** (a new pet, a new record, or a pet 10x rarer than your die's
     luck): "NEW PET!" / "NEW RECORD!" / "GREAT ROLL!" on top, the cards bob, the best one shines, and a bar
     counts down (tap to skip). Other rolls fly straight into your collection.
+  - **AUTO and FAST** are on the dark roll screen too, so you can always stop auto rolling.
   - No upgrade cards here: the screen is all rolling. Luck, rolling speed and money upgrades are in the
     Upgrades tab.
   - **Next to find** shows the three easiest pets you are missing, with your own chance per roll.
@@ -124,24 +126,77 @@ hours (and failed runs) a steady player needs per stage.
 
   Bosses get mutations from stage 20. The first time you meet a mutation, a warning explains it. The
   lobby lists the mutations of the current stage, and mutated monsters pay more.
-- **Lobby**: small round shortcuts (Map, Quests, Daily, Hero), your **total DPS** (hero plus pets) and
+- **Lobby**: small round shortcuts (Map, Quests, Daily, Hero, AFK), your **total DPS** (hero plus pets) and
   your luck. Tapping DPS or Hero opens **My Hero**: your character up close, total damage per second
   split between the hero and each pet, health, speed and crits.
+- **Free roam**: outside a fight the lobby is a field you can walk around with the joystick (the minimap is
+  top right). A die turns up somewhere every 30 s (up to 8 lying around); walk over them to pick them up.
+  **AFK** puts your hero on autopilot: it walks to the nearest die by itself and strolls around when there
+  are none.
+- **Two buildings** stand by the crystal: the stone **arena** (BATTLE) and the purple **boss tower** (BOSS
+  RUSH). Walk up to one and a card shows that fight's info: stage, land, boss, mutations, best and rewards.
+  The BATTLE and BOSS RUSH buttons stay at the bottom; pressing one first asks **"Start?"** with the same
+  info, then your hero walks into that building (with the pets) and the fight starts.
 - **Upgrades**:
   - One chip per path at the top shows what it is for and how much you own. Tap a chip to jump there.
   - A legend explains the states: owned, can buy, need money, locked.
   - Every open hexagon shows its price (green when affordable).
   - A bouncing **NEXT** marker and the **Best next upgrade** bar (with BUY) say what to get next.
-- **The Battle tab is a lobby**: the fight only starts when you press **BATTLE**. During a fight the tab bar
+- **The Battle tab is a lobby**: the fight only starts when you press **BATTLE** (and say yes). During a fight the tab bar
   and shops are gone; you only get **Pause** (resume, sound, music, give up) and **Stats**.
 - **A stage**: drag anywhere to move (WASD / arrows on desktop); your hero shoots by itself. The camera is
   zoomed out (1.66x) so you see more of the field. Survive **5:00** against hordes of monsters that come
   faster and tougher every minute (a ring of them closes in at each minute mark). If you fall or the crystal
   breaks, the run is over: revive once for gems, try again, or go back to the lobby.
 - **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and a claw carries the
-  crystal into the sky. The boss drops down next to you with a title card and its own music. It is just you
-  and your pets against it (health of 100 normal monsters). It charges (red marks on the ground), stomps
-  (a red circle) and throws rocks. Beat it and the crystal floats back down.
+  crystal into the sky. The boss drops down next to you with a title card (its name and its three moves)
+  and its own music. It is just you and your pets against it. Beat it and the crystal floats back down.
+- **Boss seals**: stage bosses **heal themselves** (2% of their health a second; not in the Boss Rush).
+  Five rune seals appear around the field when the boss lands: faint until you get close, on the minimap
+  and with purple arrows at the screen edge. **Stand on one for 3 s** (a ring fills up) to close it: a gold
+  beam, a bolt hits the boss, and the healing drops by a fifth. Close all five and it can't heal at all. A
+  strong team can hit through the healing; a skilled player closes the seals. (Healing bosses start with
+  75% of their old health, so closing the seals keeps them as hard as before.)
+- **Boss moves**: every boss walks at you and, every few seconds, does one of **its three moves**. Each one
+  shows where it will land first:
+
+  | Move | What you see, then what happens |
+  |---|---|
+  | Charge | red marks on the ground, then a dash along them |
+  | Stomp | a red circle around it, then a shockwave |
+  | Rock Throw | it rears back, then a fan of 5 rocks |
+  | Jump Slam | it leaps; a red circle where you stood, where it lands |
+  | Bullet Ring | it glows, then two rings of shots in every direction |
+  | Aimed Shots | it glows, then 5 quick shots at you |
+  | Call Minions | it shakes, then 3-5 monsters of the land pop up around it |
+  | Spin Attack | it spins at you for a moment (don't touch it) |
+  | Sky Rain | red circles around you (one right on you), then things fall from the sky |
+  | Teleport | it fades, appears next to you and stomps |
+  | Burrow | it digs in; a mound of dirt chases you, a red circle, then it bursts out |
+  | Breath | a red cone in front of it, then it breathes along the cone |
+
+  | Boss | Moves |
+  |---|---|
+  | Slime King | Jump Slam, Call Minions, Bullet Ring |
+  | Mushroom Titan | Stomp, Bullet Ring, Call Minions |
+  | Bat Queen | Charge, Call Minions, Aimed Shots |
+  | Stone Golem | Stomp, Rock Throw, Jump Slam |
+  | Scarecrow | Call Minions, Spin Attack, Sky Rain |
+  | Thunder Crow | Charge, Sky Rain, Aimed Shots |
+  | Haystack Brute | Spin Attack, Stomp, Rock Throw |
+  | Pumpkin King | Jump Slam, Bullet Ring, Call Minions |
+  | Spore Mother | Bullet Ring, Sky Rain, Call Minions |
+  | Shadow Wolf | Charge, Teleport, Spin Attack |
+  | Moss Troll | Stomp, Rock Throw, Jump Slam |
+  | Old Treant | Sky Rain, Call Minions, Stomp |
+  | Mummy Pharaoh | Teleport, Bullet Ring, Call Minions |
+  | Sand Worm | Burrow, Rock Throw, Bullet Ring |
+  | Cactus Colossus | Bullet Ring, Jump Slam, Stomp |
+  | Sand Scorpion | Charge, Aimed Shots, Burrow |
+  | Penguin Emperor | Charge, Call Minions, Sky Rain |
+  | Ice Golem | Stomp, Sky Rain, Breath |
+  | Frost Yeti | Jump Slam, Rock Throw, Charge |
+  | Frost Dragon | Breath, Sky Rain, Charge |
 - **20 bosses**, a new one every 5 stages (four per land):
 
   | Land | Bosses (stages) |
@@ -176,12 +231,12 @@ hours (and failed runs) a steady player needs per stage.
   | Gadget | What it does |
   |---|---|
   | Shuriken | Spinning stars that cut through monsters |
-  | Saw Blades | Blades that circle you |
-  | Rockets | Homing, they explode |
-  | Mines | Dropped at your feet, they go off when stepped on |
-  | Bomber Drone | Hovers over you and bombs monsters |
+  | Ghost Wisps | Little ghost flames circle you, dart at a monster each, and come back |
+  | Bubble Wand | Slow bubbles that trap the first monster they touch, then pop and splash everyone near |
+  | Glue Splat | Splats a glue puddle on monsters: anything in it is slowed and keeps getting hurt for 4 s |
+  | Storm Kite | A kite over your shoulder calls lightning that jumps from monster to monster |
   | Boomerang | Flies out and back, hitting both ways |
-  | Bouncy Ball | Hops from monster to monster |
+  | Popcorn Pop | Pops a ring of hot kernels in every direction |
   | Grenade | Lobbed into crowds; at S tier and up it becomes a Black Hole that pulls monsters in, then bursts |
 
   **Airdrops** parachute in about every 40 s with a gadget of tier A (Common), B (Rare), C (Super Rare),
@@ -195,10 +250,27 @@ hours (and failed runs) a steady player needs per stage.
 - **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
 - **Skills**: monsters drop small glowing bones and meat (XP). Every level up freezes the fight and offers 3
   skills. You carry at most **4 different skills** per stage, each up to level 5, and a good run levels high
-  enough (about 22) to max all four. They reset every stage: Multi-Throw, Bigger Booms, Power Up, Overclock,
-  Long Reach, Boom Throws, Swift Boots, Magnet, Crystal Mend, Lucky Drops (better airdrops), Thick
-  Cardboard, Crystal Shards (the crystal shoots shards at monsters around it), Box Fort (stand still to dig
-  in) and Pack Leader (pets).
+  enough (about 22) to max all four. They reset every stage. Each has a big picture icon and a badge colour
+  (red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky):
+
+  | Skill | What it does |
+  |---|---|
+  | Double Trouble | Every gadget throws one more (even levels: +15% damage) |
+  | Sharp Corners | +30% gadget damage |
+  | Hyper Hands | Gadgets fire 15% faster |
+  | Big Bang | +25% size for blasts, bubbles and glue |
+  | Chain Reaction | Defeated monsters burst and hurt the ones around them (bursts can set off bursts) |
+  | Spooky Aura | Monsters close to you get hurt every half second and move slower |
+  | Ghost Phase | Every 7 s (sooner with levels) you turn see-through for 1 s, take no damage, and let out a shockwave |
+  | Ghost Snacks | Every monster you defeat heals you a little |
+  | Thick Cardboard | +25% max health, heal 30% |
+  | Box Fort | Stand still: take less damage, gadgets fire faster |
+  | Zoomies | +12% move speed |
+  | Ghost Vacuum | Grab bones and meat from 50% farther |
+  | Pet Party | Pets attack 20% faster and harder |
+  | Crystal Glue | The crystal heals 35% and slowly regrows |
+  | Crystal Shards | The crystal shoots shards at monsters around it |
+  | Lucky Box | Better gadgets in airdrops, and more often |
 - **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and airdrops.
 - **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
@@ -214,7 +286,7 @@ hours (and failed runs) a steady player needs per stage.
 | `src/data/items.ts` | Turns that table into pets with odds, rarity, attack type, damage and levels |
 | `src/data/tree.ts` | Every upgrade hexagon: position, price, effect |
 | `src/data/balance.ts` | Stage length, monster health / speed / money per stage and minute, spawn rate, XP (shared with the simulator) |
-| `src/data/skills.ts` | The 14 in-run skills |
+| `src/data/skills.ts` | The 16 in-run skills |
 | `src/data/gadgets.ts` | The 8 gadgets, their tiers, levels and stats |
 | `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
 | `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
@@ -236,15 +308,17 @@ hours (and failed runs) a steady player needs per stage.
 | `src/data/mutations.ts` | Monster mutations and how often they appear per stage |
 | `src/systems/power.ts` | Damage per second of the hero and team (lobby and My Hero) |
 | `src/ui/mapScreen.ts` | The 100-stage journey map: lands, road, boss portraits, fog, clouds |
-| `src/data/bosses.ts` | The 20 bosses, which stages they guard, and the Boss Rush numbers |
+| `src/data/bosses.ts` | The 20 bosses, their three moves, which stages they guard, and the Boss Rush numbers |
 | `src/art/bosses.ts` | The 15 newer boss pictures (the other 5 are with the monsters) |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |
 | `src/art/characters.ts` | The Box Ghost hero, monsters and effects |
 | `src/art/world.ts` | Trees, plants, rocks, chests and each land's crystal |
 | `src/art/ground.ts` | Paints each land's seamless floor tile, ground patches, the stone circle and the minimap |
-| `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups, skill icons |
-| `src/art/gadgets.ts` | The gadgets (icons and the things they throw) and the black hole |
+| `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups |
+| `src/art/skills.ts` | The level-up skill icons |
+| `src/art/places.ts` | The boss seals and the two lobby buildings |
+| `src/art/gadgets.ts` | The gadgets (icons and the things they throw), the glue puddle, popcorn kernel and black hole |
 | `src/art/mutations.ts` | The mutation badges over monsters |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
