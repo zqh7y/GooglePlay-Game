@@ -126,7 +126,7 @@ hour of fishing brings.
     one (about 1 in 20,000 at first, a bit better with Lucky Bait, x3 on a SUPER catch), and each event
     round's big prize has a 1 in 5 chance of one. The simulator finds about a dozen in a whole game (the
     first around hour 9). Finding one takes over the screen: **GOLDEN TICKET!** spinning in over golden rays.
-    - **Legendary special** of the week: a **uSSS Die** (4 tickets) or a **Mythic Egg** (5: a pet one or two
+    - **Legendary special** of the week: a **uSSS Die** (16 tickets) or a **Mythic Egg** (5: a pet one or two
       classes above your best), with a countdown.
     - **Three offers** that change every 8 hours (everyone sees the same ones), one of each per player: Lucky
       Egg (a pet of your best class or one better), 2 SSS Dice, 3 S Dice, Mega Potion (60 min), Boost Crate

@@ -189,7 +189,7 @@ const shellPrize = () => Math.max(500, FISH_UPGRADES.filter((u) => fishLv(u.id) 
 
 /** The weekly specials take turns. */
 const SPECIALS: Offer[] = [
-  { id: "usss", name: "uSSS Die", icon: "die_uSSS", price: 4, desc: () => `The rarest die: x${fmt(DICE_LUCK.uSSS)} luck on one roll`, rewards: () => [diceReward("uSSS", 1)] },
+  { id: "usss", name: "uSSS Die", icon: "die_uSSS", price: 16, desc: () => `The rarest die: x${fmt(DICE_LUCK.uSSS)} luck on one roll`, rewards: () => [diceReward("uSSS", 1)] },
   { id: "mythic", name: "Mythic Egg", icon: "icon_egg", price: 5, desc: () => `A pet of class ${className(bestClass() + 1)} or ${className(bestClass() + 2)}`, rewards: (sc) => eggReward(sc, 1, 2) },
 ];
 
