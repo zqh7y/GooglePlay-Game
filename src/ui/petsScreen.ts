@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { onlineEnabled, ownersOf } from "../online/online";
 import { INK, canvasTexture, linear, radial, rr } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { CARD_H, CARD_W, panelTexture, slotTexture } from "../art/ui";
@@ -390,7 +391,9 @@ export class PetsScreen extends Screen {
       save.newPets = save.newPets.filter((k) => k !== id);
       persist();
     }
-    const h = 1260;
+    // online: one more line, how many players in the world have this pet
+    const world = onlineEnabled();
+    const h = world ? 1320 : 1260;
     const m = modal(s, 920, h, def.name, "purple", () => {
       if (this.detail === m) this.detail = null;
     });
@@ -434,6 +437,11 @@ export class PetsScreen extends Screen {
           ["icon_clock", "Attacks every", `${(def.cooldown / 1000).toFixed(1)}s`],
           ["icon_target", "Targets", String(def.count)],
         ];
+      if (world) {
+        const n = ownersOf(id);
+        rows.push(["icon_globe", "Players who have it", n === null ? "offline" : n <= 1 ? "only you!" : fmt(n)]);
+      }
+      const low = (rows.length - 3) * 60;
       rows.forEach(([icon, name, value], i) => {
         const y = 100 + i * 60;
         content.add([
@@ -444,13 +452,13 @@ export class PetsScreen extends Screen {
       });
       const g = s.add.graphics();
       const ready = canLevelUp(id);
-      drawBar(g, -360, 290, 720, 40, max ? 1 : Math.min(1, p.copies / need), max ? 0xffcf3a : ready ? 0x7ad651 : 0x5ac8ff);
+      drawBar(g, -360, 290 + low, 720, 40, max ? 1 : Math.min(1, p.copies / need), max ? 0xffcf3a : ready ? 0x7ad651 : 0x5ac8ff);
       content.add(g);
-      content.add(text(s, 0, 309, max ? `MAX LEVEL  (x${mult.toFixed(2)} power)` : `Lv.${p.level}   •   copies ${p.copies}/${need}`, 28));
-      if (!max && !ready) content.add(label(s, 0, 362, `Roll ${need - p.copies} more ${def.name} to level up`, 26, "#7a5236"));
+      content.add(text(s, 0, 309 + low, max ? `MAX LEVEL  (x${mult.toFixed(2)} power)` : `Lv.${p.level}   •   copies ${p.copies}/${need}`, 28));
+      if (!max && !ready) content.add(label(s, 0, 362 + low, `Roll ${need - p.copies} more ${def.name} to level up`, 26, "#7a5236"));
       const equipped = save.equipped.includes(id);
       const full = !equipped && save.equipped.length >= petSlots();
-      content.add(button(s, -205, 470, 380, 134, equipped ? "red" : "green", equipped ? "UNEQUIP" : full ? "SWAP IN" : "EQUIP", () => {
+      content.add(button(s, -205, 470 + low, 380, 134, equipped ? "red" : "green", equipped ? "UNEQUIP" : full ? "SWAP IN" : "EQUIP", () => {
         if (full) {
           const weakest = [...save.equipped].sort((a, b) => petScore(a) - petScore(b))[0];
           save.equipped = save.equipped.filter((k) => k !== weakest);
@@ -460,7 +468,7 @@ export class PetsScreen extends Screen {
         m.close();
         this.changed();
       }, { size: 42 }));
-      const lvBtn = button(s, 205, 470, 380, 134, ready ? "orange" : "grey", max ? "MAXED" : "LEVEL UP", () => {
+      const lvBtn = button(s, 205, 470 + low, 380, 134, ready ? "orange" : "grey", max ? "MAXED" : "LEVEL UP", () => {
         if (!levelUp(id)) {
           this.host.toast(`Roll ${need - p.copies} more ${def.name} to level up`, "#ffe680");
           return;

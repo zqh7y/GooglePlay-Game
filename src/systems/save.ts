@@ -75,6 +75,8 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** your name on the leaderboards (named: you picked it yourself) */
+  online: { name: string; named: boolean };
 }
 
 export interface FishingState {
@@ -141,6 +143,7 @@ function fresh(): SaveData {
     afk: false,
     bossRushBest: 0,
     fishing: freshFishing(),
+    online: { name: "", named: false },
   };
 }
 
@@ -164,6 +167,7 @@ function load(): SaveData {
       data.discovered = data.discovered.filter((id) => ITEMS[id]);
       data.newPets = data.newPets.filter((id) => data.pets[id]);
       data.fishing = { ...freshFishing(), ...data.fishing };
+      data.online = { ...{ name: "", named: false }, ...(data.online as Partial<SaveData["online"]> | undefined) };
       // the first Boss Rush kept its own place and had weaker bosses. Now its bosses are the stages:
       // move on to the first stage whose boss is tougher than the last one you beat back then
       if (data.bossRush && data.bossRush > 1) {

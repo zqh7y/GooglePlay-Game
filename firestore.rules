@@ -1,0 +1,72 @@
+rules_version = '2';
+
+// Dice Idle online data (see ONLINE.md):
+// - players/{uid}: one entry per player for the leaderboards; only that player can write it.
+// - stats/pets: counts[petId] = how many players own the pet. A player can add +1 for a pet only
+//   once ever, in the same write that adds the pet to their own `pets` list.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function playerPath(uid) {
+      return /databases/$(database)/documents/players/$(uid);
+    }
+
+    function validPlayer(d) {
+      let fields = ['name', 'bestStage', 'stageScore', 'rarest', 'rarestOdds', 'petsFound', 'rolls', 'rushBest', 'pets', 'updatedAt'];
+      return d.keys().hasOnly(fields) && d.keys().hasAll(fields)
+        && d.name is string && d.name.size() >= 2 && d.name.size() <= 16 && d.name.matches('^[A-Za-z0-9 _-]+$')
+        && d.bestStage is int && d.bestStage >= 1 && d.bestStage <= 100
+        && d.stageScore is number && d.stageScore >= 1 && d.stageScore < 101
+        && d.rarest is string && d.rarest.size() <= 32
+        && d.rarestOdds is number && d.rarestOdds >= 1
+        && d.petsFound is int && d.petsFound >= 0 && d.petsFound <= 100
+        && d.rolls is int && d.rolls >= 0
+        && d.rushBest is int && d.rushBest >= 0 && d.rushBest <= 101
+        && d.pets is list && d.pets.size() <= 100
+        && d.updatedAt == request.time;
+    }
+
+    match /players/{uid} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == uid
+        && validPlayer(request.resource.data) && request.resource.data.pets.size() == 0;
+      // the counted pets only ever grow, one at a time; plain updates at most every 5 s
+      allow update: if signedIn() && request.auth.uid == uid
+        && validPlayer(request.resource.data)
+        && request.resource.data.pets.hasAll(resource.data.pets)
+        && (request.resource.data.pets.size() == resource.data.pets.size() + 1
+          || (request.resource.data.pets.size() == resource.data.pets.size()
+            && request.time > resource.data.updatedAt + duration.value(5, 's')));
+      allow delete: if false;
+    }
+
+    // +1 for exactly one pet, which this player adds to their own list in the same write
+    function countsOnePet() {
+      let pet = request.resource.data.last;
+      let before = resource == null ? {} : resource.data.counts;
+      let after = request.resource.data.counts;
+      let mineBefore = get(playerPath(request.auth.uid)).data.pets;
+      let mineAfter = getAfter(playerPath(request.auth.uid)).data.pets;
+      return request.resource.data.keys().hasOnly(['counts', 'last'])
+        && pet is string && pet.matches('^[a-z0-9_]{2,32}$')
+        && after is map
+        && after.diff(before).affectedKeys().hasOnly([pet])
+        && after[pet] == before.get(pet, 0) + 1
+        && !(pet in mineBefore) && (pet in mineAfter);
+    }
+
+    match /stats/pets {
+      allow read: if true;
+      allow create, update: if signedIn() && countsOnePet();
+      allow delete: if false;
+    }
+
+    // nothing else can be read or written
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

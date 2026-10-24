@@ -1,2 +1,21 @@
 node_modules
 dist
+
+# secrets: never commit these (see ONLINE.md)
+.env
+.env.*
+!.env.example
+android/app/google-services.json
+google-services.json
+GoogleService-Info.plist
+*.keystore
+*.jks
+keystore.properties
+service-account*.json
+
+# firebase emulator logs and cache
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+.firebase/

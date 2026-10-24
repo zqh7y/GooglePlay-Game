@@ -25,6 +25,9 @@ import { makeFishIcon } from "../art/fishing";
 import { PRIZES, ROW_COLORS } from "../data/fishing";
 import { Catch, anyFishUpgrade, fishAway, fishTick } from "../systems/fishing";
 import { FishScreen, prizeGift, prizeIcon } from "../ui/fishScreen";
+import { makeOnlineTextures } from "../art/online";
+import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
+import { askName, showLeaderboard } from "../ui/leaderboard";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
@@ -177,6 +180,7 @@ export class UIScene extends Phaser.Scene implements Host {
       save.equipped = save.equipped.slice(0, petSlots());
       persist();
     }
+    makeOnlineTextures(this);
     this.buildHud();
     this.rollScreen = new RollScreen(this, this);
     this.screens = { roll: this.rollScreen, pets: new PetsScreen(this, this), shop: new ShopScreen(this, this), fish: new FishScreen(this, this) };
@@ -213,6 +217,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.setTab("battle", true);
     const away = fishAway();
     if (away.catches.length) this.fishAwayResult = away;
+    // online: sign in and send your entry (quietly; the game works the same offline)
+    window.setTimeout(() => void startOnline(), 1200);
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(900, () => this.showDaily());
   }
 
@@ -306,6 +312,7 @@ export class UIScene extends Phaser.Scene implements Host {
     if (this.badgeTimer <= 0) {
       this.badgeTimer = 400;
       this.updateGoals();
+      onlineTick();
       // the world only needs drawing while you look at it
       const b = this.scene.get("Battle");
       b.cameras.main.setVisible(this.tab === "battle" && !this.mapOpen);
@@ -591,6 +598,7 @@ export class UIScene extends Phaser.Scene implements Host {
       this.refreshAfk();
       this.toast(save.afk ? "AFK on: your hero walks around and picks up dice" : "AFK off: walk with the joystick", "#b6f59a");
     });
+    side(5, "icon_trophy", "Ranks", () => showLeaderboard(this, this, () => (this.openModal = null)));
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
     this.afkLabel = afk.list[2] as Phaser.GameObjects.Text;
     this.refreshAfk();
@@ -1268,6 +1276,10 @@ export class UIScene extends Phaser.Scene implements Host {
     questEvent("roll", dice.length);
     questEvent("rare", Math.max(...results.map((r) => rarityRank(r.item.rarity))));
     const anyNew = results.some((r) => r.isNew);
+    if (anyNew) {
+      syncSoon();
+      this.rareOwnersNote(results);
+    }
     this.autoEquip(results);
     this.rollScreen.addHistory(results);
     if (this.tab === "roll" && !this.mapOpen) {
@@ -1283,6 +1295,17 @@ export class UIScene extends Phaser.Scene implements Host {
       this.afterReveal(results, 5, record);
       for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice, +${g.gems} gems!`, "#ffe066");
     }
+  }
+
+  /** A new S class (or rarer) pet: how many players in the world have it. */
+  private rareOwnersNote(results: RollResult[]): void {
+    const rare = results.filter((r) => r.isNew && tierIndex(r.item.cls) >= tierIndex("S")).sort((a, b) => b.item.oneIn - a.item.oneIn)[0];
+    if (!rare) return;
+    const n = ownersOf(rare.item.id);
+    if (n === null) return;
+    // you are about to be counted too
+    const total = n + 1;
+    this.time.delayedCall(3600, () => this.toast(total === 1 ? `You are the FIRST player in the world with ${rare.item.name}!` : `Only ${fmt(total)} players in the world have ${rare.item.name}!`, "#ff8ae6"));
   }
 
   /** Fill empty team slots with new pets so players see them fight right away. */
@@ -1385,6 +1408,7 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** "STAGE 7 CLEAR!" with stars popping in and the money counting up. */
   private stageClear(info: { stage: number; earned: number; gems: number; dice: Record<Tier, number>; final: boolean }): void {
+    syncSoon();
     const dice = DICE_TIERS.reduce((s, t) => s + info.dice[t], 0);
     const { W } = this;
     const cy = this.tab === "battle" ? this.L.hudBottom + 360 : this.L.headerBottom + 260;
@@ -1514,6 +1538,7 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** End of a Boss Rush: how far you got and where you will start next time. */
   private rushOver(r: RushResult): void {
+    syncSoon();
     const h = 1080;
     let again = false;
     const title = r.reason === "done" ? "ALL BOSSES BEATEN!" : r.reason === "time" ? "TIME'S UP!" : r.reason === "hero" ? "YOU FELL!" : "BOSS RUSH OVER";
@@ -1625,30 +1650,58 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   private showSettings(): void {
-    const h = 980;
+    const dev = !onlineEnabled() || new URLSearchParams(location.search).has("dev");
+    const h = dev ? 1200 : 960;
     const m = this.showModal(modal(this, 860, h, "SETTINGS", "peach", () => (this.openModal = null)));
     m.body.add(label(this, 0, -h / 2 + 150,
       `Best stage: ${save.bestStage}/${MAX_STAGE}\nMonsters defeated: ${fmt(save.totalKills)}\nRolls: ${fmt(save.totalRolls)}\nRarest roll: ${oneIn(save.bestRoll)}\nPets found: ${save.discovered.length}/${PET_LIST.length}`, 34, "#7a5236"));
-    const snd: Button = button(this, -190, -100, 360, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
+    let y = -h / 2 + 330;
+    const snd: Button = button(this, -190, y, 360, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
       setMuted(!isMuted());
       snd.setLabel(isMuted() ? "Sound: OFF" : "Sound: ON").setColor(isMuted() ? "grey" : "green");
     }, { size: 32 });
-    const mus: Button = button(this, 190, -100, 360, 96, music.isOn() ? "green" : "grey", music.isOn() ? "Music: ON" : "Music: OFF", () => {
+    const mus: Button = button(this, 190, y, 360, 96, music.isOn() ? "green" : "grey", music.isOn() ? "Music: ON" : "Music: OFF", () => {
       music.setOn(!music.isOn());
       mus.setLabel(music.isOn() ? "Music: ON" : "Music: OFF").setColor(music.isOn() ? "green" : "grey");
     }, { size: 32 });
     m.body.add([snd, mus]);
-    m.body.add(label(this, 0, 0, "Testing tools (removed before release)", 26, "#9a7a5a"));
-    const dev = (y: number, x: number, str: string, fn: () => void) =>
-      m.body.add(button(this, x, y, 360, 96, "grey", str, () => {
-        fn();
-        persist();
-      }, { size: 30 }));
-    dev(90, -190, "+10K money", () => (save.cash += 1e4));
-    dev(90, 190, "+1B money", () => (save.cash += 1e9));
-    dev(210, -190, "+100 gems", () => (save.gems += 100));
-    dev(210, 190, "+100 dice", () => (save.dice.A += 100));
-    m.body.add(button(this, 0, 350, 460, 110, "red", "RESET SAVE", () => {
+    // your online account
+    y += 120;
+    const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
+    m.body.add([
+      this.add.image(-330, y, "icon_globe").setScale(0.5),
+      fitText(label(this, -290, y, `${playerName()}  •  ${who}`, 32, "#4a2f1d").setOrigin(0, 0.5), 620),
+    ]);
+    y += 100;
+    const play = onlineEnabled() && canUsePlayGames() && online.provider !== "playgames";
+    m.body.add(button(this, play ? -190 : 0, y, 360, 96, "blue", "CHANGE NAME", () => {
+      askName(this);
+      m.close();
+      this.time.delayedCall(150, () => this.showSettings());
+    }, { size: 30 }));
+    if (play) {
+      // optional: nobody has to sign in; this keeps your entry if you change phones
+      m.body.add(button(this, 190, y, 360, 96, "green", "GOOGLE PLAY", () => {
+        m.close();
+        void signInWithPlay().then((ok) => this.toast(ok ? `Signed in with Google Play as ${playerName()}` : "Google Play sign-in didn't work, you can keep playing as you are", ok ? "#8af06a" : "#ffe680"));
+      }, { size: 30, icon: "icon_globe", iconSize: 48 }));
+      y += 70;
+      m.body.add(label(this, 190, y, "optional: keeps your ranks on a new phone", 20, "#9a7a5a"));
+    }
+    if (dev) {
+      y += 110;
+      m.body.add(label(this, 0, y, "Testing tools (not in the online version)", 26, "#9a7a5a"));
+      const tool = (yy: number, x: number, str: string, fn: () => void) =>
+        m.body.add(button(this, x, yy, 360, 96, "grey", str, () => {
+          fn();
+          persist();
+        }, { size: 30 }));
+      tool(y + 90, -190, "+10K money", () => (save.cash += 1e4));
+      tool(y + 90, 190, "+1B money", () => (save.cash += 1e9));
+      tool(y + 210, -190, "+100 gems", () => (save.gems += 100));
+      tool(y + 210, 190, "+100 dice", () => (save.dice.A += 100));
+    }
+    m.body.add(button(this, 0, h / 2 - 100, 460, 110, "red", "RESET SAVE", () => {
       resetSave();
       window.location.reload();
     }, { size: 36 }));
