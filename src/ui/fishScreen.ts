@@ -43,7 +43,6 @@ const GLYPHS = "?#%&@!*$?";
 interface Tile {
   c: Phaser.GameObjects.Container;
   icon: Phaser.GameObjects.Image;
-  shadow: Phaser.GameObjects.Ellipse;
   chance: Phaser.GameObjects.Text;
   mystery: number;
   x: number;
@@ -102,7 +101,6 @@ export class FishScreen extends Screen {
   private birds: { img: Phaser.GameObjects.Image; v: number }[] = [];
   private lilies: Phaser.GameObjects.Image[] = [];
   private shadows: Shadow[] = [];
-  private bubbles: Phaser.GameObjects.Image[] = [];
   private superGlow!: Phaser.GameObjects.Image;
   private superText!: Phaser.GameObjects.Text;
   private bang!: Phaser.GameObjects.Container;
@@ -134,32 +132,18 @@ export class FishScreen extends Screen {
     const L = host.L;
     const top = L.headerBottom + 8;
     const gridBottom = top + 60 + 5 * ROW_H;
-    // deep water behind the prizes, with light shafts and bubbles drifting up
-    const back = scene.add.graphics();
-    back.fillGradientStyle(0x1d5a86, 0x1d5a86, 0x0b2340, 0x0b2340, 1).fillRect(0, 0, W, L.navTop);
-    back.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, L.navTop), Phaser.Geom.Rectangle.Contains);
-    this.root.add(back);
-    const shafts = scene.add.graphics();
-    for (const [x, w, a] of [[160, 120, 0.07], [430, 80, 0.05], [700, 150, 0.06], [960, 90, 0.05]] as [number, number, number][]) {
-      shafts.fillStyle(0xbfe8ff, a).fillPoints([new Phaser.Math.Vector2(x, 0), new Phaser.Math.Vector2(x + w, 0), new Phaser.Math.Vector2(x + w * 2.2 - 60, gridBottom), new Phaser.Math.Vector2(x + w * 0.4 - 60, gridBottom)], true);
-    }
-    scene.tweens.add({ targets: shafts, alpha: 0.5, duration: 2600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.root.add(shafts);
-    for (let i = 0; i < 14; i++) {
-      const b = scene.add.image(Phaser.Math.Between(20, W - 20), Phaser.Math.Between(top, gridBottom), "fish_bubble").setScale(0.3 + Math.random() * 0.5).setAlpha(0.5);
-      this.bubbles.push(b);
-      this.root.add(b);
-    }
+    // the whole screen is the pond's world: the prizes float in its sky, with nothing behind them
+    this.root.add(scene.add.zone(0, 0, W, L.navTop).setOrigin(0).setInteractive());
+    this.pondTop = 0;
+    const pondBottom = L.navTop - 236;
+    this.pondH = pondBottom;
+    this.skyH = gridBottom + 24;
+    this.buildPond(W);
     // ── the prizes
     this.root.add(text(scene, 46, top + 30, "PRIZES", 40, "#ffe066").setOrigin(0, 0.5));
-    this.head = text(scene, W - 46, top + 30, "", 30, "#bfe8ff").setOrigin(1, 0.5);
+    this.head = text(scene, W - 46, top + 30, "", 30, "#ffffff").setOrigin(1, 0.5);
     this.root.add(this.head);
     PRIZES.forEach((p, i) => this.tiles.push(this.makeTile(p, i, 135 + (i % 4) * COL_W, top + 60 + ROW_H / 2 + Math.floor(i / 4) * ROW_H)));
-    // ── the pond
-    this.pondTop = gridBottom + 10;
-    const pondBottom = L.navTop - 236;
-    this.pondH = pondBottom - this.pondTop;
-    this.buildPond(W);
     // ── next catch, shells, upgrades
     const by = pondBottom + 14;
     this.bar = scene.add.graphics();
@@ -194,17 +178,13 @@ export class FishScreen extends Screen {
       s.tweens.add({ targets: glow, alpha: 0.15, scale: 0.48, duration: 800 + p.row * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       parts.push(glow);
     }
-    const shadow = s.add.ellipse(-30, 44, 76, 16, 0x000000, 0.35);
     const icon = s.add.image(-30, -6, prizeIcon(p));
     icon.setScale(100 / Math.max(icon.width, icon.height));
     const chance = text(s, 2, 38, "", 34).setOrigin(0, 0.5);
-    parts.push(shadow, icon, chance);
+    parts.push(icon, chance);
     const c = s.add.container(x, y, parts).setSize(240, ROW_H).setInteractive({ useHandCursor: true });
-    // float gently: the picture bobs over its shadow, each a little out of step
-    s.tweens.add({
-      targets: icon, y: -16, duration: 1300 + (i % 5) * 110, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: i * 90,
-      onUpdate: () => shadow.setScale(1 - (-6 - icon.y) * 0.025).setAlpha(0.35 - (-6 - icon.y) * 0.012),
-    });
+    // float gently in the sky, each a little out of step
+    s.tweens.add({ targets: icon, y: -16, duration: 1300 + (i % 5) * 110, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: i * 90 });
     c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
     c.on("pointerout", () => c.setScale(1));
     c.on("pointerup", () => {
@@ -212,7 +192,7 @@ export class FishScreen extends Screen {
       this.showPrize(i);
     });
     this.root.add(c);
-    return { c, icon, shadow, chance, mystery: 0, x, y, scrambleAt: 0 };
+    return { c, icon, chance, mystery: 0, x, y, scrambleAt: 0 };
   }
 
   private refreshTiles(): void {
@@ -294,8 +274,7 @@ export class FishScreen extends Screen {
   private buildPond(W: number): void {
     const s = this.scene;
     const h = this.pondH;
-    const skyH = Math.round(h * 0.3);
-    this.skyH = skyH;
+    const skyH = this.skyH;
     this.hc = h - skyH + 10;
     const pond = s.add.container(0, this.pondTop);
     this.pond = pond;
@@ -378,19 +357,16 @@ export class FishScreen extends Screen {
     pond.add(front);
     // what the line is like right now
     const chip = (x: number, icon: string) => {
-      const t = text(s, x + 34, 40, "", 30).setOrigin(0, 0.5);
-      pond.add([s.add.image(x + 74, 40, panelTexture(s, "glass", 200, 64)), s.add.image(x + 6, 40, icon).setScale(0.48), t]);
+      const t = text(s, x + 34, h - 48, "", 30).setOrigin(0, 0.5);
+      pond.add([s.add.image(x + 74, h - 48, panelTexture(s, "glass", 200, 64)), s.add.image(x + 6, h - 48, icon).setScale(0.48), t]);
       this.chips.push(t);
     };
     chip(20, "icon_clock");
     chip(232, "fu_hook");
     chip(444, "fu_super");
-    const frame = s.add.graphics();
-    frame.lineStyle(10, INK_N, 1).strokeRoundedRect(4, 0, W - 8, h, 26);
-    pond.add(frame);
-    // nothing spills over the edges
+    // nothing spills over the bottom panel
     const mask = s.make.graphics({}, false);
-    mask.fillStyle(0xffffff).fillRect(4, this.pondTop, W - 8, h);
+    mask.fillStyle(0xffffff).fillRect(0, this.pondTop, W, h);
     pond.setMask(mask.createGeometryMask());
     this.root.add(pond);
   }
@@ -787,7 +763,7 @@ export class FishScreen extends Screen {
   private showUpgrades(): void {
     sfx.click();
     const s = this.scene;
-    const rowH = 132;
+    const rowH = 150;
     const h = 260 + FISH_UPGRADES.length * rowH;
     const m = this.host.showModal(modal(s, 980, h, "FISHING UPGRADES", "blue"));
     const shells = text(s, 0, -h / 2 + 116, "", 44, "#ffe066");
@@ -801,12 +777,15 @@ export class FishScreen extends Screen {
     };
     FISH_UPGRADES.forEach((u, i) => {
       const y = -h / 2 + 200 + rowH / 2 + i * rowH;
-      const name = label(s, -310, y - 36, u.name, 38, "#4a2f1d").setOrigin(0, 0.5);
-      const lv = label(s, 0, y - 36, "", 28, "#c9663a").setOrigin(0, 0.5);
-      const desc = fitText(label(s, -310, y + 2, u.desc, 24, "#9a7a5a").setOrigin(0, 0.5), 470);
-      const eff = label(s, -310, y + 40, "", 30, "#3f9a4f").setOrigin(0, 0.5);
+      const name = label(s, -310, y - 48, u.name, 38, "#4a2f1d").setOrigin(0, 0.5);
+      const lv = label(s, 0, y - 48, "", 28, "#c9663a").setOrigin(0, 0.5);
+      const desc = fitText(label(s, -310, y - 12, u.desc, 24, "#9a7a5a").setOrigin(0, 0.5), 470);
+      const eff = label(s, -310, y + 20, "", 30, "#3f9a4f").setOrigin(0, 0.5);
+      // how far this upgrade is: one notch per level
+      const bar = s.add.graphics();
+      const barText = text(s, 210, y + 50, "", 22).setOrigin(1, 0.5);
       const icon = s.add.image(-380, y, u.icon).setScale(0.82);
-      const buy: Button = button(s, 330, y, 240, 104, "green", "", () => {
+      const buy: Button = button(s, 330, y - 8, 240, 104, "green", "", () => {
         if (!buyFish(u.id)) {
           sfx.error();
           return;
@@ -824,12 +803,16 @@ export class FishScreen extends Screen {
         refresh();
         this.refreshTiles();
       }, { icon: "fish_shell", iconSize: 48, size: 34 });
-      m.body.add([s.add.image(0, y, panelTexture(s, "row", 900, rowH - 10)), icon, name, lv, desc, eff, buy]);
+      m.body.add([s.add.image(0, y, panelTexture(s, "row", 900, rowH - 10)), icon, name, lv, desc, eff, bar, barText, buy]);
       rows.push(() => {
         const l = fishLv(u.id);
         const max = l >= u.max;
         lv.setText(`Lv ${l}/${u.max}`).setX(-310 + name.width + 20);
         eff.setText(max ? `${u.show(l)}  (max)` : `${u.show(l)}  →  ${u.show(l + 1)}`);
+        bar.clear();
+        drawBar(bar, -400, y + 40, 620, 22, l / u.max, max ? 0xffcf3a : 0x5ac8ff);
+        if (u.max <= 30) for (let k = 1; k < u.max; k++) bar.fillStyle(0x4a2f1d, 0.35).fillRect(-400 + (620 * k) / u.max - 1, y + 40, 2, 22);
+        barText.setText(max ? "COMPLETE!" : `${l}/${u.max}`).setColor(max ? "#ffe066" : "#ffffff");
         buy.setLabel(max ? "MAX" : fmt(upgradeCost(u, l)));
         buy.setColor(max ? "grey" : canBuyFish(u.id) ? "green" : "grey");
       });
@@ -879,11 +862,6 @@ export class FishScreen extends Screen {
     drawBar(this.bar, 120, this.pondTop + this.pondH + 14 + 24, 900, 40, Phaser.Math.Clamp(f, 0, 1), left < 1000 ? 0xffe066 : 0x5ac8ff);
     this.barText.setText(left < 900 ? "Something's biting...!" : `Next catch in ${Math.ceil(left / 1000)}s`);
     this.animateTiles(time);
-    for (const b of this.bubbles) {
-      b.y -= 0.6 + b.scale;
-      b.x += Math.sin(time / 600 + b.y / 50) * 0.3;
-      if (b.y < this.host.L.headerBottom) b.y = this.pondTop - 10;
-    }
     // the camera sways a little: far things move less than near ones
     const sway = Math.sin(time / 2600) * 10;
     this.far.x = -sway * 0.5;
