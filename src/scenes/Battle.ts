@@ -12,7 +12,7 @@ import {
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
 import {
-  GADGET_KINDS, GADGET_SLOTS, GadgetBase, GadgetKind, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetDps, gadgetKey, gadgetStats,
+  GADGETS, GADGET_KINDS, GADGET_SLOTS, GadgetBase, GadgetKind, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetKey, gadgetName, gadgetStats,
 } from "../data/gadgets";
 import { ITEMS, ItemDef, levelMult } from "../data/items";
 import { REGIONS, Region, regionForStage } from "../data/regions";
@@ -22,14 +22,14 @@ import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
 import { makePlaceTextures } from "../art/places";
 import { BOSS_EVERY, BOSS_MOVES, BossMoveId, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
-import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
+import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
 import { persist, save } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
 import {
-  cashMult, chestMult, critChance, critDamage, dmgMult, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
+  cashMult, chestMult, critChance, critDamage, dmgMult, gadgetTierCap, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
 } from "../systems/stats";
 import { rarityRank } from "../data/rarity";
 import { fmt, oneIn } from "../ui/format";
@@ -76,6 +76,16 @@ export interface RunStats {
   hurt: number;
   crystalHurt: number;
   dice: Record<Tier, number>;
+}
+
+/** A shuffled copy. */
+function shuffle<T>(a: T[]): T[] {
+  const out = [...a];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 const noDice = () => Object.fromEntries(DICE_TIERS.map((t) => [t, 0])) as Record<Tier, number>;
@@ -140,16 +150,16 @@ export interface GadgetSlot {
   tier: Tier;
   level: number;
   timer: number;
+  /** the wait after its last shot (the HUD draws the cooldown sweep from it) */
+  cd: number;
 }
 
-/** What an airdrop gave: a new gadget, a better tier, a level, a swap, or scrap. */
-export interface GadgetFound {
+/** A gadget offered on level up: a new kind, the next level, or the next tier of one you carry. */
+export interface GadgetOption {
+  what: "new" | "level" | "tier";
   kind: GadgetKind;
   tier: Tier;
   level: number;
-  result: "new" | "tier" | "level" | "replace" | "scrap";
-  replaced?: GadgetKind;
-  scrap: number;
 }
 
 interface EnemyType {
@@ -251,6 +261,8 @@ interface Bullet {
   spin: number;
   /** water balloons pop where they land even if they hit nothing */
   burst?: boolean;
+  /** color of the glowing trail it leaves */
+  trail?: number;
 }
 
 /** Rocks the boss throws at you. */
@@ -341,6 +353,12 @@ export class BattleScene extends Phaser.Scene {
   private hero!: Phaser.GameObjects.Image;
   /** the main gadget, held in the hero's hand */
   private handImg!: Phaser.GameObjects.Image;
+  /** the gadget shown in the hand (the last one that fired), its aim and the kick of the last shot */
+  private handKind: GadgetKind = STARTER_GADGET;
+  private handAim = 0;
+  private handKick = 0;
+  private trail!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private trailTick = 0;
   private crystal!: Phaser.GameObjects.Image;
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
@@ -362,6 +380,9 @@ export class BattleScene extends Phaser.Scene {
   private level = 1;
   private xp = 0;
   private pendingLevels = 0;
+  /** skill picks waiting (from skill orbs, airdrops and elites) */
+  private pendingSkills = 0;
+  private gadgetOpts: GadgetOption[] = [];
   private skills: Partial<Record<SkillId, number>> = {};
   private revived = false;
   /** a Second Chance boost: get back up once without gems */
@@ -456,7 +477,7 @@ export class BattleScene extends Phaser.Scene {
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
-      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, skills: {},
+      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
       revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
@@ -492,6 +513,9 @@ export class BattleScene extends Phaser.Scene {
     this.sparks = this.add.particles(0, 0, "spark", {
       speed: { min: 120, max: 360 }, lifespan: 320, scale: { start: 0.7, end: 0 }, rotate: { min: 0, max: 90 }, emitting: false,
     }).setDepth(8950);
+    this.trail = this.add.particles(0, 0, "puff", {
+      speed: 0, lifespan: 300, scale: { start: 0.9, end: 0 }, alpha: { start: 0.75, end: 0 }, blendMode: "ADD", emitting: false,
+    }).setDepth(8990);
     for (let i = 0; i < 70; i++) this.dmgTexts.push(text(this, 0, 0, "", 66).setDepth(9300).setVisible(false));
     for (let i = 0; i < 24; i++) {
       this.cashTexts.push(this.add.container(0, 0, [
@@ -507,6 +531,7 @@ export class BattleScene extends Phaser.Scene {
       ["pets-changed", this.buildPets],
       ["battle-start", this.begin],
       ["skill-picked", this.onSkillPicked],
+      ["gadget-picked", this.onGadgetPicked],
       ["revive", this.revive],
       ["retry", this.retry],
       ["give-up", this.giveUp],
@@ -702,8 +727,8 @@ export class BattleScene extends Phaser.Scene {
       this.game.events.emit("stage-start");
       if (boosts.length) this.toast(`Boosts on: ${boosts.map((b) => b.name).join(", ")}`, "#9ae6ff");
       if (boosts.some((b) => b.id === "start")) {
-        this.pendingLevels += 2;
-        this.time.delayedCall(1400, () => this.offerSkill());
+        this.pendingSkills += 2;
+        this.time.delayedCall(1400, () => this.offerChoice());
       }
     });
   }
@@ -717,7 +742,7 @@ export class BattleScene extends Phaser.Scene {
       used.push(b);
       if (b.id === "gun") {
         const kinds = GADGET_KINDS.filter((k) => k !== STARTER_GADGET);
-        this.addGadget(kinds[Math.floor(Math.random() * kinds.length)], "C");
+        this.addGadget(kinds[Math.floor(Math.random() * kinds.length)], GADGET_TIERS[Math.min(2, gadgetTierCap())]);
       } else if (b.id === "revive") {
         this.freeRevive = true;
       } else if (b.id === "armor") {
@@ -998,15 +1023,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** A gadget crate parachutes down near you. The longer you survive, the better the gadget inside. */
+  /** A skill crate parachutes down near you: open it to pick one of three skills. */
   private airdrop(): void {
-    const tier = rollGadgetTier(this.elapsed / 60000, this.lv("luck"));
-    const kind = GADGET_KINDS[Math.floor(Math.random() * GADGET_KINDS.length)];
     const [x, y] = this.randomSpot(500, 1200, [this.hero.x, this.hero.y]);
     const p = this.addPickup("airdrop", x, y, 60000);
-    p.tier = tier;
-    p.gadget = { kind, tier };
     p.ready = false;
-    const color = TIER_INFO[tier].color;
+    const color = 0xffd23f;
     p.glow.setTint(color).setAlpha(0);
     const shadow = this.add.ellipse(x, y, 30, 12, 0x000000, 0.25).setDepth(y - 2);
     const chute = this.add.image(x, y - 1110, "parachute").setOrigin(0.5, 1).setDepth(9050);
@@ -1025,13 +1047,13 @@ export class BattleScene extends Phaser.Scene {
         sfx.boom();
         this.tweens.add({ targets: chute, alpha: 0, y: chute.y - 60, duration: 600, onComplete: () => chute.destroy() });
         p.glow.setAlpha(0.9);
-        // a light beam in the gadget's tier colour, so you know what is waiting
+        // a golden light beam so you can find it
         const beam = this.add.rectangle(x, y - 320, 56, 640, color, 0.35).setDepth(y - 2);
         this.tweens.add({ targets: beam, alpha: 0.12, duration: 500, yoyo: true, repeat: -1 });
         p.extra.push(beam);
       },
     });
-    this.banner("AIRDROP!", "gold", 900);
+    this.banner("SKILL DROP!", "gold", 900);
     sfx.airdrop();
   }
 
@@ -1067,9 +1089,9 @@ export class BattleScene extends Phaser.Scene {
         break;
       case "orb":
         sfx.fanfare();
-        this.toast("Skill orb! Pick a free skill", "#ffe066");
-        this.pendingLevels++;
-        this.offerSkill();
+        this.toast("Skill orb! Pick a skill", "#ffe066");
+        this.pendingSkills++;
+        this.offerChoice();
         break;
       case "chest":
         this.openChest(p);
@@ -1086,51 +1108,16 @@ export class BattleScene extends Phaser.Scene {
    * the same kind moves up to the better tier or gains a level; anything else is scrapped
    * for money and XP.
    */
+  /** A skill crate opens: pick one of three skills. */
   private openAirdrop(p: Pickup): void {
-    const { kind, tier } = p.gadget!;
     this.stats.airdrops++;
-    const own = this.gadgets.find((g) => g.kind === kind);
-    let result: GadgetFound["result"] = "scrap";
-    let replaced: GadgetKind | undefined;
-    if (own) {
-      if (tierIndex(tier) > tierIndex(own.tier)) {
-        own.tier = tier;
-        result = "tier";
-      } else if (own.level < MAX_GADGET_LEVEL) {
-        own.level++;
-        result = "level";
-      }
-    } else if (this.gadgets.length < GADGET_SLOTS) {
-      this.addGadget(kind, tier);
-      result = "new";
-    } else {
-      const weakest = [...this.gadgets].sort((a, b) => gadgetDps(a.kind, a.tier, a.level) - gadgetDps(b.kind, b.tier, b.level))[0];
-      if (gadgetDps(kind, tier, 1) > gadgetDps(weakest.kind, weakest.tier, weakest.level)) {
-        this.removeGadget(weakest);
-        this.addGadget(kind, tier);
-        result = "replace";
-        replaced = weakest.kind;
-      }
-    }
-    let scrap = 0;
-    if (result === "scrap") {
-      scrap = monsterCash(25, save.stage) * (1 + tierIndex(tier)) * cashMult();
-      save.cash += scrap;
-      this.stats.earned += scrap;
-      this.gainXp(4);
-    }
-    this.refreshHand();
-    const rank = tierIndex(tier);
-    if (rank >= 3) {
-      this.cameras.main.flash(250, 255, 245, 220);
-      buzz(120);
-    }
-    sfx.reveal(Math.min(8, Math.round(rank * 1.4)));
-    this.puff.setParticleTint(TIER_INFO[tier].color);
+    this.cameras.main.flash(200, 255, 245, 220);
+    sfx.reveal(4);
+    this.puff.setParticleTint(0xffd23f);
     this.puff.explode(24, p.x, p.y - 50);
     this.tweens.add({ targets: p.img, scaleX: 1.3, scaleY: 0.7, alpha: 0, duration: 260, onComplete: () => p.img.destroy() });
-    const found: GadgetFound = { kind, tier, level: own?.level ?? 1, result, replaced, scrap };
-    this.game.events.emit("gadget-found", found);
+    this.pendingSkills++;
+    this.offerChoice();
   }
 
   private addDice(tier: Tier, n: number): void {
@@ -1214,29 +1201,98 @@ export class BattleScene extends Phaser.Scene {
     }
     battle.level = this.level;
     battle.xp = this.xp / xpFor(this.level);
-    if (this.pendingLevels) this.offerSkill();
+    if (this.pendingLevels) this.offerChoice();
   }
 
-  private offerSkill(): void {
-    if (battle.choosing || !this.fighting || !this.pendingLevels) return;
-    const choices = skillChoices(this.skills);
-    if (!choices.length) {
+  /** Level-ups offer gadgets; skill orbs, airdrops and elites offer skills. Gadgets go first. */
+  private offerChoice(): void {
+    if (battle.choosing || !this.fighting) return;
+    if (this.pendingLevels > 0) {
+      const options = this.gadgetChoices();
+      if (options.length) {
+        this.gadgetOpts = options;
+        this.openChoice("gadget-choice", { options, level: this.level, slots: this.gadgets.length });
+        return;
+      }
+      // everything is maxed out: a heal instead
       this.pendingLevels = 0;
       this.heal(0.2);
-      return;
     }
+    if (this.pendingSkills > 0) {
+      const choices = skillChoices(this.skills);
+      if (!choices.length) {
+        this.pendingSkills = 0;
+        this.heal(0.2);
+        return;
+      }
+      this.openChoice("skill-choice", { choices, levels: { ...this.skills }, level: this.level });
+    }
+  }
+
+  private openChoice(event: string, info: object): void {
     battle.choosing = true;
     this.joy = { ...NO_JOY };
     sfx.levelUp();
     buzz(40);
-    this.game.events.emit("skill-choice", { choices, levels: { ...this.skills }, level: this.level });
+    this.game.events.emit(event, info);
     this.scene.pause();
+  }
+
+  /** Up to three gadget offers: level up or tier up what you carry, or a new kind while a slot is free. */
+  private gadgetChoices(): GadgetOption[] {
+    const cap = gadgetTierCap();
+    const upgrades: GadgetOption[] = [];
+    for (const g of this.gadgets) {
+      const t = tierIndex(g.tier);
+      if (g.level < MAX_GADGET_LEVEL) upgrades.push({ what: "level", kind: g.kind, tier: g.tier, level: g.level + 1 });
+      else if (t < cap) upgrades.push({ what: "tier", kind: g.kind, tier: GADGET_TIERS[t + 1], level: g.level });
+    }
+    const fresh: GadgetOption[] = [];
+    if (this.gadgets.length < GADGET_SLOTS) {
+      for (const kind of shuffle(GADGET_KINDS.filter((k) => !this.gadgets.some((g) => g.kind === k)))) {
+        const rolled = tierIndex(rollGadgetTier(this.elapsed / 60000, this.lv("luck")));
+        fresh.push({ what: "new", kind, tier: GADGET_TIERS[Math.min(cap, rolled)], level: 1 });
+      }
+    }
+    // with a free slot there is always at least one new gadget on offer
+    const rest = shuffle([...fresh.slice(1), ...upgrades]);
+    return (fresh.length ? [fresh[0], ...rest] : rest).slice(0, 3);
+  }
+
+  private onGadgetPicked(i: number): void {
+    if (!battle.choosing) return;
+    battle.choosing = false;
+    this.pendingLevels = Math.max(0, this.pendingLevels - 1);
+    const o = this.gadgetOpts[i];
+    if (o) {
+      const own = this.gadgets.find((g) => g.kind === o.kind);
+      if (own) {
+        own.tier = o.tier;
+        own.level = o.level;
+      } else {
+        this.addGadget(o.kind, o.tier);
+      }
+      this.refreshHand(o.kind);
+      this.handKick = 1;
+      this.sparks.setParticleTint(TIER_INFO[o.tier].color);
+      this.sparks.explode(28, this.hero.x, this.hero.y - 80);
+      const what = o.what === "new" ? "NEW!" : o.what === "level" ? `Lv ${o.level}` : `${o.tier}!`;
+      this.callout(`${gadgetName(o.kind, o.tier)} ${what}`, TIER_INFO[o.tier].css);
+    }
+    this.time.delayedCall(300, () => this.offerChoice());
+  }
+
+  /** A name that pops up over the hero and floats away (what you just picked). */
+  private callout(str: string, color: string): void {
+    const t = text(this, this.hero.x, this.hero.y - 250, str, 60, color).setDepth(9450).setScale(0.3);
+    this.tweens.add({ targets: t, scale: 1, duration: 260, ease: "Back.out" });
+    this.tweens.add({ targets: t, y: t.y - 120, alpha: 0, delay: 1100, duration: 500, onComplete: () => t.destroy() });
   }
 
   private onSkillPicked(id: SkillId): void {
     if (!battle.choosing) return;
     battle.choosing = false;
-    this.pendingLevels = Math.max(0, this.pendingLevels - 1);
+    this.pendingSkills = Math.max(0, this.pendingSkills - 1);
     const lv = (this.skills[id] ?? 0) + 1;
     this.skills[id] = lv;
     battle.skills = this.skills;
@@ -1250,8 +1306,9 @@ export class BattleScene extends Phaser.Scene {
     if (id === "pack") this.pets.forEach((p) => (p.timer = 0));
     this.sparks.setParticleTint(SKILL_BY_ID[id].color);
     this.sparks.explode(24, this.hero.x, this.hero.y - 80);
+    this.callout(`${SKILL_BY_ID[id].name} ${lv === 1 ? "NEW!" : `Lv ${lv}`}`, rgba(lighten(SKILL_BY_ID[id].color, 0.3)));
     this.game.events.emit("skills-changed");
-    if (this.pendingLevels > 0) this.time.delayedCall(300, () => this.offerSkill());
+    this.time.delayedCall(300, () => this.offerChoice());
   }
 
   private lv(id: SkillId): number {
@@ -1287,29 +1344,25 @@ export class BattleScene extends Phaser.Scene {
   // ───────────────────────── gadgets ─────────────────────────
 
   private addGadget(kind: GadgetKind, tier: Tier, level = 1): void {
-    this.gadgets.push({ kind, tier, level, timer: 300 });
+    this.gadgets.push({ kind, tier, level, timer: 300, cd: 0 });
     this.refreshHand();
   }
 
-  private removeGadget(g: GadgetSlot): void {
-    this.gadgets = battle.gadgets = this.gadgets.filter((o) => o !== g);
-    if (g.kind === "wisp") {
-      this.wisps.forEach((w) => w.img.destroy());
-      this.wisps = [];
+  private refreshHand(kind?: GadgetKind): void {
+    battle.gadgets = this.gadgets;
+    if (kind) this.handKind = kind;
+    if (!this.gadgets.some((g) => g.kind === this.handKind)) {
+      if (!this.gadgets[0]) return;
+      this.handKind = this.gadgets[0].kind;
     }
-    if (g.kind === "kite") {
-      this.kite?.destroy();
-      this.kite = null;
-    }
+    this.handImg.setTexture(gadgetKey(this.handKind));
   }
 
-  /** The first gadget is held in the hand. */
-  private refreshHand(): void {
-    battle.gadgets = this.gadgets;
-    const g = this.gadgets[0];
-    if (!g) return;
-    this.handImg.setTexture(gadgetKey(g.kind));
-    this.handImg.setScale(46 / Math.max(this.handImg.width, this.handImg.height));
+  /** A glowing dot behind something thrown (every other frame, so it stays light). */
+  private trailAt(x: number, y: number, color: number): void {
+    if (this.trailTick & 1) return;
+    this.trail.setParticleTint(color);
+    this.trail.emitParticleAt(x, y, 1);
   }
 
   /** A gadget's numbers right now, with this run's skills. */
@@ -1361,7 +1414,13 @@ export class BattleScene extends Phaser.Scene {
     const hy = this.hero.y - 60;
     const first = this.nearestEnemies(hx, hy, 1000, 1)[0];
     const aim = first ? Math.atan2(first.img.y - first.img.displayHeight * 0.4 - this.handImg.y, first.img.x - this.handImg.x) : this.hero.flipX ? Math.PI : 0;
-    this.handImg.setRotation(Phaser.Math.Angle.RotateTo(this.handImg.rotation, aim, 0.25));
+    this.handAim = Phaser.Math.Angle.RotateTo(this.handAim, aim, 0.25);
+    // the gadget that just fired kicks up in your hand
+    this.handKick = Math.max(0, this.handKick - delta / 220);
+    const kick = Math.sin(this.handKick * Math.PI);
+    this.handImg.setRotation(this.handAim - kick * 0.8 * (Math.cos(this.handAim) < 0 ? -1 : 1));
+    this.handImg.setScale((56 / Math.max(this.handImg.width, this.handImg.height)) * (1 + 0.5 * kick));
+    this.trailTick++;
     const base = this.heroDamage();
     for (const g of this.gadgets) {
       g.timer -= delta;
@@ -1370,15 +1429,19 @@ export class BattleScene extends Phaser.Scene {
       const dmg = base * st.dmg;
       const targets = this.nearestEnemies(hx, hy, st.range, Math.max(1, st.count));
       if (!targets.length) continue;
-      g.timer = st.cd;
+      g.timer = g.cd = st.cd;
       this.stats.shots++;
+      if (g.kind !== this.handKind) this.refreshHand(g.kind);
+      this.handKick = 1;
+      this.sparks.setParticleTint(GADGETS[g.kind].color);
+      this.sparks.explode(4, this.handImg.x, this.handImg.y);
       switch (g.kind) {
         case "shuriken": {
           for (let i = 0; i < st.count; i++) {
             const t = targets[i % targets.length];
             const a = Math.atan2(t.img.y - t.img.displayHeight * 0.4 - hy, t.img.x - hx) + (i >= targets.length ? (Math.random() - 0.5) * 0.4 : 0);
-            const img = this.add.image(hx, hy, "gd_shuriken").setDepth(9000).setScale(1.05);
-            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 20 });
+            const img = this.add.image(hx, hy, "gd_shuriken").setDepth(9000).setScale(1.35);
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 20, trail: 0x9ad0ff });
           }
           sfx.shoot(false);
           break;
@@ -1396,7 +1459,7 @@ export class BattleScene extends Phaser.Scene {
             const t = targets[i % targets.length];
             const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i ? (Math.random() - 0.5) * 0.6 : 0);
             const img = this.add.image(hx, hy, "gd_bubble").setDepth(9000).setScale(0.4);
-            this.tweens.add({ targets: img, scale: 1.3, duration: 300, ease: "Back.out" });
+            this.tweens.add({ targets: img, scale: 1.45, duration: 300, ease: "Back.out" });
             this.bubbles.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000 + 600, dmg, r: st.radius, held: null, popAt: 0 });
           }
           sfx.shoot(false);
@@ -1413,8 +1476,8 @@ export class BattleScene extends Phaser.Scene {
           const off = Math.random() * Math.PI;
           for (let i = 0; i < st.count; i++) {
             const a = off + (i / st.count) * Math.PI * 2;
-            const img = this.add.image(hx, hy, "gd_kernel").setDepth(9000).setScale(1.3);
-            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 8 });
+            const img = this.add.image(hx, hy, "gd_kernel").setDepth(9000).setScale(1.6);
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 8, trail: 0xffb347 });
           }
           sfx.shoot(false);
           break;
@@ -1423,7 +1486,7 @@ export class BattleScene extends Phaser.Scene {
           for (let i = 0; i < st.count; i++) {
             const t = targets[0];
             const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i - (st.count - 1) / 2) * 0.35;
-            const img = this.add.image(hx, hy, "gd_boomerang").setDepth(9000).setScale(1.25);
+            const img = this.add.image(hx, hy, "gd_boomerang").setDepth(9000).setScale(1.45);
             this.rangs.push({ img, dx: Math.cos(a), dy: Math.sin(a), speed: st.speed, went: 0, max: st.range, back: false, dmg, hit: new Set() });
           }
           sfx.shoot(false);
@@ -1440,11 +1503,14 @@ export class BattleScene extends Phaser.Scene {
   private splatGlue(t: Enemy, dmg: number, r: number): void {
     const [sx, sy] = [this.hero.x, this.hero.y - 70];
     const [tx, ty] = [t.img.x, t.img.y];
-    const blob = this.add.image(sx, sy, "gd_glue").setDepth(9200).setScale(0.8);
+    const blob = this.add.image(sx, sy, "gd_glue").setDepth(9200).setScale(1);
     const k = { t: 0 };
     this.tweens.add({
       targets: k, t: 1, duration: 450,
-      onUpdate: () => blob.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 200).setAngle(k.t * 360),
+      onUpdate: () => {
+        blob.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 200).setAngle(k.t * 360);
+        this.trailAt(blob.x, blob.y, 0xe8f0f8);
+      },
       onComplete: () => {
         blob.destroy();
         const img = this.add.image(tx, ty, "gd_puddle").setDepth(-600).setScale(0.2).setAlpha(0.95);
@@ -1494,11 +1560,14 @@ export class BattleScene extends Phaser.Scene {
     const sy = this.hero.y - 70;
     const tx = t.img.x;
     const ty = t.img.y - 10;
-    const img = this.add.image(sx, sy, "gd_grenade").setDepth(9200).setScale(1.1);
+    const img = this.add.image(sx, sy, "gd_grenade").setDepth(9200).setScale(1.3);
     const k = { t: 0 };
     this.tweens.add({
       targets: k, t: 1, duration: 600, ease: "Linear",
-      onUpdate: () => img.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 260).setAngle(k.t * 540),
+      onUpdate: () => {
+        img.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 260).setAngle(k.t * 540);
+        this.trailAt(img.x, img.y, hole ? 0xb98aff : 0xffa64d);
+      },
       onComplete: () => {
         img.destroy();
         if (!hole) {
@@ -1522,7 +1591,7 @@ export class BattleScene extends Phaser.Scene {
     const wisp = this.gadgets.find((g) => g.kind === "wisp");
     if (wisp) {
       const st = this.gStats(wisp);
-      while (this.wisps.length < st.count) this.wisps.push({ img: this.add.image(this.hero.x, this.hero.y - 80, "gd_wisp").setScale(1.1), state: "orbit", target: null, dmg: 0 });
+      while (this.wisps.length < st.count) this.wisps.push({ img: this.add.image(this.hero.x, this.hero.y - 80, "gd_wisp").setScale(1.3), state: "orbit", target: null, dmg: 0 });
       while (this.wisps.length > st.count) this.wisps.pop()!.img.destroy();
       this.wisps.forEach((w, i) => {
         const a = time / 600 + (i / this.wisps.length) * Math.PI * 2;
@@ -1540,6 +1609,7 @@ export class BattleScene extends Phaser.Scene {
           const step = st.speed * dt;
           if (d > step + 30) {
             w.img.setPosition(w.img.x + (dx / d) * step, w.img.y + (dy / d) * step);
+            this.trailAt(w.img.x, w.img.y, 0x7ee0ff);
           } else if (w.state === "out" && t) {
             if (fighting) this.hit(t, w.dmg);
             this.sparks.setParticleTint(0x7ee0ff);
@@ -1549,7 +1619,7 @@ export class BattleScene extends Phaser.Scene {
             w.state = "orbit";
           }
         }
-        w.img.setDepth(w.img.y + 60).setScale(1.1 + Math.sin(time / 120 + i) * 0.06);
+        w.img.setDepth(w.img.y + 60).setScale(1.3 + Math.sin(time / 120 + i) * 0.08);
       });
     }
     // the storm kite flies over your shoulder
@@ -1571,6 +1641,7 @@ export class BattleScene extends Phaser.Scene {
       b.img.x += b.vx * dt;
       b.img.y += b.vy * dt;
       b.life -= delta;
+      this.trailAt(b.img.x, b.img.y + 20, 0x9ae6ff);
       const e = fighting ? this.near(b.img.x, b.img.y + 50, 70)[0] : undefined;
       if (e) {
         b.held = e;
@@ -1619,6 +1690,7 @@ export class BattleScene extends Phaser.Scene {
         b.img.y += (dy / d) * step * 1.1;
       }
       b.img.rotation += dt * 16;
+      this.trailAt(b.img.x, b.img.y, 0xffcf3a);
       if (fighting) for (const e of this.near(b.img.x, b.img.y + 40, 70)) {
         if (b.hit.has(e)) continue;
         b.hit.add(e);
@@ -1660,6 +1732,7 @@ export class BattleScene extends Phaser.Scene {
       b.img.x += b.vx * dt;
       b.img.y += b.vy * dt;
       if (b.spin) b.img.rotation += b.spin * dt;
+      if (b.trail !== undefined) this.trailAt(b.img.x, b.img.y, b.trail);
       b.life -= delta;
       let alive = b.life > 0;
       // look for a monster it touches (around where that monster's feet would be)
@@ -3148,6 +3221,7 @@ export class BattleScene extends Phaser.Scene {
     if (!e.type.boss) this.dropFood(e.img.x, e.img.y - 20, e.xp);
     // lucky drops
     if (e.elite) this.addDie(rollDiceTier(save.stage), e.img.x, e.img.y, 30000);
+    if (e.elite && Math.random() < 0.5) this.addPickup("orb", clampX(e.img.x + 60), e.img.y, 30000);
     else if (Math.random() < 0.0015) this.addDie(rollDiceTier(save.stage), e.img.x, e.img.y, 30000);
     else if (Math.random() < 0.0015) this.addPickup(POWERUPS[Math.floor(Math.random() * POWERUPS.length)], e.img.x, e.img.y, 30000);
     if (e.type.boss) {
@@ -3286,7 +3360,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.enemies.some((e) => e.attacking) && this.time.now % 600 < 400) arrow(hx, hy, 0xf26464);
     for (const p of this.pickups) {
       if (p.kind === "chest") arrow(p.x, p.y - 40, 0xffd23f);
-      if (p.kind === "airdrop") arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
+      if (p.kind === "airdrop") arrow(p.x, p.y - 40, 0xffd23f);
       if (p.kind === "dice" && tierIndex(p.tier!) >= 3) arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
     }
     for (const e of this.enemies) if (e.type.boss) arrow(e.img.x, e.img.y, 0xf26464);

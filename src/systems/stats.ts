@@ -50,6 +50,8 @@ export const villageHpMult = () => 1 + sum("villageHp");
 export const moveSpeedMult = () => 1 + sum("moveSpeed");
 export const rangeMult = () => 1 + sum("range");
 export const chestMult = () => product("chest");
+/** The best gadget tier you can reach in a fight (index into GADGET_TIERS): C to start, the Forge raises it to SSS. */
+export const gadgetTierCap = () => Math.min(6, 2 + sum("forge"));
 
 export const dieSkin = () => TREE.filter((t) => t.effect === "die" && owned(t)).length;
 

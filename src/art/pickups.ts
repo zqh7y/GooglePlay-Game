@@ -375,7 +375,8 @@ export function makePickupTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "parachute", 160, 132, parachute);
   canvasTexture(scene, "shield", 300, 300, shield);
   makeSkillTextures(scene);
-  canvasTexture(scene, "sk_luck", 120, 120, (ctx) => {
+  canvasTexture(scene, "sk_luck", 240, 240, (ctx) => {
+    ctx.scale(2, 2);
     ctx.save();
     ctx.translate(14, 4);
     ctx.scale(0.58, 0.58);

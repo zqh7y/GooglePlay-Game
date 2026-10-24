@@ -229,6 +229,17 @@ const ART: Record<string, [number, number, (c: Ctx) => void]> = {
   }],
 };
 
+/** The gadgets you can carry: these also get big, sharp copies (`gdi_<kind>`) for cards and the HUD. */
+const ICONS = ["shuriken", "wisp", "bubble", "glue", "kite", "boomerang", "popcorn", "grenade"];
+
 export function makeGadgetTextures(scene: Phaser.Scene): void {
   for (const [id, [w, h, draw]] of Object.entries(ART)) canvasTexture(scene, `gd_${id}`, w, h, draw);
+  for (const id of ICONS) {
+    const [w, h, draw] = ART[id];
+    const k = 200 / Math.max(w, h);
+    canvasTexture(scene, `gdi_${id}`, w * k, h * k, (c) => {
+      c.scale(k, k);
+      draw(c);
+    });
+  }
 }

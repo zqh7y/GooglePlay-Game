@@ -5,7 +5,7 @@ import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, SEALS, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
-import { GADGETS, GADGET_SLOTS, STARTER_GADGET, gadgetKey, gadgetName } from "../data/gadgets";
+import { GADGETS, GADGET_SLOTS, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetIcon, gadgetName, gadgetStats } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
 import { RUSH_MS, bossForStage } from "../data/bosses";
@@ -37,7 +37,27 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
-import { BattleMode, BattleScene, FightKind, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
+import { badge } from "../ui/badge";
+import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
+
+/** One card on the level-up and skill-drop pickers. */
+interface PickCard {
+  icon: string;
+  color: number;
+  tier?: Tier;
+  name: string;
+  nameColor: string;
+  tag: string;
+  tagColor: number;
+  desc: string;
+  /** filled stars, out of `max`; `newStar` (or -1) is the one you are about to gain */
+  stars: number;
+  max: number;
+  newStar: number;
+  /** a glowing border: something you do not have yet */
+  fresh: boolean;
+  glow: boolean;
+}
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -91,7 +111,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private overlayTimer = 0;
   private shieldText!: Phaser.GameObjects.Text;
   /** the gadget panel: one slot per gadget you carry */
-  private gadgetSlots: { icon: Phaser.GameObjects.Image; badge: Phaser.GameObjects.Arc; tier: Phaser.GameObjects.Text; lv: Phaser.GameObjects.Text; key: string }[] = [];
+  private gunPanel!: Phaser.GameObjects.Container;
+  private gadgetSlots: { x: number; holder: Phaser.GameObjects.Container; sweep: Phaser.GameObjects.Graphics; key: string; left: number }[] = [];
   private hudBars!: Phaser.GameObjects.Graphics;
   private progressText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
@@ -160,13 +181,13 @@ export class UIScene extends Phaser.Scene implements Host {
       ["stage-clear", this.stageClear],
       ["land-unlocked", this.landUnlocked],
       ["skill-choice", this.showSkillChoice],
+      ["gadget-choice", this.showGadgetChoice],
       ["skills-changed", this.drawSkillBar],
       ["stage-start", this.drawSkillBar],
       ["stage-failed", this.stageFailed],
       ["dice", this.onDice],
       ["banner", this.onBanner],
       ["cash-fly", this.onCashFly],
-      ["gadget-found", this.gadgetFound],
       ["battle-ready", this.onBattleReady],
       ["boss-warning", this.bossWarning],
       ["boss-intro", this.bossIntro],
@@ -571,21 +592,20 @@ export class UIScene extends Phaser.Scene implements Host {
     this.stageText = text(this, 220, 192, "", 32).setOrigin(0, 0.5);
     this.crystalIcon = this.add.image(240, 248, crystalKey(regionForStage(save.stage).id)).setScale(0.24);
     this.shieldText = text(this, 457, 248, "", 24);
-    // your gadgets: three slots with icon, tier and level
-    const gunPanel = this.add.container(W - 190, 300, [this.add.image(0, 0, panelTexture(this, "glass", 340, 120))]);
+    // your gadgets: a medal each with tier and level; a dark sweep shows when it fires next
+    const gunPanel = this.add.container(W - 200, 306, [this.add.image(0, 0, panelTexture(this, "glass", 384, 140))]);
+    this.gunPanel = gunPanel;
     this.gadgetSlots = [];
     for (let i = 0; i < GADGET_SLOTS; i++) {
-      const x = (i - 1) * 108;
-      const icon = this.add.image(x, -4, "gd_shuriken").setVisible(false);
-      const badge = this.add.circle(x - 34, -36, 18, 0xb8c2cc).setStrokeStyle(4, INK_N).setVisible(false);
-      const tier = text(this, x - 34, -38, "", 20);
-      const lv = text(this, x + 22, 36, "", 20);
-      gunPanel.add([this.add.circle(x, 0, 46, 0x000000, 0.25), icon, badge, tier, lv]);
-      this.gadgetSlots.push({ icon, badge, tier, lv, key: "" });
+      const x = (i - 1) * 122;
+      const holder = this.add.container(x, 0);
+      const sweep = this.add.graphics();
+      gunPanel.add([this.add.circle(x, 0, 52, 0x000000, 0.3).setStrokeStyle(4, 0xffffff, 0.22), text(this, x, -2, "+", 54, "#8a7a6a", { stroke: false }).setAlpha(0.5), holder, sweep]);
+      this.gadgetSlots.push({ x, holder, sweep, key: "", left: 0 });
     }
-    gunPanel.setSize(340, 120).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
-    this.skillBar = this.add.container(0, H - 80);
-    this.streakHud = text(this, W - 190, 392, "", 30, "#ffb347");
+    gunPanel.setSize(384, 140).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
+    this.skillBar = this.add.container(0, H - 84);
+    this.streakHud = text(this, W - 200, 404, "", 30, "#ffb347");
     this.run.add([
       band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
@@ -691,18 +711,27 @@ export class UIScene extends Phaser.Scene implements Host {
     this.gadgetSlots.forEach((slot, i) => {
       const g = battle.gadgets[i];
       const key = g ? `${g.kind}${g.tier}${g.level}` : "";
-      if (key === slot.key) return;
-      slot.key = key;
-      slot.icon.setVisible(!!g);
-      slot.badge.setVisible(!!g);
-      slot.tier.setText(g ? g.tier : "");
-      slot.lv.setText(g ? `Lv${g.level}` : "");
-      if (!g) return;
-      slot.icon.setTexture(gadgetKey(g.kind));
-      slot.icon.setScale(70 / Math.max(slot.icon.width, slot.icon.height));
-      slot.badge.setFillStyle(TIER_INFO[g.tier].color);
-      slot.tier.setFontSize(g.tier.length > 2 ? 14 : 20);
-      this.tweens.add({ targets: slot.icon, scale: slot.icon.scale * 1.3, duration: 140, yoyo: true });
+      if (key !== slot.key) {
+        slot.key = key;
+        slot.holder.removeAll(true);
+        if (g) {
+          slot.holder.add(badge(this, 0, 0, 112, TIER_INFO[g.tier].color, gadgetIcon(g.kind), { tier: g.tier, level: g.level, max: MAX_GADGET_LEVEL }));
+          slot.holder.setScale(1.5);
+          this.tweens.add({ targets: slot.holder, scale: 1, duration: 320, ease: "Back.out" });
+        }
+      }
+      // how long until it fires again; a pop each time it does
+      const left = g && g.cd ? Phaser.Math.Clamp(g.timer / g.cd, 0, 1) : 0;
+      if (g && left > slot.left + 0.5) {
+        this.tweens.killTweensOf(slot.holder);
+        slot.holder.setScale(1.22);
+        this.tweens.add({ targets: slot.holder, scale: 1, duration: 200, ease: "Quad.out" });
+      }
+      slot.left = left;
+      slot.sweep.clear();
+      if (left > 0.02) {
+        slot.sweep.fillStyle(0x1a0e08, 0.5).slice(slot.x, 0, 52, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2, false).fillPath();
+      }
     });
   }
 
@@ -711,58 +740,173 @@ export class UIScene extends Phaser.Scene implements Host {
     this.skillBar.removeAll(true);
     Object.entries(battle.skills).forEach(([id, lv], i) => {
       const def = SKILL_BY_ID[id as SkillId];
-      const x = 60 + i * 86;
-      this.skillBar.add([
-        this.add.circle(x, 0, 38, def.color).setStrokeStyle(5, INK_N),
-        this.add.image(x, -2, def.icon).setDisplaySize(52, 52),
-        text(this, x + 24, 26, `${lv}`, 26, lv === MAX_SKILL ? "#ffe066" : "#ffffff"),
-      ]);
+      this.skillBar.add(badge(this, this.skillX(i), 0, 92, def.color, def.icon, { level: lv, max: MAX_SKILL }));
     });
   }
 
-  /** Level up: the fight freezes and you pick one of three skills. */
+  private skillX(i: number): number {
+    return 62 + i * 100;
+  }
+
+  /** A skill drop (airdrop, orb or elite): the fight freezes and you pick one of three skills. */
   private showSkillChoice(info: { choices: SkillId[]; levels: Partial<Record<SkillId, number>>; level: number }): void {
+    const owned = Object.keys(info.levels) as SkillId[];
+    const used = owned.length;
+    this.showPicker({
+      title: "SKILL DROP!",
+      color: 0xb98aff,
+      sub: used >= SKILL_SLOTS ? `All ${SKILL_SLOTS} skill slots used: level them up!` : `Pick a skill  •  skill slots ${used}/${SKILL_SLOTS}`,
+      cards: info.choices.map((id) => {
+        const def = SKILL_BY_ID[id];
+        const lv = info.levels[id] ?? 0;
+        return {
+          icon: def.icon, color: def.color, name: def.name, nameColor: "#4a2f1d",
+          tag: lv === 0 ? "NEW!" : `Lv ${lv} → ${lv + 1}`, tagColor: lv === 0 ? 0xff5a8a : 0x4caf50,
+          desc: def.text(lv), stars: lv + 1, max: MAX_SKILL, newStar: lv, fresh: lv === 0, glow: lv + 1 === MAX_SKILL,
+        };
+      }),
+      target: (i) => {
+        const at = owned.indexOf(info.choices[i]);
+        return [this.skillX(at >= 0 ? at : used), this.skillBar.y];
+      },
+      pick: (i) => this.game.events.emit("skill-picked", info.choices[i]),
+    });
+  }
+
+  /** Level up: the fight freezes and you pick a new gadget, a level or a better tier for one you carry. */
+  private showGadgetChoice(info: { options: GadgetOption[]; level: number; slots: number }): void {
+    this.showPicker({
+      title: "LEVEL UP!",
+      color: 0xffe066,
+      sub: `Level ${info.level}  •  pick a gadget  •  slots ${info.slots}/${GADGET_SLOTS}`,
+      cards: info.options.map((o) => {
+        const tinfo = TIER_INFO[o.tier];
+        const card: PickCard = {
+          icon: gadgetIcon(o.kind), color: tinfo.color, tier: o.tier, name: gadgetName(o.kind, o.tier), nameColor: rgba(darken(tinfo.color, 0.35)),
+          tag: "NEW!", tagColor: 0xff5a8a, desc: GADGETS[o.kind].desc, stars: o.level, max: MAX_GADGET_LEVEL, newStar: -1, fresh: o.what === "new", glow: tierIndex(o.tier) >= 3,
+        };
+        const own = battle.gadgets.find((g) => g.kind === o.kind);
+        if (own && o.what === "level") {
+          const a = gadgetStats(o.kind, o.tier, own.level);
+          const b = gadgetStats(o.kind, o.tier, o.level);
+          card.tag = `Lv ${own.level} → ${o.level}`;
+          card.tagColor = 0x4caf50;
+          card.desc = `+${Math.round((b.dmg / a.dmg - 1) * 100)}% damage`;
+          card.newStar = o.level - 1;
+        }
+        if (own && o.what === "tier") {
+          const a = gadgetStats(o.kind, own.tier, o.level);
+          const b = gadgetStats(o.kind, o.tier, o.level);
+          card.tag = `${own.tier} → ${o.tier}`;
+          card.tagColor = tinfo.color;
+          const more = [`+${Math.round((b.dmg / a.dmg - 1) * 100)}% damage`, `${Math.round((1 - b.cd / a.cd) * 100)}% faster`];
+          if (b.count > a.count) more.push(o.kind === "wisp" ? "+1 wisp" : "+1 shot");
+          if (b.pierce > a.pierce) more.push(o.kind === "kite" ? "+1 jump" : "+1 pierce");
+          card.desc = `${tinfo.name}: ${more.join(", ")}`;
+        }
+        if (o.what === "new") card.newStar = 0;
+        return card;
+      }),
+      target: (i) => {
+        const o = info.options[i];
+        const at = battle.gadgets.findIndex((g) => g.kind === o.kind);
+        const slot = this.gadgetSlots[at >= 0 ? at : Math.min(info.slots, GADGET_SLOTS - 1)];
+        return [this.gunPanel.x + slot.x, this.gunPanel.y];
+      },
+      pick: (i) => {
+        const o = info.options[i];
+        if (tierIndex(o.tier) >= 4 && o.what !== "level") this.onBanner(`${TIER_INFO[o.tier].name.toUpperCase()} GADGET!`, "gold", 1200);
+        this.game.events.emit("gadget-picked", i);
+      },
+    });
+  }
+
+  /**
+   * The fight freezes and three cards fly in: a living medal, a name, what you get and stars.
+   * Tap one: the others slide away and its medal flies to its place on the HUD.
+   */
+  private showPicker(o: { title: string; color: number; sub: string; cards: PickCard[]; target: (i: number) => [number, number]; pick: (i: number) => void }): void {
     this.picker?.destroy();
     const { W, H } = this;
-    const dim = this.add.rectangle(0, 0, W, H, 0x1a0e08, 0.78).setOrigin(0).setInteractive();
-    const rays = this.add.image(W / 2, H * 0.24, "rays").setTint(0xffe066).setAlpha(0.35).setScale(1.4);
-    const title = text(this, W / 2, H * 0.22, "LEVEL UP!", 104, "#ffe066");
-    const used = Object.keys(info.levels).length;
-    const sub = text(this, W / 2, H * 0.22 + 90, used >= SKILL_SLOTS ? `Level ${info.level}  •  all ${SKILL_SLOTS} skill slots used: level them up!` : `Level ${info.level}  •  skill slots ${used}/${SKILL_SLOTS}`, 38);
-    fitText(sub, W - 80);
+    const dim = this.add.rectangle(0, 0, W, H, 0x1a0e08, 0.8).setOrigin(0).setInteractive();
+    const rays = this.add.image(W / 2, H * 0.21, "rays").setTint(o.color).setAlpha(0.4).setScale(1.5);
+    const title = text(this, W / 2, H * 0.21, o.title, 104, rgba(o.color));
+    const sub = fitText(text(this, W / 2, H * 0.21 + 92, o.sub, 36), W - 80);
     const root = this.add.container(0, 0, [dim, rays, title, sub]).setDepth(5600);
     this.picker = root;
     this.tweens.add({ targets: rays, angle: 360, duration: 12000, repeat: -1 });
     title.setScale(0);
-    this.tweens.add({ targets: title, scale: 1, duration: 350, ease: "Back.out" });
+    this.tweens.add({
+      targets: title, scale: 1, duration: 380, ease: "Back.out",
+      onComplete: () => this.tweens.add({ targets: title, scale: 1.06, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" }),
+    });
     let ready = false;
-    this.time.delayedCall(450, () => (ready = true));
-    info.choices.forEach((id, i) => {
-      const def = SKILL_BY_ID[id];
-      const lv = info.levels[id] ?? 0;
-      const y = H * 0.4 + i * 280;
-      const stars = [...Array(MAX_SKILL)].map((_, k) => this.add.image(-170 + k * 52, 66, "icon_star").setScale(0.4).setAlpha(k < lv ? 1 : k === lv ? 0.9 : 0.25).setTint(k === lv ? 0x8af06a : 0xffffff));
-      const card = this.add.container(W / 2, y, [
-        this.add.image(0, 0, panelTexture(this, "cream", 920, 250)),
-        this.add.circle(-330, 0, 88, def.color).setStrokeStyle(8, INK_N),
-        this.add.image(-330, -2, def.icon).setDisplaySize(120, 120),
-        label(this, -190, -58, def.name, 50, "#4a2f1d").setOrigin(0, 0.5),
-        text(this, 360, -58, lv === 0 ? "NEW!" : `Lv ${lv + 1}`, 38, lv === 0 ? "#ff8aa8" : "#8af06a"),
-        fitText(label(this, -190, 2, def.text(lv), 34, "#7a5236").setOrigin(0, 0.5), 600),
-        ...stars,
-      ]).setSize(920, 250).setScale(0.6).setAlpha(0).setInteractive({ useHandCursor: true });
-      this.tweens.add({ targets: card, scale: 1, alpha: 1, duration: 260, delay: 120 + i * 90, ease: "Back.out" });
-      card.on("pointerdown", () => ready && this.tweens.add({ targets: card, scale: 0.95, duration: 60 }));
+    this.time.delayedCall(650, () => (ready = true));
+    const cards: Phaser.GameObjects.Container[] = [];
+    o.cards.forEach((cd, i) => {
+      const y = H * 0.21 + 330 + i * 300;
+      const med = badge(this, -318, 0, 200, cd.color, cd.icon, { tier: cd.tier, glow: cd.glow, live: true });
+      const name = fitText(label(this, -190, -80, cd.name, 48, cd.nameColor).setOrigin(0, 0.5), 400);
+      const tag = text(this, 0, -80, cd.tag, 34);
+      tag.setX(440 - 22 - tag.width / 2);
+      const pill = this.add.graphics();
+      pill.fillStyle(cd.tagColor, 1).fillRoundedRect(tag.x - tag.width / 2 - 20, -110, tag.width + 40, 60, 30);
+      pill.lineStyle(5, INK_N, 1).strokeRoundedRect(tag.x - tag.width / 2 - 20, -110, tag.width + 40, 60, 30);
+      const desc = text(this, -190, 4, cd.desc, 31, "#7a5236", { stroke: false, wrap: 600, align: "left" }).setOrigin(0, 0.5);
+      const stars = [...Array(cd.max)].map((_, k) => {
+        const star = this.add.image(-166 + k * 56, 88, "icon_star").setScale(0.42).setAlpha(k < cd.stars ? 1 : 0.22);
+        if (k === cd.newStar) {
+          star.setTint(0x8af06a);
+          this.tweens.add({ targets: star, scale: 0.56, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        }
+        return star;
+      });
+      const shine = this.add.image(-400, 0, "card_shine").setAlpha(0);
+      const sweep = { t: 0 };
+      this.tweens.add({
+        targets: sweep, t: 1, duration: 900, delay: 900 + i * 260, repeat: -1, repeatDelay: 2300, ease: "Sine.inOut",
+        onUpdate: () => shine.setX(-400 + 800 * sweep.t).setAlpha(Math.sin(sweep.t * Math.PI) * 0.9),
+      });
+      const parts: Phaser.GameObjects.GameObject[] = [this.add.image(0, 0, panelTexture(this, "cream", 920, 270)), shine, med, name, pill, tag, desc, ...stars];
+      if (cd.fresh) {
+        const edge = this.add.graphics();
+        edge.lineStyle(10, 0xff8aa8, 1).strokeRoundedRect(-466, -141, 932, 282, 34);
+        this.tweens.add({ targets: edge, alpha: 0.25, duration: 520, yoyo: true, repeat: -1 });
+        parts.unshift(edge);
+      }
+      const card = this.add.container(i % 2 ? W + 560 : -560, y, parts).setSize(920, 270).setInteractive({ useHandCursor: true });
+      cards.push(card);
+      this.tweens.add({ targets: card, x: W / 2, duration: 420, delay: 140 + i * 110, ease: "Back.out" });
+      med.setScale(0);
+      this.tweens.add({ targets: med, scale: 1, duration: 360, delay: 420 + i * 110, ease: "Back.out" });
+      card.on("pointerdown", () => ready && this.tweens.add({ targets: card, scale: 0.96, duration: 60 }));
+      card.on("pointerout", () => ready && card.setScale(1));
       card.on("pointerup", () => {
         if (!ready) return;
         ready = false;
         sfx.buy();
-        this.tweens.add({ targets: card, scale: 1.08, duration: 120, yoyo: true });
-        this.tweens.add({ targets: root, alpha: 0, delay: 200, duration: 160, onComplete: () => {
-          root.destroy();
-          if (this.picker === root) this.picker = null;
-          this.game.events.emit("skill-picked", id);
-        } });
+        buzz(25);
+        cards.forEach((c, j) => j !== i && this.tweens.add({ targets: c, alpha: 0, x: c.x + (j < i ? -260 : 260), duration: 240 }));
+        this.tweens.add({ targets: [title, sub, rays], alpha: 0, duration: 240 });
+        card.setScale(1);
+        this.tweens.add({ targets: card, scale: 1.06, duration: 120, yoyo: true });
+        this.tweens.add({ targets: card, alpha: 0, delay: 260, duration: 220 });
+        this.tweens.add({ targets: dim, alpha: 0, delay: 320, duration: 360 });
+        // the medal flies to its place on the HUD
+        const [tx, ty] = o.target(i);
+        card.remove(med);
+        root.add(med);
+        med.setPosition(card.x + med.x, card.y);
+        this.tweens.add({
+          targets: med, x: tx, y: ty, scale: 0.55, duration: 560, delay: 180, ease: "Cubic.in",
+          onComplete: () => {
+            root.destroy();
+            if (this.picker === root) this.picker = null;
+            const ring = this.add.circle(tx, ty, 50).setStrokeStyle(10, o.cards[i].color).setDepth(5600);
+            this.tweens.add({ targets: ring, scale: 2.4, alpha: 0, duration: 380, onComplete: () => ring.destroy() });
+            o.pick(i);
+          },
+        });
       });
       root.add(card);
     });
@@ -778,7 +922,7 @@ export class UIScene extends Phaser.Scene implements Host {
       if (choice !== "revive") this.game.events.emit("retry", choice === "retry");
     }));
     m.body.add(text(this, 0, -h / 2 + 140, `Stage ${r.stage}`, 64, "#c9663a"));
-    this.statRows(m, r.stats, r.time, -h / 2 + 240, false);
+    this.statRows(m, r.stats, r.time, -h / 2 + 240);
     m.body.add(label(this, 0, 150, "Roll new pets and buy upgrades to get stronger, then try again!", 30, "#9a7a5a", 760));
     let y = 290;
     if (r.canRevive) {
@@ -801,19 +945,14 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(button(this, 150, y, 280, 120, "peach", "LOBBY", () => m.close(), { size: 36 }));
   }
 
-  /** Rows of run statistics (used by the stats popup and the defeat screen). */
-  private statRows(m: Modal, st: RunStats, time: number, y0: number, full: boolean): number {
+  /** Rows of run statistics for the defeat screen. */
+  private statRows(m: Modal, st: RunStats, time: number, y0: number): number {
     const rows: [string, string, string][] = [
       ["icon_clock", `Survived ${mmss(time)} / ${mmss(STAGE_MS)}`, "#4a2f1d"],
       ["icon_skull", `${fmt(st.kills)} monsters defeated`, "#4a2f1d"],
       ["icon_sword", `${fmt(st.damage)} damage dealt`, "#4a2f1d"],
       ["icon_cash", `+${fmt(Math.floor(st.earned))} money`, "#3f9a4f"],
     ];
-    if (full) {
-      rows.push(["icon_bolt", `${fmt(battle.dps)} damage per second now`, "#4a2f1d"]);
-      rows.push(["icon_gift", `${st.airdrops} airdrops opened  •  ${fmt(st.shots)} shots`, "#4a2f1d"]);
-      rows.push(["icon_shield", `You took ${fmt(st.hurt)}  •  crystal took ${fmt(st.crystalHurt)}`, "#4a2f1d"]);
-    }
     let y = y0;
     for (const [icon, str, color] of rows) {
       m.body.add([this.add.image(-330, y, icon).setScale(0.55), fitText(label(this, -280, y, str, 36, color).setOrigin(0, 0.5), 640)]);
@@ -863,81 +1002,76 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(quit);
   }
 
-  /** Everything about the current fight: numbers, your gadgets, skills and dice found. */
+  /** Everything about the current fight at a glance: your gadgets and skills as medals with their level, then the numbers. */
   private showStats(): void {
     if (battle.mode === "lobby") return;
     sfx.click();
-    const h = 1360;
-    const m = this.showModal(modal(this, 940, h, "STATS", "blue", () => (this.openModal = null)));
-    const top = -h / 2 + 170;
-    m.body.add([
-      this.add.image(0, top, panelTexture(this, "row", 840, 170)),
-      label(this, 0, top - 62, `Lv ${battle.level}  •  ${fmt(battle.dps)} DPS`, 28, "#7a5236"),
-    ]);
-    battle.gadgets.forEach((g, i) => {
-      const x = (i - 1) * 270;
+    const h = 1500;
+    const m = this.showModal(modal(this, 960, h, "STATS", "blue", () => (this.openModal = null)));
+    let y = -h / 2 + 150;
+    m.body.add(text(this, 0, y, `Lv ${battle.level}  •  ${fmt(battle.dps)} DPS`, 46, "#ffe066"));
+    // gadgets: tier chip top left, level bottom right
+    y += 70;
+    m.body.add([this.add.image(0, y + 130, panelTexture(this, "row", 880, 300)), label(this, -410, y + 4, "GADGETS", 30, "#c9663a").setOrigin(0, 0.5)]);
+    for (let i = 0; i < GADGET_SLOTS; i++) {
+      const g = battle.gadgets[i];
+      const x = (i - 1) * 280;
+      if (!g) {
+        m.body.add([this.add.circle(x, y + 130, 74, 0x000000, 0.12).setStrokeStyle(5, 0x9a7a5a, 0.5), label(this, x, y + 128, "+", 70, "#b39a7a")]);
+        continue;
+      }
       const info = TIER_INFO[g.tier];
-      const icon = this.add.image(x - 70, top + 14, gadgetKey(g.kind));
-      icon.setScale(84 / Math.max(icon.width, icon.height));
-      m.body.add([
-        icon,
-        this.add.circle(x - 104, top - 22, 22, info.color).setStrokeStyle(4, INK_N),
-        text(this, x - 104, top - 24, g.tier, g.tier.length > 2 ? 16 : 24),
-        fitText(label(this, x + 50, top - 2, gadgetName(g.kind, g.tier), 26, rgba(darken(info.color, 0.3))), 150),
-        label(this, x + 50, top + 32, `Lv ${g.level}`, 24, "#7a5236"),
-      ]);
-    });
-    let y = this.statRows(m, battle.stats, battle.time, top + 160, true);
-    m.body.add(label(this, -330, y, "Skills:", 34, "#c9663a").setOrigin(0, 0.5));
-    const picked = Object.entries(battle.skills) as [SkillId, number][];
-    if (!picked.length) m.body.add(label(this, -190, y, "none yet - collect bones and meat to level up", 28, "#9a7a5a").setOrigin(0, 0.5));
-    picked.forEach(([id, lv], i) => {
-      const def = SKILL_BY_ID[id];
-      const x = -330 + (i % 7) * 105 + 40;
-      const yy = y + 80 + Math.floor(i / 7) * 110;
-      m.body.add([
-        this.add.circle(x, yy, 44, def.color).setStrokeStyle(5, INK_N),
-        this.add.image(x, yy - 2, def.icon).setDisplaySize(58, 58),
-        text(this, x + 30, yy + 30, `${lv}`, 28, lv === MAX_SKILL ? "#ffe066" : "#ffffff"),
-      ]);
-    });
-    y += 80 + Math.ceil(Math.max(1, picked.length) / 7) * 110;
-    m.body.add(button(this, 0, Math.min(h / 2 - 90, y + 40), 460, 120, "green", "BACK TO FIGHT", () => m.close(), { size: 40 }));
-  }
-
-  /** An airdrop opened: show the gadget, its tier and what happened (new, upgraded, level, scrapped). */
-  private gadgetFound(f: GadgetFound): void {
-    const { W } = this;
-    const info = TIER_INFO[f.tier];
-    const rank = tierIndex(f.tier);
-    const y = this.L.hudBottom + 360;
-    const parts: Phaser.GameObjects.GameObject[] = [];
-    if (rank >= 3) {
-      const rays = this.add.image(0, 0, "rays").setTint(info.color).setAlpha(0.5).setScale(1.2);
-      this.tweens.add({ targets: rays, angle: 180, duration: 2600 });
-      parts.push(rays);
+      m.body.add(badge(this, x, y + 120, 170, info.color, gadgetIcon(g.kind), { tier: g.tier, level: g.level, max: MAX_GADGET_LEVEL, glow: tierIndex(g.tier) >= 3, live: true }));
+      m.body.add(fitText(label(this, x, y + 236, gadgetName(g.kind, g.tier), 28, rgba(darken(info.color, 0.35))), 250));
     }
-    const icon = this.add.image(-200, 10, gadgetKey(f.kind));
-    icon.setScale(170 / Math.max(icon.width, icon.height));
-    const what = {
-      new: ["NEW GADGET!", "#8af06a"],
-      tier: [`UPGRADED TO ${f.tier}!`, "#8af06a"],
-      level: [`LEVEL ${f.level}!`, "#8af06a"],
-      replace: [`Swapped out the ${f.replaced ? GADGETS[f.replaced].name : ""}`, "#ffe066"],
-      scrap: [`Scrapped: +${fmt(f.scrap)} money`, "#e8e0d0"],
-    }[f.result];
-    parts.push(
-      this.add.image(0, 0, panelTexture(this, "glass", 820, 270)), icon,
-      this.add.circle(-350, -80, 44, info.color).setStrokeStyle(7, INK_N),
-      text(this, -350, -82, f.tier, f.tier.length > 2 ? 30 : 44),
-      fitText(text(this, 160, -76, gadgetName(f.kind, f.tier), 50, info.css), 420),
-      fitText(label(this, 160, -22, GADGETS[f.kind].desc, 24, "#fff3dc", 440), 440),
-      fitText(text(this, 160, 66, what[0], f.result === "scrap" ? 32 : 44, what[1]), 420),
-    );
-    const c = this.add.container(W / 2, y, parts).setDepth(5100).setScale(0.3).setAlpha(0);
-    this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 300, ease: "Back.out" });
-    this.tweens.add({ targets: c, alpha: 0, y: y - 60, delay: rank >= 3 ? 2600 : 2000, duration: 350, onComplete: () => c.destroy() });
-    if (f.result !== "scrap" && rank >= 4) this.onBanner(`${info.name.toUpperCase()} GADGET!`, "gold", 1200);
+    // skills: level bottom right
+    y += 330;
+    m.body.add([this.add.image(0, y + 110, panelTexture(this, "row", 880, 250)), label(this, -410, y + 4, "SKILLS", 30, "#c9663a").setOrigin(0, 0.5)]);
+    const picked = Object.entries(battle.skills) as [SkillId, number][];
+    for (let i = 0; i < SKILL_SLOTS; i++) {
+      const x = (i - (SKILL_SLOTS - 1) / 2) * 210;
+      const sk = picked[i];
+      if (!sk) {
+        m.body.add([this.add.circle(x, y + 100, 60, 0x000000, 0.12).setStrokeStyle(5, 0x9a7a5a, 0.5), label(this, x, y + 98, "+", 60, "#b39a7a")]);
+        continue;
+      }
+      const def = SKILL_BY_ID[sk[0]];
+      m.body.add(badge(this, x, y + 96, 140, def.color, def.icon, { level: sk[1], max: MAX_SKILL, live: true }));
+      m.body.add(fitText(label(this, x, y + 192, def.name, 24, "#7a5236"), 196));
+    }
+    if (!picked.length) m.body.add(label(this, 0, y + 226, "Skills drop from airdrops, orbs and strong monsters", 24, "#9a7a5a"));
+    // the numbers: an icon and a value each
+    y += 290;
+    const st = battle.stats;
+    const tiles: [string, string, string][] = [
+      ["icon_clock", mmss(battle.time), "time"],
+      ["icon_skull", fmt(st.kills), "defeated"],
+      ["icon_sword", fmt(st.damage), "damage"],
+      ["icon_bolt", fmt(battle.dps), "DPS"],
+      ["icon_cash", `+${fmt(Math.floor(st.earned))}`, "money"],
+      ["icon_gift", `${st.airdrops}`, "airdrops"],
+      ["icon_shield", fmt(st.hurt), "you took"],
+      ["icon_target", fmt(st.shots), "shots"],
+    ];
+    tiles.forEach(([icon, value, what], i) => {
+      const x = (i % 2 ? 1 : -1) * 222;
+      const yy = y + 50 + Math.floor(i / 2) * 116;
+      m.body.add([
+        this.add.image(x, yy, panelTexture(this, "row", 420, 100)),
+        this.add.image(x - 152, yy, icon).setScale(0.62),
+        fitText(text(this, x - 96, yy - 12, value, 44, i === 4 ? "#8af06a" : "#ffffff").setOrigin(0, 0.5), 290),
+        label(this, x - 94, yy + 30, what, 22, "#9a7a5a").setOrigin(0, 0.5),
+      ]);
+    });
+    // dice found
+    y += 50 + 4 * 116;
+    const found = DICE_TIERS.filter((t) => st.dice[t] > 0);
+    if (!found.length) m.body.add(label(this, 0, y, "No dice found yet", 30, "#9a7a5a"));
+    found.forEach((t, i) => {
+      const x = (i - (found.length - 1) / 2) * 120;
+      m.body.add([this.add.image(x, y, `die_${t}`).setScale(0.62), text(this, x + 34, y + 24, `${st.dice[t]}`, 32)]);
+    });
+    m.body.add(button(this, 0, h / 2 - 90, 460, 120, "green", "BACK TO FIGHT", () => m.close(), { size: 40 }));
   }
 
   /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */

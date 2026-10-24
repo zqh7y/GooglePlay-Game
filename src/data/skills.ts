@@ -1,6 +1,7 @@
 /**
- * Skills you pick during a stage. Each levels up to MAX_SKILL and they all reset when the
- * stage ends, so every run builds up again from nothing.
+ * Skills you pick during a stage: from skill orbs on the map, skill drops (airdrops) and orbs
+ * that elites drop. Each levels up to MAX_SKILL and they all reset when the stage ends, so
+ * every run builds up again from nothing. (Level-ups give gadgets.)
  */
 export type SkillId =
   | "double" | "power" | "hyper" | "bigbang" | "chain" | "zoom" | "vacuum" | "mend" | "luck" | "tough" | "shards" | "fort" | "pack" | "haunt"
@@ -36,7 +37,7 @@ export const SKILLS: SkillDef[] = [
   { id: "pack", name: "Pet Party", icon: "sk_pack", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
   { id: "mend", name: "Crystal Glue", icon: "sk_mend", color: 0x67c3ff, text: () => "The crystal heals 35% right away (it never heals by itself)" },
   { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xd8a8ff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
-  { id: "luck", name: "Lucky Box", icon: "sk_luck", color: 0x3fd08a, text: () => "Better gadgets in airdrops, and more often" },
+  { id: "luck", name: "Lucky Box", icon: "sk_luck", color: 0x3fd08a, text: () => "Level-ups offer better gadget tiers, and skill drops come more often" },
 ];
 
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<SkillId, SkillDef>;

@@ -16,10 +16,12 @@
  * - villageHp, moveSpeed, range: +per (0.25 = +25%)
  * - gems: +per gems per boss; potionPower: +per x potion luck; potionTime: +per minutes
  * - luckyEvery: lucky roll comes `per` rolls sooner; luckyPower: +per x lucky roll luck
+ * - forge: +per to the best gadget tier you can get in a fight (C to start, up to SSS)
  */
 export type Effect =
   | "start" | "luck" | "die" | "speed" | "multi" | "auto" | "cash" | "offline" | "dmg" | "heroDmg" | "crit" | "critDmg"
-  | "slot" | "villageHp" | "moveSpeed" | "range" | "gems" | "potionPower" | "potionTime" | "chest" | "luckyEvery" | "luckyPower";
+  | "slot" | "villageHp" | "moveSpeed" | "range" | "gems" | "potionPower" | "potionTime" | "chest" | "luckyEvery" | "luckyPower"
+  | "forge";
 
 export type Branch = "start" | "luck" | "roll" | "money" | "power" | "team" | "gems";
 
@@ -150,6 +152,12 @@ branch("power", "W", [
 ], {
   powerup: series("str", "Strength", "sword", 3, 3000, 12, "dmg", 1.3),
   crit: series("cdmg", "Crit Power", "target", 2, 20e6, 30, "critDmg", 1),
+  titan: [
+    ["forge1", "Forge I", "sword", 300e6, "forge", 1],
+    ["forge2", "Forge II", "sword", 40e9, "forge", 1],
+    ["forge3", "Forge III", "sword", 5e12, "forge", 1],
+    ["forge4", "Titan Forge", "sword", 4e15, "forge", 1],
+  ],
   rage: series("berserk", "Berserk", "sword", 2, 600e9, 25, "dmg", 2),
 });
 
@@ -198,6 +206,7 @@ export function effectText(node: TreeNode): string {
     case "luck": return `x${p} luck`;
     case "die": return `x${p} luck + a new die`;
     case "speed": return `Rolls ${pct} faster`;
+    case "forge": return "Gadgets one tier higher";
     case "multi": return "+1 die every roll";
     case "auto": return "Rolls automatically";
     case "cash": return `x${p} money`;

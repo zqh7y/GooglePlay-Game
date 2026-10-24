@@ -1,11 +1,12 @@
 import Phaser from "phaser";
-import { INK, Ctx, canvasTexture } from "./draw";
+import { INK, Ctx, canvasTexture, circle, ellipse, fill, linear, outline, radial } from "./draw";
 import { Toon, toon } from "./toon";
 
 /**
- * Level-up skill icons (`sk_<id>`, 120 x 120): one big, chunky picture each, so a skill reads at
- * a glance on its card and in the small skill bar. (The Lucky Box icon is drawn with the airdrop
- * crate in pickups.ts.)
+ * Skill icons (`sk_<id>`, drawn on a 120 grid at twice the size so they stay sharp on the big
+ * cards): one big, chunky picture each, so a skill reads at a glance on its card and in the small
+ * skill bar. (The Lucky Box icon is drawn with the airdrop crate in pickups.ts.) Also the round
+ * medal every skill and gadget sits on.
  */
 
 type Pt = [number, number];
@@ -256,6 +257,42 @@ const ICONS: Record<string, (ctx: Ctx) => void> = {
   },
 };
 
+/** A white medal (tinted to a skill or tier color): a rim, a dished face and a ring of rivets. */
+function medal(c: Ctx): void {
+  circle(c, 100, 100, 92);
+  fill(c, radial(c, 100, 84, 96, [[0, "#ffffff"], [0.62, "#e6e6e6"], [0.86, "#b4b4b4"], [1, "#8a8a8a"]]));
+  outline(c, 8);
+  circle(c, 100, 100, 74);
+  c.lineWidth = 6;
+  c.strokeStyle = "rgba(0,0,0,0.16)";
+  c.stroke();
+  circle(c, 100, 102, 70);
+  fill(c, radial(c, 100, 120, 80, [[0, "#ffffff"], [1, "#d0d0d0"]]));
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    circle(c, 100 + Math.cos(a) * 83, 100 + Math.sin(a) * 83, 3.5);
+    fill(c, "rgba(255,255,255,0.85)");
+  }
+}
+
+/** The shine laid over a medal (not tinted). */
+function medalGloss(c: Ctx): void {
+  ellipse(c, 100, 52, 58, 26);
+  fill(c, linear(c, 0, 26, 0, 78, [[0, "rgba(255,255,255,0.75)"], [1, "rgba(255,255,255,0)"]]));
+  ellipse(c, 150, 150, 10, 6, -0.7);
+  fill(c, "rgba(255,255,255,0.45)");
+}
+
 export function makeSkillTextures(scene: Phaser.Scene): void {
-  for (const [id, draw] of Object.entries(ICONS)) canvasTexture(scene, `sk_${id}`, 120, 120, draw);
+  for (const [id, draw] of Object.entries(ICONS)) canvasTexture(scene, `sk_${id}`, 240, 240, (c) => {
+    c.scale(2, 2);
+    draw(c);
+  });
+  canvasTexture(scene, "medal", 200, 200, medal);
+  canvasTexture(scene, "medal_gloss", 200, 200, medalGloss);
+  // a soft bright stripe that sweeps over cards
+  canvasTexture(scene, "card_shine", 120, 240, (c) => {
+    c.fillStyle = linear(c, 0, 0, 120, 0, [[0, "rgba(255,255,255,0)"], [0.5, "rgba(255,255,255,0.55)"], [1, "rgba(255,255,255,0)"]]);
+    c.fillRect(0, 0, 120, 240);
+  });
 }

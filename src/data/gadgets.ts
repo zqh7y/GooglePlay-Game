@@ -43,6 +43,8 @@ export const GADGET_SLOTS = 3;
 export const MAX_GADGET_LEVEL = 5;
 
 export const gadgetKey = (kind: GadgetKind) => `gd_${kind}`;
+/** The big, sharp picture of a gadget for cards, medals and the HUD. */
+export const gadgetIcon = (kind: GadgetKind) => `gdi_${kind}`;
 
 /** A gadget's numbers at a tier and level. Higher tiers hit much harder, fire faster and throw more. */
 export function gadgetStats(kind: GadgetKind, tier: Tier, level: number): GadgetBase {
