@@ -63,6 +63,41 @@ export function eventRewardText(r: EventReward): string {
   }
 }
 
+/** Event rewards added up: all the shells together, dice by tier, boosts by kind, and so on. */
+interface Pile {
+  icon: string;
+  name: string;
+  amount: string;
+  color: number;
+}
+
+function pileUp(got: EventReward[]): Pile[] {
+  const sums = new Map<string, { icon: string; name: string; n: number; color: number; fmt: (n: number) => string }>();
+  const add = (key: string, icon: string, name: string, n: number, color: number, show: (n: number) => string = (x) => `x${fmt(x)}`) => {
+    const e = sums.get(key);
+    if (e) e.n += n;
+    else sums.set(key, { icon, name, n, color, fmt: show });
+  };
+  for (const r of got) {
+    switch (r.kind) {
+      case "shells": add("shells", "fish_shell", "shells", r.amount, 0xff8ab0, (x) => fmt(x)); break;
+      case "dice": add(`die${r.tier}`, `die_${r.tier}`, `${r.tier} dice`, r.amount, TIER_INFO[r.tier!].color); break;
+      case "gems": add("gems", "icon_gem", "gems", r.amount, 0x5ac8ff); break;
+      case "boost": add(`boost${r.boost}`, BOOST_BY_ID[r.boost!].icon, BOOST_BY_ID[r.boost!].name, r.amount, 0x9ae6ff); break;
+      case "luckPotion": add("potion", "icon_potion", "luck potion", r.amount, 0x8af06a, (x) => `${x} min`); break;
+      case "lucky": add("lucky", "fp_clover", "lucky rolls", r.amount, 0x8af06a); break;
+      case "grand":
+        add(`die${r.tier}`, `die_${r.tier}`, `${r.tier} dice`, r.amount, TIER_INFO[r.tier!].color);
+        add("gems", "icon_gem", "gems", r.gems ?? 0, 0x5ac8ff);
+        break;
+    }
+    if (r.ticket) add("ticket", "icon_ticket", "GOLDEN TICKET", 1, 0xffd23f);
+  }
+  // the ticket first, then the rest in the order they came
+  const list = [...sums.entries()].sort(([a], [b]) => (b === "ticket" ? 1 : 0) - (a === "ticket" ? 1 : 0));
+  return list.map(([, e]) => ({ icon: e.icon, name: e.name, amount: e.fmt(e.n), color: e.color }));
+}
+
 /** A short amount for the corner of a reward icon. */
 const rewardAmount = (r: EventReward) => (r.kind === "grand" ? r.tier! : r.kind === "luckPotion" ? `${r.amount}m` : `x${fmt(r.amount)}`);
 
@@ -307,29 +342,42 @@ export class FishScreen extends Screen {
     sfx.fanfare();
     buzz(60);
     const s = this.scene;
-    const n = got.length;
-    const rowH = 130;
-    const newRound = save.fishing.event.claimed === 0;
+    const piles = pileUp(got);
+    const cols = Math.min(4, piles.length);
+    const rows = Math.ceil(piles.length / cols);
+    const cellW = 190;
+    const cellH = 200;
+    // a big prize in there means a round was finished
+    const newRound = got.some((r) => r.kind === "grand");
     const won = got.some((r) => r.ticket);
     // notes under the rewards: a new round, and a Golden Ticket in the big prize
-    const notes = [newRound ? [`Round ${save.fishing.event.round} starts: bigger rewards!`, "#3f9a4f"] : null, won ? ["...and a GOLDEN TICKET was inside!", "#e8434f"] : null].filter(Boolean) as string[][];
-    const h = 330 + n * rowH + notes.length * 50;
-    const m = this.host.showModal(modal(s, 820, h, "EVENT REWARDS!", "orange"));
-    got.forEach((r, i) => {
-      const y = -h / 2 + 170 + i * rowH;
-      const glow = s.add.image(-260, y, "glow").setTint(r.kind === "dice" || r.kind === "grand" ? TIER_INFO[r.tier!].color : 0xffd23f).setScale(0.55).setAlpha(0.6);
-      const icon = s.add.image(-260, y, eventRewardIcon(r));
-      icon.setScale(96 / Math.max(icon.width, icon.height));
-      const lbl = fitText(label(s, -180, y, eventRewardText(r), 36, "#4a2f1d").setOrigin(0, 0.5), 520);
-      const row = s.add.container(0, 0, [glow, icon, lbl]).setAlpha(0);
-      m.body.add(row);
-      s.tweens.add({ targets: row, alpha: 1, duration: 200, delay: 150 + i * 160 });
-      s.tweens.add({ targets: icon, scale: { from: 0, to: icon.scale }, duration: 360, delay: 150 + i * 160, ease: "Back.out" });
+    const notes = [newRound ? [`Round ${save.fishing.event.round} reached: bigger rewards!`, "#3f9a4f"] : null, won ? ["A GOLDEN TICKET was in the big prize!", "#e8434f"] : null].filter(Boolean) as string[][];
+    const h = 360 + rows * cellH + notes.length * 50;
+    const m = this.host.showModal(modal(s, 900, h, "EVENT REWARDS!", "orange"));
+    m.body.add(text(s, 0, -h / 2 + 110, got.length === 1 ? "1 reward" : `${got.length} rewards`, 30, "#7a5236"));
+    // the same rewards add up: one picture each, with how many below
+    piles.forEach((pl, i) => {
+      const row = Math.floor(i / cols);
+      const inRow = Math.min(cols, piles.length - row * cols);
+      const x = ((i % cols) - (inRow - 1) / 2) * cellW;
+      const y = -h / 2 + 150 + cellH / 2 + row * cellH;
+      const glow = s.add.image(0, -16, "glow").setTint(pl.color).setScale(0.6).setAlpha(0.6);
+      const icon = s.add.image(0, -16, pl.icon);
+      const k = (pl.icon === "icon_ticket" ? 120 : 92) / Math.max(icon.width, icon.height);
+      icon.setScale(k);
+      const cell = s.add.container(x, y, [
+        glow, icon,
+        text(s, 0, 56, pl.amount, 34, pl.icon === "icon_ticket" ? "#e8434f" : "#ffffff"),
+        fitText(label(s, 0, 88, pl.name, 20, "#7a5236"), cellW - 16),
+      ]).setAlpha(0);
+      m.body.add(cell);
+      s.tweens.add({ targets: cell, alpha: 1, duration: 200, delay: 150 + i * 120 });
+      s.tweens.add({ targets: icon, scale: { from: 0, to: k }, duration: 360, delay: 150 + i * 120, ease: "Back.out" });
     });
-    notes.forEach(([str, col], i) => m.body.add(text(s, 0, -h / 2 + 130 + n * rowH + i * 50, str, 30, col)));
+    notes.forEach(([str, col], i) => m.body.add(text(s, 0, -h / 2 + 160 + rows * cellH + i * 50, str, 30, col)));
     m.body.add(button(s, 0, h / 2 - 90, 360, 110, "green", "GREAT!", () => m.close(), { size: 40 }));
     // the whole screen celebrates the ticket once the rewards are out
-    if (won) s.time.delayedCall(400 + n * 160, () => this.host.ticketShow("It was inside the event's big prize!"));
+    if (won) s.time.delayedCall(500 + piles.length * 120, () => this.host.ticketShow("It was inside the event's big prize!"));
     this.refreshEvent();
   }
 
