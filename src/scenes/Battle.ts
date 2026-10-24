@@ -54,16 +54,11 @@ const BREATH_LEN = 700;
 const BREATH_HALF = 0.45;
 const SEAL_R = 130;
 const SEAL_SEE = 900;
-/** Free roam in the lobby: a die turns up every ROAM_DICE_MS, with at most ROAM_MAX lying around. */
-const ROAM_DICE_MS = 30000;
-const ROAM_MAX = 8;
-export type BuildingKind = "battle" | "rush";
-/** The two buildings by the crystal (offsets from the centre); walk within BLD_NEAR to see what they are for. */
-const BUILDINGS: { kind: BuildingKind; dx: number; dy: number; tex: string; name: string; color: string; glow: number }[] = [
-  { kind: "battle", dx: -620, dy: -170, tex: "bld_battle", name: "BATTLE", color: "#ffe066", glow: 0xffb03a },
-  { kind: "rush", dx: 620, dy: -170, tex: "bld_rush", name: "BOSS RUSH", color: "#e6c8ff", glow: 0xc080ff },
-];
-const BLD_NEAR = 470;
+/** Free roam in the lobby: ROAM_START dice to begin with, then one every ROAM_DICE_MS, up to ROAM_MAX lying around. */
+const ROAM_START = 6;
+const ROAM_DICE_MS = 15000;
+const ROAM_MAX = 15;
+export type FightKind = "battle" | "rush";
 
 export type BattleMode = "lobby" | "run" | "over";
 
@@ -392,11 +387,9 @@ export class BattleScene extends Phaser.Scene {
   private food: Food[] = [];
   private seals: Seal[] = [];
   private healPopT = 0;
-  private buildings: { kind: BuildingKind; x: number; y: number; door: Phaser.GameObjects.Image }[] = [];
-  private nearBld: BuildingKind | null = null;
   private roamDiceT = 0;
   private wander: [number, number] | null = null;
-  /** walking into a building to start a fight */
+  /** on the way into a fight (its start animation) */
   private entering = false;
   /** Spooky Aura ticks, Ghost Phase timer and how long you stay see-through */
   private hauntT = 0;
@@ -460,7 +453,7 @@ export class BattleScene extends Phaser.Scene {
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
-      buildings: [], nearBld: null, roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
+      roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
     });
     this.joy = { ...NO_JOY };
     this.heroMax = HERO_HP * villageHpMult();
@@ -530,7 +523,7 @@ export class BattleScene extends Phaser.Scene {
       });
     }
     if (data?.autostart) this.time.delayedCall(350, () => this.begin(true));
-    else if (!this.rush) for (let i = 0; i < 2; i++) this.roamDie();
+    else if (!this.rush) for (let i = 0; i < ROAM_START; i++) this.roamDie();
     if (this.rush) this.time.delayedCall(300, () => this.beginRush());
   }
 
@@ -663,7 +656,7 @@ export class BattleScene extends Phaser.Scene {
     cam.setFollowOffset(0, (mid - this.scale.height / 2) / cam.zoom);
   }
 
-  /** The BATTLE button: the hero walks into the arena building, then the run starts. */
+  /** The BATTLE button: the start animation, then the run starts. */
   private begin(skipEnter = false): void {
     if (this.state !== "lobby" || this.entering) return;
     if (skipEnter) {
@@ -746,7 +739,7 @@ export class BattleScene extends Phaser.Scene {
     return this.state === "fight" || this.state === "boss";
   }
 
-  /** Free to walk around the lobby (not on the way into a building). */
+  /** Free to walk around the lobby (not on the way into a fight). */
   private get roaming(): boolean {
     return this.state === "lobby" && !this.rush && !this.entering;
   }
@@ -754,61 +747,30 @@ export class BattleScene extends Phaser.Scene {
   // ───────────────────────── free roam ─────────────────────────
 
   /**
-   * The hero heads into a building: runs to the door (or pops over first if far away), shrinks into
-   * the glowing doorway with the pets, the screen fades, then `then` starts the fight.
+   * Off to the fight: the hero gives a big hop in a burst of sparkles (the pets hop too), the screen
+   * flashes and fades, then `then` starts it.
    */
-  private enter(kind: BuildingKind, then: () => void): void {
-    const b = this.buildings.find((x) => x.kind === kind);
-    if (!b) {
-      then();
-      return;
-    }
+  private enter(kind: FightKind, then: () => void): void {
     this.entering = true;
     this.joy = { ...NO_JOY };
-    this.nearBld = null;
-    this.game.events.emit("building-near", null);
     this.handImg.setVisible(false);
     const cam = this.cameras.main;
-    const [dx, dy] = [b.x, b.y - 30];
-    const goIn = () => {
-      this.hero.setTexture("hero");
-      sfx.lucky();
-      buzz(60);
-      this.tweens.killTweensOf(b.door);
-      this.tweens.add({ targets: b.door, alpha: 1, scaleX: 3, scaleY: 3.4, duration: 300, yoyo: true });
-      this.sparks.setParticleTint(BUILDINGS.find((x) => x.kind === kind)!.glow);
-      this.sparks.explode(30, dx, dy - 120);
-      this.tweens.add({ targets: this.hero, y: dy - 90, scale: 0.3, alpha: 0, duration: 380, ease: "Quad.in" });
-      this.pets.forEach((p, i) => this.tweens.add({ targets: p.img, x: dx, y: dy - 60, alpha: 0, duration: 420, delay: 60 * i, ease: "Quad.in" }));
-      this.time.delayedCall(380, () => {
-        cam.flash(180, 255, 240, 200);
-        cam.fadeOut(350, kind === "rush" ? 40 : 74, kind === "rush" ? 20 : 47, kind === "rush" ? 40 : 29);
-        cam.once("camerafadeoutcomplete", then);
-      });
-    };
-    const run = () => {
-      const d = Math.hypot(dx - this.hero.x, dy - this.hero.y);
-      this.hero.setFlipX(dx < this.hero.x);
-      let f = 0;
-      this.tweens.add({
-        targets: this.hero, x: dx, y: dy, duration: Phaser.Math.Clamp(d / 1.5, 200, 800), ease: "Sine.inOut",
-        onUpdate: () => {
-          if (++f % 4 === 0) this.hero.setTexture(f % 8 === 0 ? "hero_w1" : "hero_w2");
-          this.hero.setDepth(this.hero.y);
-        },
-        onComplete: goIn,
-      });
-    };
-    if (Math.hypot(dx - this.hero.x, dy - this.hero.y) > 1100) {
-      // far away: pop over next to the building first
-      this.puff.setParticleTint(0xffffff);
-      this.puff.explode(16, this.hero.x, this.hero.y - 60);
-      this.hero.setPosition(dx, dy + 340);
-      this.puff.explode(16, dx, dy + 280);
-      this.time.delayedCall(150, run);
-    } else {
-      run();
-    }
+    const color = kind === "rush" ? 0xc080ff : 0xffb03a;
+    const [x, y] = [this.hero.x, this.hero.y];
+    this.hero.setTexture("hero");
+    sfx.lucky();
+    buzz(60);
+    const ring = this.add.image(x, y - 10, "ring").setTint(color).setScale(0.3, 0.15).setDepth(y - 1);
+    this.tweens.add({ targets: ring, scaleX: 3.4, scaleY: 1.7, alpha: 0, duration: 650, onComplete: () => ring.destroy() });
+    this.tweens.add({ targets: this.hero, y: y - 170, duration: 280, yoyo: true, ease: "Quad.out" });
+    this.pets.forEach((p, i) => this.tweens.add({ targets: p.img, y: p.img.y - 120, duration: 250, yoyo: true, delay: 60 + i * 50, ease: "Quad.out" }));
+    this.sparks.setParticleTint(color);
+    this.sparks.explode(34, x, y - 90);
+    this.time.delayedCall(560, () => {
+      cam.flash(180, 255, 240, 200);
+      cam.fadeOut(350, kind === "rush" ? 40 : 74, kind === "rush" ? 20 : 47, kind === "rush" ? 40 : 29);
+      cam.once("camerafadeoutcomplete", then);
+    });
   }
 
   /** A die turns up somewhere around you. */
@@ -816,18 +778,12 @@ export class BattleScene extends Phaser.Scene {
     this.addDie(rollDiceTier(save.stage), ...this.randomSpot(450, 1700, [this.hero.x, this.hero.y]), 0);
   }
 
-  /** Free roam: dice keep turning up, and walking up to a building shows what it is for. */
+  /** Free roam: dice keep turning up around you. */
   private roamTick(delta: number): void {
     this.roamDiceT -= delta;
-    if (this.roamDiceT <= 0) {
-      this.roamDiceT = ROAM_DICE_MS;
-      if (this.pickups.filter((p) => p.kind === "dice").length < ROAM_MAX) this.roamDie();
-    }
-    const near = this.entering ? null : (this.buildings.find((b) => Math.hypot(b.x - this.hero.x, (b.y - this.hero.y) * 1.3) < BLD_NEAR)?.kind ?? null);
-    if (near !== this.nearBld) {
-      this.nearBld = near;
-      this.game.events.emit("building-near", near);
-    }
+    if (this.roamDiceT > 0) return;
+    this.roamDiceT = ROAM_DICE_MS;
+    if (this.pickups.filter((p) => p.kind === "dice").length < ROAM_MAX) this.roamDie();
   }
 
   /** AFK: walk to the nearest die; with none around, stroll between spots near the crystal. */
@@ -883,25 +839,13 @@ export class BattleScene extends Phaser.Scene {
     });
     const [cx, cy] = a.center;
     this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
-    const spots = BUILDINGS.map((b) => [cx + b.dx, cy + b.dy]);
     for (const o of a.objects) {
-      if (spots.some(([bx, by]) => Math.abs(o.x - bx) < 340 && o.y > by - 560 && o.y < by + 220)) continue;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
       if (o.scale) img.setScale(o.scale);
       this.addStatic(img, o.x, o.y);
       if (o.tex.startsWith("tree") || o.tex === "palm") {
         this.tweens.add({ targets: img, angle: { from: -1.5, to: 1.5 }, duration: 2200 + (o.x % 900), yoyo: true, repeat: -1, ease: "Sine.inOut" });
       }
-    }
-    // the arena and the boss tower: walk up to them in the lobby to see what they are for
-    for (const b of BUILDINGS) {
-      const [x, y] = [cx + b.dx, cy + b.dy];
-      this.add.ellipse(x, y - 6, 480, 80, 0x000000, 0.18).setDepth(-700);
-      this.add.image(x, y, b.tex).setOrigin(0.5, 1).setDepth(y);
-      const door = this.add.image(x, y - 110, "glow").setTint(b.glow).setScale(1.4, 1.8).setAlpha(0.5).setDepth(y + 1);
-      this.tweens.add({ targets: door, alpha: 0.9, scaleX: 1.6, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      text(this, x, y - 640, b.name, 64, b.color).setDepth(y + 2);
-      this.buildings.push({ kind: b.kind, x, y, door });
     }
     // the crystal you protect: bobbing, glowing and sparkling
     const glow = this.add.image(cx, cy - 110, "glow").setTint(this.land.crystal).setScale(2.4).setAlpha(0.5).setDepth(cy - 1);
@@ -3290,10 +3234,6 @@ export class BattleScene extends Phaser.Scene {
       const color = p.kind === "dice" ? TIER_INFO[p.tier!].color : p.kind === "orb" ? 0xff9a2a : p.kind === "airdrop" ? 0xffffff : p.kind === "chest" ? 0xffe066 : 0xd8d8d8;
       const r = p.kind === "airdrop" || p.kind === "chest" || p.kind === "orb" ? 5 : 3.5;
       g.fillStyle(color, 1).fillRect(mx + p.x * s - r, my + p.y * s - r, r * 2, r * 2);
-    }
-    for (const b of this.buildings) {
-      g.fillStyle(b.kind === "battle" ? 0xffb03a : 0xc080ff, 1).fillRect(mx + b.x * s - 7, my + (b.y - 100) * s - 7, 14, 14);
-      g.lineStyle(2, INK_N, 1).strokeRect(mx + b.x * s - 7, my + (b.y - 100) * s - 7, 14, 14);
     }
     for (const sl of this.seals) {
       if (sl.done) continue;

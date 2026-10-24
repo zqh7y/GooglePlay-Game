@@ -18,7 +18,7 @@ npm run build    # production build into dist/
 Dev pages (with `npm run dev`): `/dev/petsheet.html` shows all 100 pets (`?frame=1` / `2` for the walk
 frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, plant, rock and crystal,
 `/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses,
-`/dev/places.html` the seals and the lobby buildings.
+`/dev/places.html` the boss seals.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run (and tries the Boss Rush after each run) with the real numbers and prints how many
@@ -130,13 +130,13 @@ hours (and failed runs) a steady player needs per stage.
   your luck. Tapping DPS or Hero opens **My Hero**: your character up close, total damage per second
   split between the hero and each pet, health, speed and crits.
 - **Free roam**: outside a fight the lobby is a field you can walk around with the joystick (the minimap is
-  top right). A die turns up somewhere every 30 s (up to 8 lying around); walk over them to pick them up.
+  top right). Six dice are lying around when you get there, and another turns up every 15 s (up to 15 at
+  once); walk over them to pick them up.
   **AFK** puts your hero on autopilot: it walks to the nearest die by itself and strolls around when there
   are none.
-- **Two buildings** stand by the crystal: the stone **arena** (BATTLE) and the purple **boss tower** (BOSS
-  RUSH). Walk up to one and a card shows that fight's info: stage, land, boss, mutations, best and rewards.
-  The BATTLE and BOSS RUSH buttons stay at the bottom; pressing one first asks **"Start?"** with the same
-  info, then your hero walks into that building (with the pets) and the fight starts.
+- **Starting a fight**: BATTLE and BOSS RUSH first ask **"Start?"** with that fight's info (stage, land,
+  boss, mutations, best and rewards). START: your hero and pets hop in a burst of sparkles, the screen
+  flashes, and the fight begins.
 - **Upgrades**:
   - One chip per path at the top shows what it is for and how much you own. Tap a chip to jump there.
   - A legend explains the states: owned, can buy, need money, locked.
@@ -317,7 +317,7 @@ hours (and failed runs) a steady player needs per stage.
 | `src/art/ground.ts` | Paints each land's seamless floor tile, ground patches, the stone circle and the minimap |
 | `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups |
 | `src/art/skills.ts` | The level-up skill icons |
-| `src/art/places.ts` | The boss seals and the two lobby buildings |
+| `src/art/places.ts` | The boss seals |
 | `src/art/gadgets.ts` | The gadgets (icons and the things they throw), the glue puddle, popcorn kernel and black hole |
 | `src/art/mutations.ts` | The mutation badges over monsters |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |

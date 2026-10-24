@@ -37,7 +37,7 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
-import { BattleMode, BattleScene, BuildingKind, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
+import { BattleMode, BattleScene, FightKind, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -82,8 +82,6 @@ export class UIScene extends Phaser.Scene implements Host {
   private lobbyBest!: Phaser.GameObjects.Text;
   /** which monster mutations this stage has */
   private lobbyMuts!: Phaser.GameObjects.Text;
-  /** what the building you walked up to is for */
-  private bldCard!: Phaser.GameObjects.Container;
   private afkRing!: Phaser.GameObjects.Arc;
   private afkLabel!: Phaser.GameObjects.Text;
   private overlay!: Phaser.GameObjects.Graphics;
@@ -171,7 +169,6 @@ export class UIScene extends Phaser.Scene implements Host {
       ["boss-warning", this.bossWarning],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
-      ["building-near", this.showBuilding],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -255,7 +252,6 @@ export class UIScene extends Phaser.Scene implements Host {
     this.mini.setVisible(true);
     this.mini.setPosition(...this.miniSpot());
     this.overlay.clear();
-    if (!lobby) this.showBuilding(null);
     if (lobby) {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
       this.lobbyLand.setText(regionForStage(save.stage).name);
@@ -561,8 +557,6 @@ export class UIScene extends Phaser.Scene implements Host {
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
     this.afkLabel = afk.list[2] as Phaser.GameObjects.Text;
     this.refreshAfk();
-    this.bldCard = this.add.container(W / 2, this.L.navTop - 560).setVisible(false);
-    this.lobby.add(this.bldCard);
 
     // ── the fight: clock, level, crystal, gun, pause and stats
     this.run = this.add.container(0, 0).setVisible(false);
@@ -1010,8 +1004,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.afkRing.setFillStyle(save.afk ? 0x2f6f3a : 0x3a2516, 0.7).setStrokeStyle(4, save.afk ? 0x8af06a : 0xffe6b8, 0.85);
   }
 
-  /** What the arena and the boss tower are for: shown when you walk up to them and before you start. */
-  private eventInfo(kind: BuildingKind): { title: string; sub: string; tex: string; lines: string[]; color: BtnColor; css: string } {
+  /** What a fight is about, for the "Start?" popup. */
+  private eventInfo(kind: FightKind): { title: string; sub: string; tex: string; lines: string[]; color: BtnColor; css: string } {
     const def = bossForStage(save.stage);
     if (kind === "battle") {
       const muts = mutationsAt(save.stage);
@@ -1036,35 +1030,8 @@ export class UIScene extends Phaser.Scene implements Host {
     };
   }
 
-  /** The card over the lobby when you walk up to a building. */
-  private showBuilding(kind: BuildingKind | null): void {
-    const c = this.bldCard;
-    this.tweens.killTweensOf(c);
-    if (!kind || battle.mode !== "lobby") {
-      if (c.visible) this.tweens.add({ targets: c, scale: 0.7, alpha: 0, duration: 140, onComplete: () => c.setVisible(false) });
-      return;
-    }
-    const info = this.eventInfo(kind);
-    const w = 660;
-    const h = 330;
-    c.removeAll(true);
-    const face = this.add.image(-w / 2 + 92, -14, info.tex);
-    face.setScale(140 / Math.max(face.width, face.height));
-    c.add([
-      this.add.image(0, 0, panelTexture(this, "glass", w, h)),
-      this.add.image(-w / 2 + 92, -14, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(0.8).setAlpha(0.6), face,
-      text(this, -w / 2 + 184, -h / 2 + 42, info.title, 46, info.css).setOrigin(0, 0.5),
-      fitText(text(this, -w / 2 + 184, -h / 2 + 90, info.sub, 28).setOrigin(0, 0.5), w - 210),
-    ]);
-    info.lines.forEach((l, i) => c.add(fitText(text(this, -w / 2 + 184, -h / 2 + 138 + i * 38, l, 23, "#fff3dc").setOrigin(0, 0.5), w - 210)));
-    c.add(text(this, 0, h / 2 - 26, `Press ${info.title} below to start`, 24, "#b6f59a"));
-    c.setVisible(true).setScale(0.7).setAlpha(0);
-    this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
-    sfx.click();
-  }
-
-  /** Are you sure? The fight's info, then START walks your hero into its building. */
-  private confirmStart(kind: BuildingKind): void {
+  /** Are you sure? The fight's info, then START plays the start animation and the fight begins. */
+  private confirmStart(kind: FightKind): void {
     if (battle.mode !== "lobby" || this.openModal) return;
     const info = this.eventInfo(kind);
     const h = 920;

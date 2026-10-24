@@ -8,7 +8,7 @@ const made = {};
 const scene = { textures: { exists: (k) => !!made[k], createCanvas: (k, w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; made[k] = c; return { getContext: () => c.getContext("2d"), refresh() {} }; } } };
 makePlaceTextures(scene);
 const g = document.getElementById("g");
-for (const [k, label] of [["bld_battle", "Battle building"], ["bld_rush", "Boss Rush building"], ["seal", "Seal (open)"], ["seal_on", "Seal (closed)"]]) {
+for (const [k, label] of [["seal", "Seal (open)"], ["seal_on", "Seal (closed)"]]) {
   const d = document.createElement("div"); d.className = "c"; d.append(made[k], document.createElement("br"), label); g.append(d);
 }
 </script></body></html>
