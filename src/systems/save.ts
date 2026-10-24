@@ -76,6 +76,9 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** Golden Tickets (very rare, from events) for the Event Shop */
+  tickets: number;
+  eventShop: EventShopState;
   /** the first-time guide: which step you are on (-1 = done or skipped) */
   tutorial: number;
   /** the story intro was shown */
@@ -99,6 +102,14 @@ export interface FishingState {
   caught: Record<string, number>;
   /** the fishing event: which round, catches in this round, rewards of this round claimed */
   event: { round: number; points: number; claimed: number };
+}
+
+/** The Event Shop: what you bought in this rotation of offers and this week's special. */
+export interface EventShopState {
+  slot: number;
+  bought: string[];
+  week: number;
+  special: boolean;
 }
 
 export const freshFishing = (): FishingState => ({ lv: {}, shells: 0, nextAt: 0, catches: 0, superCount: 0, caught: {}, event: { round: 1, points: 0, claimed: 0 } });
@@ -152,6 +163,8 @@ function fresh(): SaveData {
     afk: false,
     bossRushBest: 0,
     fishing: freshFishing(),
+    tickets: 0,
+    eventShop: { slot: -1, bought: [], week: -1, special: false },
     online: { name: "", named: false },
     tutorial: 0,
     introSeen: false,

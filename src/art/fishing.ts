@@ -660,7 +660,73 @@ function leapingFish(c: Ctx): void {
   c.restore();
 }
 
+/** A Golden Ticket: notched gold card, perforation, a star, ADMIT ONE and a shine. */
+function goldenTicket(c: Ctx): void {
+  const w = 150;
+  const h = 96;
+  const shape = () => {
+    c.beginPath();
+    c.moveTo(14, 8);
+    c.lineTo(w - 14, 8);
+    c.arc(w - 8, h / 2, 14, -Math.PI / 2, Math.PI / 2, true);
+    c.lineTo(w - 14, h - 8);
+    c.lineTo(14, h - 8);
+    c.arc(8, h / 2, 14, Math.PI / 2, -Math.PI / 2, true);
+    c.closePath();
+  };
+  c.save();
+  c.translate(5, 0);
+  shape();
+  fill(c, linear(c, 0, 8, 0, h - 8, [[0, "#fff6b0"], [0.45, "#ffd23f"], [1, "#e8961a"]]));
+  outline(c, 6);
+  c.save();
+  shape();
+  c.clip();
+  c.fillStyle = "rgba(255,255,255,0.45)";
+  c.beginPath();
+  c.moveTo(20, 8);
+  c.lineTo(62, 8);
+  c.lineTo(30, h - 8);
+  c.lineTo(-10, h - 8);
+  c.fill();
+  c.restore();
+  c.strokeStyle = "rgba(140,80,10,0.7)";
+  c.lineWidth = 3;
+  c.setLineDash([6, 5]);
+  c.beginPath();
+  c.moveTo(42, 16);
+  c.lineTo(42, h - 16);
+  c.stroke();
+  c.setLineDash([]);
+  c.fillStyle = "#e85a2a";
+  starPath(c, 24, h / 2, 11, 0.45);
+  c.fill();
+  c.fillStyle = "#8a4a0a";
+  c.font = "bold 19px sans-serif";
+  c.textAlign = "center";
+  c.fillText("GOLDEN", 90, h / 2 - 4);
+  c.font = "bold 15px sans-serif";
+  c.fillText("TICKET", 92, h / 2 + 18);
+  c.restore();
+  twinkle(c, w - 6, 14, 10);
+}
+
+/** A lucky egg: golden, with coloured spots and a sparkle. */
+function luckyEgg(c: Ctx): void {
+  const t = T(c, 6);
+  t.part(() => t.E(60, 70, 44, 54), 0xffd86a, () => {
+    for (const [x, y, r, col] of [[44, 52, 9, "#ff7ab8"], [74, 40, 7, "#5ac8ff"], [78, 80, 10, "#8af06a"], [48, 92, 7, "#b36aff"], [62, 66, 5, "#ff9a3a"]] as [number, number, number, string][]) {
+      t.paint(col, () => t.C(x, y, r));
+    }
+    t.paint("rgba(255,255,255,0.5)", () => t.E(44, 40, 10, 16, -0.4));
+  });
+  twinkle(c, 100, 22, 12);
+  twinkle(c, 18, 40, 8);
+}
+
 export function makeEventTextures(scene: Phaser.Scene): void {
+  canvasTexture(scene, "icon_ticket", 160, 100, goldenTicket);
+  canvasTexture(scene, "icon_egg", 120, 130, luckyEgg);
   canvasTexture(scene, "event_card", 240, 270, (c) => eventCard(c, 240, 270));
   canvasTexture(scene, "event_ribbon", 220, 64, (c) => eventRibbon(c, 220, 64));
   canvasTexture(scene, "event_fish", 120, 80, leapingFish);

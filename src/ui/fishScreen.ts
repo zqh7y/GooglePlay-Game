@@ -289,7 +289,7 @@ export class FishScreen extends Screen {
       if (done) parts.push(s.add.image(150, 40, "icon_check").setScale(0.5), label(s, 40, 40, "Claimed", 24, "#3f9a4f"));
       else if (open) parts.push(label(s, 60, 40, "READY!", 30, "#e8434f"));
       else parts.push(label(s, 60, 40, `${fmt(eventGoal(e.round, k))} catches`, 24, "#9a7a5a"));
-      if (big) parts.push(text(s, 60, 6, "BIG PRIZE", 22, "#ff8a2a"));
+      if (big) parts.push(text(s, 60, 6, "BIG PRIZE  •  1 in 5: +GOLDEN TICKET", 18, "#ff8a2a"));
       m.body.add(s.add.container(x, y, parts));
     }
     m.body.add(button(s, 0, h / 2 - 100, 460, 110, ready ? "green" : "grey", ready ? "CLAIM" : "OK", () => {
@@ -309,7 +309,11 @@ export class FishScreen extends Screen {
     const s = this.scene;
     const n = got.length;
     const rowH = 130;
-    const h = 330 + n * rowH;
+    const newRound = save.fishing.event.claimed === 0;
+    const won = got.some((r) => r.ticket);
+    // notes under the rewards: a new round, and a Golden Ticket in the big prize
+    const notes = [newRound ? [`Round ${save.fishing.event.round} starts: bigger rewards!`, "#3f9a4f"] : null, won ? ["...and a GOLDEN TICKET was inside!", "#e8434f"] : null].filter(Boolean) as string[][];
+    const h = 330 + n * rowH + notes.length * 50;
     const m = this.host.showModal(modal(s, 820, h, "EVENT REWARDS!", "orange"));
     got.forEach((r, i) => {
       const y = -h / 2 + 170 + i * rowH;
@@ -322,8 +326,10 @@ export class FishScreen extends Screen {
       s.tweens.add({ targets: row, alpha: 1, duration: 200, delay: 150 + i * 160 });
       s.tweens.add({ targets: icon, scale: { from: 0, to: icon.scale }, duration: 360, delay: 150 + i * 160, ease: "Back.out" });
     });
-    if (save.fishing.event.claimed === 0) m.body.add(text(s, 0, h / 2 - 190, `Round ${save.fishing.event.round} starts: bigger rewards!`, 30, "#3f9a4f"));
+    notes.forEach(([str, col], i) => m.body.add(text(s, 0, -h / 2 + 130 + n * rowH + i * 50, str, 30, col)));
     m.body.add(button(s, 0, h / 2 - 90, 360, 110, "green", "GREAT!", () => m.close(), { size: 40 }));
+    // the whole screen celebrates the ticket once the rewards are out
+    if (won) s.time.delayedCall(400 + n * 160, () => this.host.ticketShow("It was inside the event's big prize!"));
     this.refreshEvent();
   }
 

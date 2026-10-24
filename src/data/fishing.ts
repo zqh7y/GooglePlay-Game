@@ -202,6 +202,8 @@ export interface EventReward {
   tier?: Tier;
   gems?: number;
   boost?: BoostId;
+  /** the big prize came with a Golden Ticket */
+  ticket?: boolean;
 }
 
 /** Catches each of a round's rewards needs, counted from the start of the round. */
@@ -232,3 +234,15 @@ export function eventReward(round: number, k: number, stage: number): EventRewar
     default: return { kind: "grand", amount: 1, tier: up, gems: 5 + Math.min(round, 10) };
   }
 }
+
+// ───────────────────────── Golden Tickets ─────────────────────────
+
+/**
+ * Golden Tickets are the rarest thing in the game and come only from events. They buy the
+ * limited-time offers of the Event Shop. Every catch has a tiny chance to hook one (a little better
+ * with Lucky Bait, x3 on a SUPER catch), and each event round's big prize has a 1 in 5 chance of one.
+ * A whole playthrough finds about ten.
+ */
+export const TICKET_BASE = 1 / 20000;
+export const ticketChance = (luck: number, isSuper = false) => TICKET_BASE * luck ** 0.3 * (isSuper ? 3 : 1);
+export const TICKET_IN_BIG_PRIZE = 0.2;

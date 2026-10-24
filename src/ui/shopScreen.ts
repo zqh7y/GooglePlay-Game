@@ -1,12 +1,17 @@
 import Phaser from "phaser";
 import { INK_N, canvasTexture, darken, rgba } from "../art/draw";
+import { makeEventTextures } from "../art/fishing";
 import { makeGadgetTextures } from "../art/gadgets";
+import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { BtnColor, btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { BOOSTS } from "../data/boosts";
-import { DICE_LUCK, TIER_INFO, Tier, rollDiceTier } from "../data/tiers";
+import { FISH_UPGRADES, upgradeCost } from "../data/fishing";
+import { ITEMS, ItemDef, PET_LIST } from "../data/items";
+import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, rollDiceTier, tierIndex } from "../data/tiers";
+import { fishLv } from "../systems/fishing";
 import { dailyDay } from "../systems/goals";
-import { persist, save } from "../systems/save";
+import { addPet, persist, save } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { POTION_GEMS, potionMinutes, potionMult } from "../systems/stats";
 import { fmt } from "./format";
@@ -20,6 +25,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const income = (minutes: number) => Math.max(1000, save.cashPerSec * 60 * minutes);
 const day = () => Math.floor(Date.now() / DAY_MS);
+/** "2d 5h" for long waits. */
+const days = (ms: number) => {
+  const h = Math.max(0, Math.floor(ms / 3600000));
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : clock(ms);
+};
 const clock = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
   const h = Math.floor(s / 3600);
@@ -96,6 +106,117 @@ const DEALS: Deal[] = [
   { title: "TREASURE TRIO", desc: "3 Silver Chests in one", icons: ["chest_silver", "chest_silver", "chest_silver"], was: 75, gems: 35, rewards: () => [0, 1, 2].flatMap(() => CHESTS[1].rewards()) },
 ];
 
+// ───────────────────────── the Event Shop ─────────────────────────
+
+/** Three offers that change every 8 hours, and a legendary special every week. */
+const ROTATION_MS = 8 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const slotNow = () => Math.floor(Date.now() / ROTATION_MS);
+const weekNow = () => Math.floor(Date.now() / WEEK_MS);
+
+/** A small seeded random, so every player sees the same offers at the same time. */
+function seeded(n: number): () => number {
+  let a = (n * 2654435761) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Your best pet class so far (0 = A ... 7 = uSSS). */
+const bestClass = () => Math.max(0, ...Object.keys(save.pets).filter((id) => ITEMS[id]).map((id) => tierIndex(ITEMS[id].cls)));
+
+/** A pet from the classes lo..hi; within a class the rarer ones come out a little less often. */
+function eggPet(lo: number, hi: number): ItemDef {
+  const pool = PET_LIST.filter((p) => tierIndex(p.cls) >= lo && tierIndex(p.cls) <= hi);
+  const w = pool.map((p) => 1 / p.oneIn ** 0.12);
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) {
+    r -= w[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
+}
+
+interface Offer {
+  id: string;
+  name: string;
+  icon: string;
+  /** Golden Tickets */
+  price: number;
+  desc: () => string;
+  /** what it gives (worked out when bought) */
+  rewards: (scene: Phaser.Scene) => Reward[];
+}
+
+/** An egg hatches one pet from `from` to `to` classes above your best. */
+const eggReward = (scene: Phaser.Scene, from: number, to: number): Reward[] => {
+  const b = bestClass();
+  const pet = eggPet(Math.min(7, b + from), Math.min(7, b + to));
+  return [{
+    icon: petTexture(scene, pet.id), amount: pet.name,
+    give: () => {
+      if (!save.discovered.includes(pet.id)) {
+        save.discovered.push(pet.id);
+        save.newPets.push(pet.id);
+      }
+      addPet(pet.id);
+      save.bestRoll = Math.max(save.bestRoll, pet.oneIn);
+    },
+  }];
+};
+const className = (k: number) => DICE_TIERS[Math.min(7, k)];
+
+const OFFERS: Offer[] = [
+  { id: "egg", name: "Lucky Egg", icon: "icon_egg", price: 3, desc: () => `A pet of class ${className(bestClass())} or ${className(bestClass() + 1)}`, rewards: (sc) => eggReward(sc, 0, 1) },
+  { id: "sss", name: "2 SSS Dice", icon: "die_SSS", price: 3, desc: () => `x${fmt(DICE_LUCK.SSS)} luck per roll`, rewards: () => [diceReward("SSS", 2)] },
+  { id: "s", name: "3 S Dice", icon: "die_S", price: 2, desc: () => `x${fmt(DICE_LUCK.S)} luck per roll`, rewards: () => [diceReward("S", 3)] },
+  { id: "potion", name: "Mega Potion", icon: "icon_potion", price: 1, desc: () => `x${potionMult()} luck for 60 min`, rewards: () => [potionReward(60)] },
+  { id: "boosts", name: "Boost Crate", icon: "skill_orb", price: 1, desc: () => "3 of every Battle Boost", rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x3", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 3) })) },
+  { id: "gems", name: "Gem Hoard", icon: "icon_gem", price: 2, desc: () => "150 gems", rewards: () => [gemReward(150)] },
+  { id: "lucky", name: "50 Lucky Rolls", icon: "icon_clover", price: 1, desc: () => "Your next 50 rolls are Lucky", rewards: () => [{ icon: "icon_clover", amount: "x50", give: () => (save.luckyBoost += 50) }] },
+  { id: "vault", name: "Golden Vault", icon: "chest_gold", price: 1, desc: () => `${fmt(income(180))} money (3 hours)`, rewards: () => [cashReward(income(180))] },
+  {
+    id: "shells", name: "Pearl Treasure", icon: "fish_shell", price: 2, desc: () => `${fmt(shellPrize())} shells for fishing upgrades`,
+    rewards: () => [{ icon: "fish_shell", amount: fmt(shellPrize()), give: () => (save.fishing.shells += shellPrize()) }],
+  },
+];
+
+/** Enough shells for the next level of every fishing upgrade. */
+const shellPrize = () => Math.max(500, FISH_UPGRADES.filter((u) => fishLv(u.id) < u.max).reduce((a, u) => a + upgradeCost(u, fishLv(u.id)), 0));
+
+/** The weekly specials take turns. */
+const SPECIALS: Offer[] = [
+  { id: "usss", name: "uSSS Die", icon: "die_uSSS", price: 4, desc: () => `The rarest die: x${fmt(DICE_LUCK.uSSS)} luck on one roll`, rewards: () => [diceReward("uSSS", 1)] },
+  { id: "mythic", name: "Mythic Egg", icon: "icon_egg", price: 5, desc: () => `A pet of class ${className(bestClass() + 1)} or ${className(bestClass() + 2)}`, rewards: (sc) => eggReward(sc, 1, 2) },
+];
+
+/** This rotation's three offers. */
+function offersNow(): Offer[] {
+  const rnd = seeded(slotNow());
+  const pool = [...OFFERS];
+  const out: Offer[] = [];
+  while (out.length < 3) out.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+  return out;
+}
+const specialNow = () => SPECIALS[weekNow() % SPECIALS.length];
+
+/** What you already bought in this rotation and this week. */
+function shopState() {
+  const e = save.eventShop;
+  if (e.slot !== slotNow()) {
+    e.slot = slotNow();
+    e.bought = [];
+  }
+  if (e.week !== weekNow()) {
+    e.week = weekNow();
+    e.special = false;
+  }
+  return e;
+}
+
 /** The lucky wheel: 8 prizes, rarer ones less likely. */
 const WHEEL: { icon: string; label: string; color: number; weight: number; jackpot?: boolean; rewards: () => Reward[] }[] = [
   { icon: "die_A", label: "5", color: 0xff7ab8, weight: 20, rewards: () => [diceReward("A", 5)] },
@@ -169,12 +290,15 @@ export class ShopScreen extends Screen {
   private wheel!: Phaser.GameObjects.Container;
   private spinning = false;
   private overlay: Phaser.GameObjects.Container | null = null;
+  /** the Event Shop's offers change with the rotation: the shop is rebuilt then */
+  private builtSlot = -1;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, "shop");
     const s = scene;
     makePickupTextures(s);
     makeGadgetTextures(s);
+    makeEventTextures(s);
     const W = s.scale.width;
     this.top = host.L.headerBottom + 10;
     this.bottom = host.L.navTop - 10;
@@ -298,6 +422,7 @@ export class ShopScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     let y = this.top + 20;
+    y = this.buildEventShop(y);
 
     // ── Deal of the Day
     const deal = DEALS[day() % DEALS.length];
@@ -505,6 +630,105 @@ export class ShopScreen extends Screen {
     this.max = Math.max(0, y - this.bottom);
   }
 
+  // ───────────────────────── the Event Shop ─────────────────────────
+
+  /** A price in Golden Tickets; "SOLD" once bought in this rotation. */
+  private ticketPrice(price: number, sold: () => boolean) {
+    return () => {
+      const done = sold();
+      const ok = !done && save.tickets >= price;
+      return { label: done ? "SOLD" : `${price}`, icon: done ? undefined : "icon_ticket", color: (ok ? "gold" : "grey") as BtnColor, ok };
+    };
+  }
+
+  private buyOffer(o: Offer): boolean {
+    if (save.tickets < o.price) {
+      this.host.toast(`You need ${o.price} Golden Tickets. They are rare: find them in events!`, "#ffe066");
+      return false;
+    }
+    save.tickets -= o.price;
+    const r = o.rewards(this.scene);
+    r.forEach((x) => x.give());
+    this.rewardShow(o.name.toUpperCase(), null, r);
+    if (o.icon === "icon_egg") this.host.petsChanged();
+    return true;
+  }
+
+  /**
+   * The EVENT SHOP, first in the shop: limited-time offers you can only buy with Golden Tickets,
+   * the rarest thing in the game. A legendary special for the week, three offers that change every
+   * 8 hours, one of each per player.
+   */
+  private buildEventShop(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    this.builtSlot = slotNow();
+    const state = shopState();
+    let y = y0;
+    // the header: sparkling gold, with your tickets
+    const head = s.add.image(W / 2, y + 50, ribbonTexture(s, "gold", 700, 116));
+    const title = text(s, W / 2, y + 36, "EVENT SHOP", 52, "#fff6c8");
+    this.list.add([head, title]);
+    y += 124;
+    const tickets = text(s, 0, 0, "", 40, "#ffe066").setOrigin(0, 0.5);
+    const pill = s.add.container(W / 2, y + 20, [s.add.image(0, 0, panelTexture(s, "glass", 560, 84)), s.add.image(-200, 0, "icon_ticket").setScale(0.62), tickets]);
+    this.refreshers.push(() => {
+      tickets.setText(`${save.tickets} Golden Ticket${save.tickets === 1 ? "" : "s"}`);
+      fitText(tickets, 360);
+      tickets.setX(-140);
+    });
+    const note = label(s, W / 2, y + 96, "So rare you're lucky to find one! They come only from events.", 26, "#4a2f1d", 900);
+    this.list.add([pill, note]);
+    y += 140;
+
+    // the weekly legendary special: a wide tile in deep purple and gold
+    const sp = specialNow();
+    const sh = 330;
+    const sy = y + sh / 2;
+    const rays = s.add.image(220, sy, "rays").setTint(0xffd23f).setAlpha(0.45).setScale(0.7);
+    s.tweens.add({ targets: rays, angle: 360, duration: 10000, repeat: -1 });
+    const glow = s.add.image(220, sy, "glow").setTint(0xff9aff).setScale(1.4).setAlpha(0.6);
+    s.tweens.add({ targets: glow, alpha: 0.25, duration: 800, yoyo: true, repeat: -1 });
+    const icon = s.add.image(220, sy, sp.icon);
+    icon.setScale(170 / Math.max(icon.width, icon.height));
+    s.tweens.add({ targets: icon, y: sy - 12, angle: { from: -5, to: 5 }, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const timer = text(s, 680, sy + 40, "", 26, "#ffe6b8");
+    this.ticking.push(() => timer.setText(state.special && save.eventShop.week === weekNow() ? "Yours! A new special next week" : `Ends in ${days((weekNow() + 1) * WEEK_MS - Date.now())}`));
+    const spBtn = this.priceButton(680, sy + 110, 320, 100, this.ticketPrice(sp.price, () => shopState().special), () => {
+      if (!this.buyOffer(sp)) return false;
+      shopState().special = true;
+      return true;
+    });
+    const tag = s.add.container(W - 120, y + 34, [s.add.star(0, 0, 10, 44, 56, 0xff4fd8).setStrokeStyle(5, INK_N), text(s, 0, -2, "WEEK", 24)]).setAngle(10);
+    s.tweens.add({ targets: tag, scale: 1.1, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.list.add([
+      s.add.image(W / 2, sy, btnTexture(s, "purple", 1000, sh)), rays, glow, icon,
+      text(s, 680, sy - 112, "LEGENDARY SPECIAL", 28, "#ff9aff"),
+      fitText(text(s, 680, sy - 64, sp.name, 54, "#ffe066"), 560),
+      fitText(label(s, 680, sy - 10, sp.desc(), 28, "#ffffff", 560), 560),
+      timer, spBtn, tag,
+    ]);
+    y += sh + 30;
+
+    // three offers for 8 hours
+    const offers = offersNow();
+    const oh = 400;
+    const otimer = text(s, W / 2, y + 16, "", 28, "#4a2f1d");
+    this.ticking.push(() => otimer.setText(`New offers in ${clock((slotNow() + 1) * ROTATION_MS - Date.now())}`));
+    this.list.add(otimer);
+    y += 44;
+    offers.forEach((o, i) => {
+      const x = W / 2 + (i - 1) * 345;
+      const btn = this.priceButton(0, 0, 270, 88, this.ticketPrice(o.price, () => shopState().bought.includes(o.id)), () => {
+        if (!this.buyOffer(o)) return false;
+        shopState().bought.push(o.id);
+        return true;
+      });
+      this.tile(x, y + oh / 2, 325, oh, "gold", o.icon, 130, o.name, o.desc, btn);
+    });
+    return y + oh + 50;
+  }
+
   // ───────────────────────── the wheel ─────────────────────────
 
   private spin(): void {
@@ -616,6 +840,15 @@ export class ShopScreen extends Screen {
   update(time: number): void {
     if (!this.visible || time < this.nextTick) return;
     this.nextTick = time + 250;
+    // new Event Shop offers: build the shop again (keeping where you scrolled to)
+    if (slotNow() !== this.builtSlot && !this.overlay && !this.spinning) {
+      const y = this.list.y;
+      this.list.removeAll(true);
+      this.refreshers = [];
+      this.ticking = [];
+      this.build();
+      this.list.y = Phaser.Math.Clamp(y, -this.max, 0);
+    }
     this.ticking.forEach((f) => f());
     // countdown buttons (gift, wheel) tick too
     this.refreshers.forEach((f) => f());

@@ -1851,6 +1851,7 @@ export class UIScene extends Phaser.Scene implements Host {
     if (caught.length) {
       persist();
       this.game.events.emit("fish-caught", caught);
+      if (caught.some((c) => c.ticket)) this.ticketShow("Your fishing line hooked it!");
       // something big while you are elsewhere: a little note
       const best = caught.reduce((a, c) => (PRIZES[c.prize].row > PRIZES[a.prize].row ? c : a));
       if (this.tab !== "fish" && PRIZES[best.prize].row >= 3) this.toast(`Fishing: caught a ${PRIZES[best.prize].name}!`, rgba(ROW_COLORS[PRIZES[best.prize].row]));
@@ -1901,6 +1902,51 @@ export class UIScene extends Phaser.Scene implements Host {
       this.setTab("fish");
     }, { size: 36 }));
     sfx.gift();
+    const won = r.catches.filter((c) => c.ticket).length;
+    if (won) this.time.delayedCall(500, () => this.ticketShow(`Your line hooked ${won > 1 ? `${won} of them` : "one"} while you were away!`));
+  }
+
+  /**
+   * A Golden Ticket! The rarest thing in the game gets the whole screen: the ticket spins in over
+   * golden rays, the screen flashes, and it says where to spend it. In a fight, just a note.
+   */
+  ticketShow(how: string): void {
+    sfx.superRoll();
+    buzz(300);
+    if (battle.mode === "run") {
+      this.toast("A GOLDEN TICKET! (see the Shop's Event Shop)", "#ffe066");
+      return;
+    }
+    const { W, H } = this;
+    const dim = this.add.rectangle(0, 0, W, H, 0x120a20, 0.88).setOrigin(0).setInteractive();
+    const rays = this.add.image(W / 2, H / 2 - 80, "rays").setScale(1.9).setTint(0xffd23f).setAlpha(0);
+    const rays2 = this.add.image(W / 2, H / 2 - 80, "rays").setScale(1.3).setTint(0xff9aff).setAlpha(0);
+    const glow = this.add.image(W / 2, H / 2 - 80, "glow").setTint(0xffe066).setScale(0).setAlpha(0.9);
+    const ticket = this.add.image(W / 2, H / 2 - 80, "icon_ticket").setScale(0).setAngle(-540);
+    const head = text(this, W / 2, H / 2 - 420, "GOLDEN TICKET!", 96, "#ffe066").setScale(0);
+    const sub = label(this, W / 2, H / 2 + 170, `${how}\nSo rare, you're lucky to ever find one.\nSpend it in the Shop's EVENT SHOP.`, 36, "#ffffff", 900).setAlpha(0);
+    const tap = text(this, W / 2, H / 2 + 400, "TAP TO CONTINUE", 40).setAlpha(0);
+    const root = this.add.container(0, 0, [dim, rays, rays2, glow, ticket, head, sub, tap]).setDepth(6600);
+    this.cameras.main.flash(400, 255, 230, 140);
+    this.tweens.add({ targets: rays, alpha: 0.4, duration: 400 });
+    this.tweens.add({ targets: rays2, alpha: 0.2, duration: 400 });
+    this.tweens.add({ targets: rays, angle: 360, duration: 8000, repeat: -1 });
+    this.tweens.add({ targets: rays2, angle: -360, duration: 12000, repeat: -1 });
+    this.tweens.add({ targets: glow, scale: 3.4, duration: 600, ease: "Back.out" });
+    this.tweens.add({ targets: ticket, scale: 3.2, angle: 0, duration: 900, ease: "Back.out" });
+    this.tweens.add({ targets: ticket, y: H / 2 - 100, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 900 });
+    this.tweens.add({ targets: head, scale: 1, duration: 450, delay: 300, ease: "Back.out" });
+    this.tweens.add({ targets: [sub, tap], alpha: 1, duration: 400, delay: 900 });
+    this.time.delayedCall(250, () => sfx.fanfare());
+    this.time.delayedCall(900, () => {
+      for (let i = 0; i < 24; i++) {
+        const sp = this.add.image(W / 2, H / 2 - 80, "spark").setScale(0.6).setTint([0xffe066, 0xffffff, 0xff9aff][i % 3]);
+        root.add(sp);
+        const a = (i / 24) * Math.PI * 2;
+        this.tweens.add({ targets: sp, x: W / 2 + Math.cos(a) * 460, y: H / 2 - 80 + Math.sin(a) * 460, scale: 0, duration: 900, ease: "Quad.out", onComplete: () => sp.destroy() });
+      }
+      dim.once("pointerup", () => this.tweens.add({ targets: root, alpha: 0, duration: 250, onComplete: () => root.destroy() }));
+    });
   }
 
   /** "Welcome back" reward — the idle part of the game. */

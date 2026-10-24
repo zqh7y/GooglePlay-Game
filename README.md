@@ -8,7 +8,9 @@ legends around the clock. The game ends at **stage 100**.
 
 Built with **Phaser 3 + TypeScript + Vite** (the 3D loading screen and story intro use **three.js**), wrapped for Google Play with **Capacitor** (`android/`).
 Online features (leaderboards, world pet counts, optional Google Play sign-in) run on **Firebase**: see
-**[ONLINE.md](ONLINE.md)** for the setup. No API key is ever in the code or in git: a check refuses any
+**[ONLINE.md](ONLINE.md)** for the setup (`npm run online -- setup` does the whole Firebase side, `npm run
+android -- keystore / bundle` makes your upload key and the Play Store bundle, and GitHub Actions builds the
+Android app on every push). No API key is ever in the code or in git: a check refuses any
 commit that contains one (`npm run check-secrets`), and `npm run check-bundle` checks a build before you
 publish it.
 
@@ -119,6 +121,17 @@ hour of fishing brings.
 - **Lands**: five big open fields (you can walk everywhere), 20 stages each: Sunny Meadow (1-20), Golden
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
 - **The Shop**:
+  - **EVENT SHOP** (first in the shop): limited-time offers you can only buy with **Golden Tickets**, the
+    rarest thing in the game. Tickets come only from events: every fishing catch has a tiny chance to hook
+    one (about 1 in 20,000 at first, a bit better with Lucky Bait, x3 on a SUPER catch), and each event
+    round's big prize has a 1 in 5 chance of one. The simulator finds about a dozen in a whole game (the
+    first around hour 9). Finding one takes over the screen: **GOLDEN TICKET!** spinning in over golden rays.
+    - **Legendary special** of the week: a **uSSS Die** (4 tickets) or a **Mythic Egg** (5: a pet one or two
+      classes above your best), with a countdown.
+    - **Three offers** that change every 8 hours (everyone sees the same ones), one of each per player: Lucky
+      Egg (a pet of your best class or one better), 2 SSS Dice, 3 S Dice, Mega Potion (60 min), Boost Crate
+      (3 of every Battle Boost), Gem Hoard (150 gems), 50 Lucky Rolls, Golden Vault (3 hours of money) or
+      Pearl Treasure (shells for every next fishing upgrade). 1 to 3 tickets each.
   - **Deal of the Day**: a different bundle every day at about half price. It can be bought once and shows a
     countdown to midnight.
   - **Free**: a gift every 10 minutes (gems, dice and money) and the daily reward.
@@ -453,6 +466,9 @@ hour of fishing brings.
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
 | `src/online/online.ts` | Online play: guest / Google Play account, syncing your entry, leaderboards, pet owner counts |
+| `dev/online.mjs` | `npm run online -- setup / sha / games-id / status`: sets up your Firebase project from your computer |
+| `dev/android.mjs` | `npm run android -- keystore / sha / bundle / bump / github`: upload key, fingerprints, the Play Store bundle |
+| `.github/workflows/android.yml` | GitHub builds the Android app: a test APK on every push, the signed bundle once your secrets are added |
 | `src/online/backend.ts` | The Firebase calls (loaded only when online is set up) |
 | `src/online/config.ts` | Where the Firebase config comes from (never from the code: `.env.local` or Android's google-services.json) |
 | `src/ui/leaderboard.ts` | The leaderboard popup and the name box |

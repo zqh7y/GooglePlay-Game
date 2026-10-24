@@ -1,6 +1,6 @@
 import { BOOSTS } from "../data/boosts";
 import {
-  EVENT_REWARDS, EventReward, FIRST_CATCH_SHELLS, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours,
+  EVENT_REWARDS, EventReward, FIRST_CATCH_SHELLS, TICKET_IN_BIG_PRIZE, ticketChance, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours,
   deepMult, doubleChance, eventGoal, eventReward, fishLuck, goldMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
 } from "../data/fishing";
 import { questEvent } from "./goals";
@@ -27,6 +27,8 @@ export interface Catch {
   boost?: string;
   /** extra shells for the first catch of this prize ever */
   bonus?: number;
+  /** a Golden Ticket came up with it! */
+  ticket?: boolean;
 }
 
 export const fishLv = (id: FishUpId) => save.fishing.lv[id] ?? 0;
@@ -113,6 +115,11 @@ export function fishOnce(): Catch[] {
   const out = [land(rollPrize(luck, deep), isSuper, false)];
   if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, deep), isSuper, true));
   out.forEach(pay);
+  // once in a very long while, a Golden Ticket is on the hook too
+  if (Math.random() < ticketChance(currentLuck(), isSuper)) {
+    save.tickets++;
+    out[0].ticket = true;
+  }
   // every catch fills the event bar
   f.event.points += out.length;
   questEvent("fish", out.length);
@@ -206,6 +213,7 @@ export function payEventReward(r: EventReward): void {
     case "grand":
       save.dice[r.tier!] += r.amount;
       save.gems += r.gems ?? 0;
+      if (r.ticket) save.tickets++;
       break;
   }
 }
@@ -219,6 +227,8 @@ export function claimEvent(): EventReward[] {
   const out: EventReward[] = [];
   while (e.claimed < EVENT_REWARDS && e.points >= eventGoal(e.round, e.claimed)) {
     const r = eventReward(e.round, e.claimed, save.stage);
+    // the big prize might hold a Golden Ticket
+    if (r.kind === "grand" && Math.random() < TICKET_IN_BIG_PRIZE) r.ticket = true;
     payEventReward(r);
     out.push(r);
     e.claimed++;

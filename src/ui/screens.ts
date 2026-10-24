@@ -20,6 +20,8 @@ export interface Host {
   isFast(): boolean;
   setFast(on: boolean): void;
   setTab(tab: Tab): void;
+  /** the full-screen "GOLDEN TICKET!" moment */
+  ticketShow(how: string): void;
 }
 
 /** Soft patterned wallpaper for a screen: dice for rolling, paws for pets, coins for the shop. */

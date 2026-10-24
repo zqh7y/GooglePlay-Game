@@ -19,7 +19,10 @@ import {
   monsterHp, spawnGap,
 } from "../src/data/balance";
 import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, Tier, diceTierChances } from "../src/data/tiers";
-import { EVENT_REWARDS, FISH_UPGRADES, FishUpId, catchSecs, doubleChance, eventGoal, eventReward, expectedCatch, upgradeCost } from "../src/data/fishing";
+import {
+  EVENT_REWARDS, FISH_UPGRADES, FishUpId, TICKET_IN_BIG_PRIZE, catchSecs, doubleChance, eventGoal, eventReward, expectedCatch, fishLuck, superEvery, ticketChance,
+  upgradeCost,
+} from "../src/data/fishing";
 import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode, perAt, stepCost, stepsOf } from "../src/data/tree";
@@ -126,7 +129,7 @@ const fishDice = Object.fromEntries(DICE_TIERS.map((k) => [k, 0])) as Record<Tie
 let fishCash = 0;
 let earned = 0;
 // the fishing event: every catch counts; each reward is claimed as soon as it is reached
-const ev = { round: 1, points: 0, claimed: 0, dice: 0, gems: 0 };
+const ev = { round: 1, points: 0, claimed: 0, dice: 0, gems: 0, tickets: 0, ticketAt: [] as number[] };
 
 const report: string[] = [];
 const marks = new Set([2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100]);
@@ -173,6 +176,10 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
   if (!process.env.X_GEMS) gems += haul.gems * casts;
   if (!process.env.X_POT) potionLeft += haul.potionMin * 60 * casts;
   if (!process.env.NOEVENT) {
+    // Golden Tickets: a tiny chance on every cast (x3 on SUPER casts), and some big prizes
+    const every = superEvery(fish.super);
+    const before = Math.floor(ev.tickets);
+    ev.tickets += casts * (((every - 1) * ticketChance(fishLuck(fish.luck)) + ticketChance(fishLuck(fish.luck), true)) / every);
     ev.points += casts * (1 + doubleChance(fish.hook));
     while (ev.points >= eventGoal(ev.round, ev.claimed)) {
       const rw = eventReward(ev.round, ev.claimed, Math.min(stage, MAX_STAGE));
@@ -185,6 +192,7 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
         gems += g;
         ev.gems += g;
       }
+      if (rw.kind === "grand") ev.tickets += TICKET_IN_BIG_PRIZE;
       if (rw.kind === "shells" && !process.env.X_EVSHELLS) shells += rw.amount;
       if (rw.kind === "luckPotion" && !process.env.X_EVPOT) potionLeft += rw.amount * 60;
       if (++ev.claimed >= EVENT_REWARDS) {
@@ -193,6 +201,7 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
         ev.claimed = 0;
       }
     }
+    for (let k = before + 1; k <= Math.floor(ev.tickets); k++) ev.ticketAt.push(t / 3600);
   }
   for (;;) {
     const open = FISH_UPGRADES.filter((u) => fish[u.id] < u.max).sort((a, b) => upgradeCost(a, fish[a.id]) - upgradeCost(b, fish[b.id]))[0];
@@ -269,4 +278,5 @@ const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monste
 console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, ${rushed} stages cleared in the Boss Rush, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
 console.log(`forge levels bought at (h): ${forgeAt.map((h) => h.toFixed(1)).join(", ")}   gadget power by minute now (x shuriken): ${[0, 1, 2, 3, 4, 5].map((m) => gadgetAt(m).toFixed(1)).join(" ")}`);
 console.log(`fishing event: reached round ${ev.round}, gave ${Math.round(ev.dice)} dice and ${Math.round(ev.gems)} gems`);
+console.log(`Golden Tickets: ${ev.ticketAt.length}, found at (h): ${ev.ticketAt.map((h) => h.toFixed(0)).join(", ")}`);
 console.log(`fishing: levels ${JSON.stringify(fish)}, fishing paid ${(fishCash / (earned + fishCash) * 100).toFixed(0)}% of all money`);
