@@ -6,7 +6,11 @@ every stage is a **5 minute survival run** (Survivor.io style) on a big open fie
 protect the land's crystal. Meanwhile your hero's **fishing line** catches money, dice, gems, potions and
 legends around the clock. The game ends at **stage 100**.
 
-Built with **Phaser 3 + TypeScript + Vite**. Will be wrapped for Google Play with **Capacitor**.
+Built with **Phaser 3 + TypeScript + Vite**, wrapped for Google Play with **Capacitor** (`android/`).
+Online features (leaderboards, world pet counts, optional Google Play sign-in) run on **Firebase**: see
+**[ONLINE.md](ONLINE.md)** for the setup. No API key is ever in the code or in git: a check refuses any
+commit that contains one (`npm run check-secrets`), and `npm run check-bundle` checks a build before you
+publish it.
 
 ## Run it
 
@@ -349,6 +353,17 @@ hour of fishing brings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.
 - **Goals**: quests, a 7-day daily reward, +25% luck for every 10 pets in the Index, gems from bosses for luck potions.
+- **Online** (when set up, see ONLINE.md):
+  - **No sign-up or sign-in needed**: the game quietly makes a guest account. **Settings → GOOGLE PLAY**
+    optionally signs in with Google Play Games (the guest's entry and counted pets carry over).
+  - **Leaderboards** (the trophy "Ranks" button in the lobby): best stage, rarest pet, pets found. The top
+    players with medals for the top 3, your own row highlighted, and your rank if you are further down.
+    Change your name there or in Settings.
+  - **How many players own each pet**: on every pet's popup ("Players who have it"), and a note when you
+    roll a new S class pet or rarer ("Only 3 players in the world have Galaxy Fox!", or "You are the
+    FIRST...").
+  - Offline, or before setup, everything else works the same; the testing tools in Settings only show in
+    the offline version.
 
 ## Where things live
 
@@ -399,6 +414,12 @@ hour of fishing brings.
 | `src/art/mutations.ts` | The mutation badges over monsters |
 | `src/art/ui.ts` | Buttons, panels, cards, dice skins, icons |
 | `src/ui/widgets.ts` | Reusable UI pieces: text, buttons, pet cards, popups |
+| `src/online/online.ts` | Online play: guest / Google Play account, syncing your entry, leaderboards, pet owner counts |
+| `src/online/backend.ts` | The Firebase calls (loaded only when online is set up) |
+| `src/online/config.ts` | Where the Firebase config comes from (never from the code: `.env.local` or Android's google-services.json) |
+| `src/ui/leaderboard.ts` | The leaderboard popup and the name box |
+| `firestore.rules` | Who may read and write what online (tested by `dev/online/rules.test.mjs`) |
+| `capacitor.config.ts`, `android/` | The Android app (package name, Play Games sign-in) |
 
 All art is drawn with code on a canvas, so there are no image files yet.
 To use real artwork later, load images under the same texture keys.

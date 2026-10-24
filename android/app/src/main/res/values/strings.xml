@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dice Idle</string>
+    <string name="title_activity_main">Dice Idle</string>
+    <string name="package_name">com.diceidle.game</string>
+    <string name="custom_url_scheme">com.diceidle.game</string>
+    <!-- Your Play Games project ID from the Play Console (Play Games Services > Setup), a number.
+         Not a secret, but it is yours: see ONLINE.md. -->
+    <string name="game_services_project_id" translatable="false">0</string>
+</resources>
