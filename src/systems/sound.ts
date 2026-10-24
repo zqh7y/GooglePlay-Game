@@ -195,7 +195,7 @@ export const sfx = {
  * Little chiptune loops played by a look-ahead sequencer: calm for the menus, upbeat for
  * the fight and a faster, darker one for the boss. 16 steps per bar, 4 bars per loop.
  */
-export type Track = "calm" | "battle" | "boss";
+export type Track = "calm" | "battle" | "boss" | "story";
 
 interface Song {
   bpm: number;
@@ -227,6 +227,17 @@ const SONGS: Record<Track, Song> = {
       72, 0, 74, 72, 69, 0, 65, 67,
       67, 0, 72, 0, 76, 74, 72, 0,
       74, 0, 71, 0, 67, 69, 71, 74,
+    ],
+  },
+  story: {
+    // the opening story: slow and wistful in D minor, a soft drum on each bar, the melody every other loop
+    bpm: 76, chords: [[38, 50, 53, 57], [34, 50, 53, 58], [41, 53, 57, 60], [36, 52, 55, 60]], kick: [0], snare: [], hat: 0,
+    bass: [0, 8, 12], bassType: "triangle", arp: 2, arpType: "sine",
+    lead: [
+      74, 0, 0, 72, 69, 0, 0, 0,
+      70, 0, 69, 67, 65, 0, 0, 0,
+      72, 0, 0, 69, 72, 0, 77, 0,
+      76, 0, 0, 0, 72, 0, 0, 0,
     ],
   },
   boss: {

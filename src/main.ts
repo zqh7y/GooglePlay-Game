@@ -1,45 +1,44 @@
-import Phaser from "phaser";
 import { loadFonts } from "./fonts";
-import { BASE_H, GAME_W } from "./layout";
-import { BootScene } from "./scenes/Boot";
-import { BattleScene } from "./scenes/Battle";
-import { UIScene } from "./scenes/UI";
-import { persist } from "./systems/save";
 
 /**
- * The game is always 1080 wide. Taller phones get extra height (up to a limit); anything
- * wider than a phone shows the game as a centred column with borders on the sides.
+ * Start-up: the 3D loading screen shows while the game loads behind it. New players then see the
+ * story intro once. `?nointro` starts the game straight away (tests); `?intro` always shows the story.
  */
-const heightFor = () => Math.round(Phaser.Math.Clamp((GAME_W * window.innerHeight) / Math.max(1, window.innerWidth), BASE_H, 2400));
+const params = new URLSearchParams(location.search);
+const nextFrame = () => new Promise<void>((res) => requestAnimationFrame(() => res()));
 
-loadFonts().then(() => {
-  const game = new Phaser.Game({
-    type: Phaser.AUTO,
-    parent: "game",
-    backgroundColor: "#4a2f1d",
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_W, height: heightFor() },
-    input: { activePointers: 2 },
-    scene: [BootScene, BattleScene, UIScene],
+async function main(): Promise<void> {
+  await loadFonts();
+  const gameModule = import("./game");
+  if (params.has("nointro")) {
+    (await gameModule).startGame();
+    return;
+  }
+  const intro = await import("./intro/intro").then((m) => m.openIntro()).catch((e) => {
+    console.warn("Intro failed to start:", e);
+    return null;
   });
-  // handy for automated tests and debugging in the browser console
-  (window as unknown as { game: Phaser.Game }).game = game;
+  intro?.progress(0.3);
+  // let the loading screen draw before the game's start-up work takes over
+  await nextFrame();
+  await nextFrame();
+  const g = await gameModule;
+  intro?.progress(0.45);
+  const { game, ready } = g.startGame((f) => intro?.progress(f));
+  if (!intro) return;
+  await ready;
+  // the game waits, frozen, until the player taps in
+  game.loop.sleep();
+  intro.done();
+  await intro.waitTap();
+  if (!g.save.introSeen || params.has("intro")) {
+    await intro.story(g.STORY_PETS.map(g.petPicture));
+    g.save.introSeen = true;
+    g.persist();
+  }
+  g.music.play("calm");
+  game.loop.wake();
+  await intro.close();
+}
 
-  // Rebuild the layout when the screen shape changes noticeably (e.g. rotating a tablet).
-  let timer = 0;
-  window.addEventListener("resize", () => {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      const h = heightFor();
-      if (Math.abs(h - game.scale.height) < 40) return;
-      game.scale.setGameSize(GAME_W, h);
-      if (game.scene.isActive("Battle")) {
-        game.scene.getScene("Battle").scene.restart();
-        game.scene.getScene("UI").scene.restart();
-      }
-    }, 300);
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) persist();
-  });
-});
+void main();

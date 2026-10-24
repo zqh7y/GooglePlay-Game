@@ -6,7 +6,7 @@ every stage is a **5 minute survival run** (Survivor.io style) on a big open fie
 protect the land's crystal. Meanwhile your hero's **fishing line** catches money, dice, gems, potions and
 legends around the clock. The game ends at **stage 100**.
 
-Built with **Phaser 3 + TypeScript + Vite**, wrapped for Google Play with **Capacitor** (`android/`).
+Built with **Phaser 3 + TypeScript + Vite** (the 3D loading screen and story intro use **three.js**), wrapped for Google Play with **Capacitor** (`android/`).
 Online features (leaderboards, world pet counts, optional Google Play sign-in) run on **Firebase**: see
 **[ONLINE.md](ONLINE.md)** for the setup. No API key is ever in the code or in git: a check refuses any
 commit that contains one (`npm run check-secrets`), and `npm run check-bundle` checks a build before you
@@ -25,6 +25,9 @@ frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, 
 `/dev/gadgets.html` every gadget, pickup, mutation badge and skill icon, `/dev/bosses.html` all 20 bosses,
 `/dev/places.html` the boss seals.
 
+Start-up flags: `?nointro` skips the loading screen and story (for automated tests), `?intro` always plays
+the story.
+
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
 plays the game run by run (and tries the Boss Rush after each run) with the real numbers, fishing all the
 while, and prints how many hours (and failed runs) a steady player needs per stage and when each Forge level
@@ -33,6 +36,18 @@ about **110-125 hours**. `dev/fishsim.ts` (same way) shows how fast fishing upgr
 hour of fishing brings.
 
 ## How the game works
+
+- **Loading screen (fully 3D)**: while the game loads, the camera sweeps around the first floating land at
+  golden hour: its glowing crystal with dice circling it, the box ghost hopping about, the other four lands
+  floating off into the haze over a sea of clouds, with sparkles, light beams, drifting rocks and a glow
+  (bloom) pass. On top: the DICE IDLE logo (letters pop in and float), a striped loading bar and tips, then
+  **TAP TO START** (the tap also turns the sound on). Without 3D support it still shows the logo and bar.
+- **The story** (once, for new players; again from **Settings → WATCH THE STORY**; SKIP at any time),
+  about 40 s with cinema bars, captions and its own music: five lands float above the clouds, each lit by a
+  Crystal; the Storm comes with lightning; monsters rain down on the lands and a crowned boss rises from the
+  clouds and drinks every Crystal's light; the lands go dark... until a pair of eyes lights up in an old
+  cardboard box; the flaps burst open, three lucky dice fall and pop into the first friends; dawn breaks
+  over the dark lands ahead and the title comes up: **TAP TO PLAY**. Then the tutorial takes over.
 
 - **Rolling costs one die.** Dice are found in battle (on the map, in chests, on elites and from the boss)
   or bought with gems in the Shop. Dice come in tiers **A, B, C, D, E, S, SSS, uSSS**; which tiers drop
@@ -392,6 +407,10 @@ hour of fishing brings.
 | `src/systems/sound.ts` | Synthesized sound effects, the music sequencer and vibration |
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
 | `src/scenes/Battle.ts` | A stage (lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose) and the Boss Rush |
+| `src/main.ts`, `src/game.ts` | Start-up: the loading screen, the story for new players, then the game |
+| `src/intro/world3d.ts` | The 3D world (three.js): floating lands, crystals, the box ghost, dice, slimes and the boss, sky moods, storm, sparkles, bloom |
+| `src/intro/loading.ts`, `src/intro/story.ts` | The loading screen's camera and life; the story's shots, captions, lightning, monsters, dice and pets on one clock |
+| `src/intro/overlay.ts`, `src/intro/intro.ts` | The logo, loading bar, tips, cinema bars, captions and SKIP (HTML); what runs when |
 | `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget medals), pause, stats, gadget and skill pickers, defeat screen, rolling, fishing ticks, popups |
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, x1/x3/x10, the full-screen reveal and its 3 s showcase, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |

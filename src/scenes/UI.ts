@@ -244,6 +244,8 @@ export class UIScene extends Phaser.Scene implements Host {
       spot: (kind) => this.battleScene.spot(kind),
     });
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(900, () => this.showDaily());
+    // the loading screen waits for this
+    this.game.events.emit("ui-ready");
   }
 
   private onCash(): void {
@@ -1676,7 +1678,7 @@ export class UIScene extends Phaser.Scene implements Host {
 
   private showSettings(): void {
     const dev = !onlineEnabled() || new URLSearchParams(location.search).has("dev");
-    const h = dev ? 1200 : 960;
+    const h = dev ? 1320 : 1080;
     const m = this.showModal(modal(this, 860, h, "SETTINGS", "peach", () => (this.openModal = null)));
     m.body.add(label(this, 0, -h / 2 + 150,
       `Best stage: ${save.bestStage}/${MAX_STAGE}\nMonsters defeated: ${fmt(save.totalKills)}\nRolls: ${fmt(save.totalRolls)}\nRarest roll: ${oneIn(save.bestRoll)}\nPets found: ${save.discovered.length}/${PET_LIST.length}`, 34, "#7a5236"));
@@ -1719,6 +1721,12 @@ export class UIScene extends Phaser.Scene implements Host {
       y += 70;
       m.body.add(label(this, 190, y, "in the Google Play app", 20, "#9a7a5a"));
     }
+    // the opening story, once more
+    y += play || playLater ? 90 : 120;
+    m.body.add(button(this, 0, y, 460, 96, "purple", "WATCH THE STORY", () => {
+      m.close();
+      void this.replayStory();
+    }, { size: 30 }));
     if (dev) {
       y += 110;
       m.body.add(label(this, 0, y, "Testing tools (not in the online version)", 26, "#9a7a5a"));
@@ -1736,6 +1744,18 @@ export class UIScene extends Phaser.Scene implements Host {
       resetSave();
       window.location.reload();
     }, { size: 36 }));
+  }
+
+  /** Plays the opening story over the game; the game waits, frozen, until it ends. */
+  private async replayStory(): Promise<void> {
+    const [{ replayStory }, { STORY_PETS, petPicture }] = await Promise.all([import("../intro/intro"), import("../game")]);
+    this.game.loop.sleep();
+    try {
+      await replayStory(STORY_PETS.map(petPicture));
+    } finally {
+      this.game.loop.wake();
+      music.play(battle.mode === "run" ? "battle" : "calm");
+    }
   }
 
   /** The fishing line never stops: catches come in on every screen (the fishing screen shows them). */
