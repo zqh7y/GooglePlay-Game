@@ -51,3 +51,26 @@ export function makeOnlineTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "icon_trophy", 96, 96, trophy);
   canvasTexture(scene, "icon_globe", 96, 96, globe);
 }
+
+/** A white cartoon glove pointing up and left (the tutorial's pointer). */
+function hand(c: Ctx): void {
+  const t = toon(c, INK, 5);
+  c.save();
+  c.translate(60, 64);
+  c.rotate(-0.55);
+  // cuff
+  t.part(() => t.rect(0, 40, 50, 22, 8), 0xd8e0e8);
+  // palm and curled fingers
+  t.part(() => {
+    t.rect(0, 12, 50, 40, 16);
+    t.E(-22, 14, 10, 13, 0.3);
+  }, 0xffffff, () => t.paint("rgba(0,0,0,0.08)", () => t.rect(10, 18, 26, 30, 10)));
+  for (const x of [-9, 6, 19]) t.part(() => t.rect(x, -2, 13, 16, 6), 0xffffff, undefined, 4);
+  // the pointing finger
+  t.part(() => t.rect(-14, -26, 14, 40, 7), 0xffffff, () => t.paint("rgba(0,0,0,0.08)", () => t.rect(-10, -26, 5, 36, 2)));
+  c.restore();
+}
+
+export function makeTutorialTextures(scene: Phaser.Scene): void {
+  canvasTexture(scene, "tut_hand", 120, 130, hand);
+}

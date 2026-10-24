@@ -762,6 +762,20 @@ export class BattleScene extends Phaser.Scene {
     this.game.events.emit("toast", str, color);
   }
 
+  /** For the tutorial: where (on screen) the nearest bones or meat, the crystal or the nearest open seal is. */
+  spot(kind: "food" | "crystal" | "seal"): [number, number] | null {
+    const near = <T>(list: T[], pos: (o: T) => [number, number]) =>
+      list.map((o) => pos(o)).sort((a, b) => Math.hypot(a[0] - this.hero.x, a[1] - this.hero.y) - Math.hypot(b[0] - this.hero.x, b[1] - this.hero.y))[0];
+    let at: [number, number] | undefined;
+    if (kind === "food") at = near(this.food, (f) => [f.img.x, f.img.y]);
+    else if (kind === "seal") at = near(this.seals.filter((s) => !s.done), (s) => [s.x, s.y]);
+    else if (this.crystal?.visible) at = [this.crystal.x, this.crystal.y - 60];
+    if (!at) return null;
+    const [x, y] = this.toScreen(at[0], at[1]);
+    const W = this.scale.width;
+    return x < 30 || x > W - 30 || y < 200 || y > this.scale.height - 120 ? null : [x, y];
+  }
+
   /** World position to screen position (for things the UI scene draws). */
   toScreen(x: number, y: number): [number, number] {
     const cam = this.cameras.main;

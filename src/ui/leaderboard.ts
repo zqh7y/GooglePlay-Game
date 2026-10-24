@@ -43,7 +43,7 @@ export function showLeaderboard(scene: Phaser.Scene, host: Host, close: () => vo
   if (!onlineEnabled()) {
     m.body.add([
       s.add.image(0, -120, "icon_globe").setScale(1.6),
-      label(s, 0, 60, "Online play comes with the Google Play version of the game.", 34, "#7a5236", 760),
+      label(s, 0, 40, "The leaderboards go live when the game is connected to its online server (the Google Play app, see ONLINE.md).", 34, "#7a5236", 760),
       button(s, 0, 260, 360, 110, "green", "OK", () => m.close(), { size: 40 }),
     ]);
     return;

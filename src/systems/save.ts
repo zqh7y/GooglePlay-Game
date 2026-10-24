@@ -75,6 +75,10 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** the first-time guide: which step you are on (-1 = done or skipped) */
+  tutorial: number;
+  /** the story intro was shown */
+  introSeen: boolean;
   /** your name on the leaderboards (named: you picked it yourself) */
   online: { name: string; named: boolean };
 }
@@ -144,6 +148,8 @@ function fresh(): SaveData {
     bossRushBest: 0,
     fishing: freshFishing(),
     online: { name: "", named: false },
+    tutorial: 0,
+    introSeen: false,
   };
 }
 
@@ -153,9 +159,9 @@ function noDice(some: Partial<Record<Tier, number>> = {}): Record<Tier, number> 
 
 function load(): SaveData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const data = { ...fresh(), ...JSON.parse(raw) } as SaveData & { bossRush?: number };
+    const raw0 = localStorage.getItem(STORAGE_KEY);
+    if (raw0) {
+      const data = { ...fresh(), ...JSON.parse(raw0) } as SaveData & { bossRush?: number };
       // older saves had one plain dice count
       const dice = data.dice as unknown;
       data.dice = noDice(typeof dice === "number" ? { A: dice } : (dice as Partial<Record<Tier, number>>));
@@ -168,6 +174,11 @@ function load(): SaveData {
       data.newPets = data.newPets.filter((id) => data.pets[id]);
       data.fishing = { ...freshFishing(), ...data.fishing };
       data.online = { ...{ name: "", named: false }, ...(data.online as Partial<SaveData["online"]> | undefined) };
+      // players from before the tutorial and the intro don't need them
+      const raw = JSON.parse(raw0) as Partial<SaveData>;
+      const veteran = data.bestStage > 1 || data.totalRolls > 0;
+      if (raw.tutorial === undefined) data.tutorial = veteran ? -1 : 0;
+      if (raw.introSeen === undefined) data.introSeen = veteran;
       // the first Boss Rush kept its own place and had weaker bosses. Now its bosses are the stages:
       // move on to the first stage whose boss is tougher than the last one you beat back then
       if (data.bossRush && data.bossRush > 1) {

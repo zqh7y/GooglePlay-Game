@@ -28,6 +28,7 @@ import { FishScreen, prizeGift, prizeIcon } from "../ui/fishScreen";
 import { makeOnlineTextures } from "../art/online";
 import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
 import { askName, showLeaderboard } from "../ui/leaderboard";
+import { Tutorial } from "../ui/tutorial";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
@@ -158,6 +159,9 @@ export class UIScene extends Phaser.Scene implements Host {
   private tree!: TreeScreen;
   private map!: MapScreen;
   private openModal: Modal | null = null;
+  private tutorial!: Tutorial;
+  private goBtn!: Button;
+  private startBtn: Button | null = null;
   /** what the fishing line caught while you were away, shown once the other welcome popups are gone */
   private fishAwayResult: { catches: Catch[]; secs: number } | null = null;
 
@@ -219,6 +223,26 @@ export class UIScene extends Phaser.Scene implements Host {
     if (away.catches.length) this.fishAwayResult = away;
     // online: sign in and send your entry (quietly; the game works the same offline)
     window.setTimeout(() => void startOnline(), 1200);
+    const spotOf = (o: Phaser.GameObjects.Container | null): [number, number] | null => {
+      if (!o || !o.active || !o.visible) return null;
+      const b = o.getBounds();
+      return [b.centerX, b.centerY];
+    };
+    this.tutorial = new Tutorial({
+      scene: this,
+      tab: () => this.tab,
+      modalOpen: () => !!this.openModal,
+      pickerOpen: () => !!this.picker,
+      mapOpen: () => this.mapOpen,
+      battleButton: () => (this.lobby.visible ? spotOf(this.goBtn) : null),
+      startButton: () => spotOf(this.startBtn),
+      rollButton: () => this.rollScreen.rollButtonSpot(),
+      tabSpot: (tab) => {
+        const p = this.tabPos(tab);
+        return [p.x, p.y];
+      },
+      spot: (kind) => this.battleScene.spot(kind),
+    });
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(900, () => this.showDaily());
   }
 
@@ -341,6 +365,7 @@ export class UIScene extends Phaser.Scene implements Host {
     if (this.mapOpen) this.map.update();
     this.tree.update(delta);
     if (save.autoRoll && autoUnlocked()) this.roll(true);
+    this.tutorial.update(delta);
   }
 
   // ───────────────────────── Host (used by the screens) ─────────────────────────
@@ -531,7 +556,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
     this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
-    const go = button(this, W / 2 - 112, bottom - 170, 600, 190, "orange", "BATTLE", () => {
+    const go = this.goBtn = button(this, W / 2 - 112, bottom - 170, 600, 190, "orange", "BATTLE", () => {
       unlockAudio();
       this.confirmStart("battle");
     }, { icon: "icon_sword", iconSize: 84, size: 76, sub: "Survive 5:00 and beat the boss" });
@@ -1213,7 +1238,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     b.add(text(this, 0, top + 400, info.sub, 44, "#c9663a"));
     info.lines.forEach((l, i) => b.add(label(this, 0, top + 470 + i * 58, l, 29, "#7a5236", 800)));
-    b.add(button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
+    b.add(this.startBtn = button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
       go = true;
       m.close();
     }, { size: 46 }));
@@ -1674,7 +1699,9 @@ export class UIScene extends Phaser.Scene implements Host {
     ]);
     y += 100;
     const play = onlineEnabled() && canUsePlayGames() && online.provider !== "playgames";
-    m.body.add(button(this, play ? -190 : 0, y, 360, 96, "blue", "CHANGE NAME", () => {
+    // in a browser: the button shows what the Android app has
+    const playLater = !canUsePlayGames();
+    m.body.add(button(this, play || playLater ? -190 : 0, y, 360, 96, "blue", "CHANGE NAME", () => {
       askName(this);
       m.close();
       this.time.delayedCall(150, () => this.showSettings());
@@ -1687,6 +1714,10 @@ export class UIScene extends Phaser.Scene implements Host {
       }, { size: 30, icon: "icon_globe", iconSize: 48 }));
       y += 70;
       m.body.add(label(this, 190, y, "optional: keeps your ranks on a new phone", 20, "#9a7a5a"));
+    } else if (playLater) {
+      m.body.add(button(this, 190, y, 360, 96, "grey", "GOOGLE PLAY", () => this.toast("Google Play sign-in is in the Android app (no sign-in needed to play)", "#ffe680"), { size: 30, icon: "icon_globe", iconSize: 48 }));
+      y += 70;
+      m.body.add(label(this, 190, y, "in the Google Play app", 20, "#9a7a5a"));
     }
     if (dev) {
       y += 110;

@@ -84,6 +84,12 @@ export class RollScreen extends Screen {
   /** the roll gift's show runs until then */
   private giftUntil = 0;
   private rollBtn: Button;
+
+  /** Where the ROLL button is on screen (for the tutorial). */
+  rollButtonSpot(): [number, number] {
+    const b = this.rollBtn.getBounds();
+    return [b.centerX, b.centerY];
+  }
   private rollGlow: Phaser.GameObjects.Image;
   private autoBtn: Button;
   private fastBtn: Button;
