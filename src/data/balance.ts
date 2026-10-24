@@ -36,14 +36,17 @@ export const HERO_TEAM_SHARE = 0.2;
 export const HERO_HP = 100;
 
 export const CRYSTAL_HP = 800;
+/** The crystal toughens up as fast as the monsters' bites grow (5% a stage). */
+export const crystalHpAt = (stage: number) => CRYSTAL_HP * (1 + 0.05 * (stage - 1));
 /** The crystal is open for 45 s, then shielded for 45 s, and so on. */
 export const SHIELD_MS = 45000;
 /** Monsters appear this often (ms) at the start; every minute they come faster. Hordes! */
 export const SPAWN_MS = 312;
 export const SPAWN_SPEEDUP = 0.35;
 export const MAX_MONSTERS = 350;
-/** Share of monsters that walk in from far away towards the crystal while it is open. */
+/** Share of monsters that walk in from far away towards the crystal while it is open (fewer on the first stages). */
 export const CRYSTAL_SPAWN_SHARE = 0.4;
+export const raiderShare = (stage: number) => CRYSTAL_SPAWN_SHARE * Math.min(1, 0.15 + stage / 12);
 /** The crystal drops a die this often while you survive. */
 export const CRYSTAL_DIE_MS = 30000;
 /** First airdrop, and time between airdrops. */

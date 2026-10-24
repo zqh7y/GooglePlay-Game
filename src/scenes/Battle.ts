@@ -7,7 +7,7 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, CRYSTAL_SPAWN_SHARE, ELITE_MULT, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -44,7 +44,7 @@ const HERO_SPEED = 390;
 const PET_LEASH = 1000;
 const PET_SPEED = 520;
 const HERO_R = 40;
-const PICK_R = 150;
+const PICK_R = 210;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;
 /** Crystal raiders keep marching on the crystal unless you get right in their way (or the shield is up). */
@@ -487,7 +487,7 @@ export class BattleScene extends Phaser.Scene {
     this.joy = { ...NO_JOY };
     this.heroMax = HERO_HP * villageHpMult();
     this.heroHp = this.heroMax;
-    this.crystalMax = CRYSTAL_HP * villageHpMult();
+    this.crystalMax = crystalHpAt(save.stage) * villageHpMult();
     this.crystalHp = this.crystalMax;
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
@@ -2059,7 +2059,7 @@ export class BattleScene extends Phaser.Scene {
       for (let i = 0; i < group && this.enemies.length < MAX_MONSTERS; i++) {
         // while the crystal is open many monsters march on it from far away
         // (the ones that appear around you come for you)
-        const atCrystal = !this.shielded && this.elapsed > 8000 && Math.random() < CRYSTAL_SPAWN_SHARE;
+        const atCrystal = !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
         const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.offScreen();
         const e = this.addEnemy(this.pickType(), x, y);
         e.huntHero = !atCrystal;

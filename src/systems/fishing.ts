@@ -1,8 +1,9 @@
 import { BOOSTS } from "../data/boosts";
 import {
-  FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours, doubleChance, fishLuck, goldMult,
+  FIRST_CATCH_SHELLS, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours, doubleChance, fishLuck, goldMult,
   netMult, prizesOpen, rollPrize, shinyChance, superEvery, upgradeCost,
 } from "../data/fishing";
+import { questEvent } from "./goals";
 import { save } from "./save";
 
 /**
@@ -24,6 +25,8 @@ export interface Catch {
   double: boolean;
   /** a battle boost from a message bottle */
   boost?: string;
+  /** extra shells for the first catch of this prize ever */
+  bonus?: number;
 }
 
 export const fishLv = (id: FishUpId) => save.fishing.lv[id] ?? 0;
@@ -60,6 +63,10 @@ function pay(c: Catch): void {
   const p: Prize = PRIZES[c.prize];
   const f = save.fishing;
   f.shells += c.shells;
+  if (!f.caught[p.id]) {
+    c.bonus = Math.round(ROW_SHELLS[p.row] * FIRST_CATCH_SHELLS * goldMult(fishLv("gold")));
+    f.shells += c.bonus;
+  }
   f.caught[p.id] = (f.caught[p.id] ?? 0) + 1;
   const now = Date.now();
   switch (p.kind) {
@@ -106,6 +113,7 @@ export function fishOnce(): Catch[] {
   const out = [land(rollPrize(luck, open), isSuper, false)];
   if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, open), isSuper, true));
   out.forEach(pay);
+  questEvent("fish", out.length);
   return out;
 }
 

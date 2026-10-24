@@ -54,8 +54,8 @@ export const PRIZES: Prize[] = [
   // row 4: legends (the chances hide behind question marks)
   { id: "dieE", name: "Sun Die", kind: "dice", amount: 1, tier: "E", weight: 0.006, pow: 1, row: 4 },
   { id: "kraken", name: "Kraken Die", kind: "dice", amount: 1, tier: "S", weight: 0.0007, pow: 1, row: 4 },
-  { id: "trident", name: "Titan Trident", kind: "dice", amount: 1, tier: "SSS", weight: 0.00007, pow: 1, row: 4 },
-  { id: "leviathan", name: "Leviathan Heart", kind: "jackpot", amount: 1, tier: "uSSS", gems: 100, weight: 0.000007, pow: 1, row: 4 },
+  { id: "trident", name: "Titan Trident", kind: "dice", amount: 1, tier: "SSS", weight: 0.00002, pow: 1, row: 4 },
+  { id: "leviathan", name: "Leviathan Heart", kind: "jackpot", amount: 1, tier: "uSSS", gems: 100, weight: 0.000001, pow: 1, row: 4 },
 ];
 
 export const PRIZE_BY_ID: Record<string, Prize> = Object.fromEntries(PRIZES.map((p) => [p.id, p]));
@@ -66,6 +66,8 @@ export const ROW_NAMES = ["Common", "Good", "Rare", "Epic", "Legend"];
 
 /** Shells that come with every catch, by row (then times the Golden Line). */
 export const ROW_SHELLS = [1, 2, 5, 15, 60];
+/** The first catch of each prize brings this many times its row's shells. */
+export const FIRST_CATCH_SHELLS = 25;
 
 // ───────────────────────── upgrades ─────────────────────────
 

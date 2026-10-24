@@ -3,7 +3,7 @@ import { persist, save } from "./save";
 
 // ───────────────────────── quests ─────────────────────────
 
-export type QuestType = "kill" | "roll" | "wave" | "buy" | "boss" | "combo" | "rare" | "dice";
+export type QuestType = "kill" | "roll" | "wave" | "buy" | "boss" | "combo" | "rare" | "dice" | "fish";
 
 export interface Quest {
   type: QuestType;
@@ -11,7 +11,7 @@ export interface Quest {
   progress: number;
 }
 
-const QUEST_TYPES: QuestType[] = ["kill", "roll", "wave", "buy", "boss", "combo", "rare", "dice"];
+const QUEST_TYPES: QuestType[] = ["kill", "roll", "wave", "buy", "boss", "combo", "rare", "dice", "fish"];
 export const QUEST_SLOTS = 3;
 
 function makeQuest(tier: number, avoid: QuestType[]): Quest {
@@ -26,6 +26,7 @@ function makeQuest(tier: number, avoid: QuestType[]): Quest {
     buy: 2 + Math.ceil(tier / 2),
     boss: 1 + Math.floor(tier / 3),
     combo: 20 + tier * 10,
+    fish: 6 + tier * 4,
     // rarity rank to roll
     rare: Math.min(RARITY_ORDER.length - 1, 2 + Math.floor(tier / 2)),
   }[type];
@@ -46,6 +47,7 @@ export function questText(q: Quest): string {
     case "buy": return `Buy ${q.target} upgrades`;
     case "boss": return `Defeat ${q.target} boss${q.target > 1 ? "es" : ""}`;
     case "combo": return `Reach a ${q.target} kill streak`;
+    case "fish": return `Catch ${q.target} things fishing`;
     case "rare": return `Roll a ${RARITY_INFO[RARITY_ORDER[q.target]].label} pet`;
   }
 }

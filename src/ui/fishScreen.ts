@@ -576,7 +576,7 @@ export class FishScreen extends Screen {
     const tags: string[] = [];
     if (c.super) tags.push(`SUPER CATCH  x${SUPER_LUCK} LUCK`);
     if (c.shiny) tags.push(`SHINY  x${SHINY_MULT}`);
-    if (first) tags.push("NEW PRIZE!");
+    if (first) tags.push(c.bonus ? `NEW PRIZE!  +${fmt(c.bonus)} shells` : "NEW PRIZE!");
     const css = rgba(lighten(color, 0.35));
     const parts: Phaser.GameObjects.GameObject[] = [
       dim, rays, pic,
