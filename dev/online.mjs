@@ -91,7 +91,15 @@ function androidApp(project) {
 
 /** Writes google-services.json and checks it has the web client that Play Games sign-in needs. */
 function saveServices(project, appId) {
-  firebase(["apps:sdkconfig", "ANDROID", appId, "--project", project, "--out", SERVICES], { json: false });
+  // fetched into a fresh folder first (the CLI will not overwrite a file), then put in place
+  const dir = mkdtempSync(join(tmpdir(), "dice-idle-services-"));
+  try {
+    const fresh = join(dir, "google-services.json");
+    firebase(["apps:sdkconfig", "ANDROID", appId, "--project", project, "--out", fresh], { json: false });
+    writeFileSync(SERVICES, readFileSync(fresh));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
   const conf = JSON.parse(readFileSync(SERVICES, "utf8"));
   const web = conf.client?.some((c) => c.oauth_client?.some((o) => o.client_type === 3));
   ok("google-services.json saved to android/app/ (git ignores it; never send it to anyone)");
