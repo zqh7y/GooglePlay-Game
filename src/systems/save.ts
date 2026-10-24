@@ -70,6 +70,8 @@ export interface SaveData {
   mutSeen: string[];
   /** how many dice one press of ROLL uses (each die is one roll) */
   rollBatch: number;
+  /** free roam on autopilot: the hero walks to the dice lying around the lobby */
+  afk: boolean;
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
 }
@@ -120,6 +122,7 @@ function fresh(): SaveData {
     newPets: [],
     mutSeen: [],
     rollBatch: 1,
+    afk: false,
     bossRushBest: 0,
   };
 }

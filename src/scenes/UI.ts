@@ -3,7 +3,7 @@ import { INK_N, darken, rgba } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
-import { MAX_STAGE, MINUTES, STAGE_MS } from "../data/balance";
+import { MAX_STAGE, MINUTES, SEALS, STAGE_MS } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
 import { GADGETS, GADGET_SLOTS, STARTER_GADGET, gadgetKey, gadgetName } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
@@ -24,7 +24,7 @@ import { classChances, topLuck } from "../data/luck";
 import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
-  autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
+  autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, gemsPerBoss, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
 } from "../systems/stats";
 import { heroMaxHp, teamDps } from "../systems/power";
 import { fmt, luckText, oneIn } from "../ui/format";
@@ -37,7 +37,7 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
-import { BattleMode, BattleScene, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
+import { BattleMode, BattleScene, BuildingKind, GadgetFound, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "shop", icon: "icon_shop", label: "Shop" },
@@ -82,6 +82,10 @@ export class UIScene extends Phaser.Scene implements Host {
   private lobbyBest!: Phaser.GameObjects.Text;
   /** which monster mutations this stage has */
   private lobbyMuts!: Phaser.GameObjects.Text;
+  /** what the building you walked up to is for */
+  private bldCard!: Phaser.GameObjects.Container;
+  private afkRing!: Phaser.GameObjects.Arc;
+  private afkLabel!: Phaser.GameObjects.Text;
   private overlay!: Phaser.GameObjects.Graphics;
   private joyG!: Phaser.GameObjects.Graphics;
   private mini!: Phaser.GameObjects.Image;
@@ -167,6 +171,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["boss-warning", this.bossWarning],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
+      ["building-near", this.showBuilding],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -247,7 +252,10 @@ export class UIScene extends Phaser.Scene implements Host {
     this.navBar.setVisible(lobby);
     this.gear.setVisible(lobby || this.tab !== "battle");
     this.placeTopBar(!lobby);
-    this.mini.setVisible(!lobby);
+    this.mini.setVisible(true);
+    this.mini.setPosition(...this.miniSpot());
+    this.overlay.clear();
+    if (!lobby) this.showBuilding(null);
     if (lobby) {
       this.lobbyTitle.setText(`Stage ${save.stage}`);
       this.lobbyLand.setText(regionForStage(save.stage).name);
@@ -281,9 +289,10 @@ export class UIScene extends Phaser.Scene implements Host {
       if (b.sys.isActive() || b.sys.isPaused()) {
         b.drawJoystick(this.joyG);
         this.overlayTimer -= delta;
-        if (this.overlayTimer <= 0 && battle.mode !== "lobby") {
+        if (this.overlayTimer <= 0) {
           this.overlayTimer = 100;
-          b.drawOverlay(this.overlay, 22, this.L.hudBottom + 24, 180, this.L.hudBottom + 30, this.H - 140);
+          const [mx, my] = this.miniSpot();
+          b.drawOverlay(this.overlay, mx, my, 180, this.L.hudBottom + 30, this.H - 140);
         }
       }
     }
@@ -484,7 +493,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
     const go = button(this, W / 2 - 112, bottom - 170, 600, 190, "orange", "BATTLE", () => {
       unlockAudio();
-      this.game.events.emit("battle-start");
+      this.confirmStart("battle");
     }, { icon: "icon_sword", iconSize: 84, size: 76, sub: "Survive 5:00 and beat the boss" });
     // Boss Rush: the next boss's face and number
     this.rushFace = this.add.image(0, -24, "e_golem");
@@ -500,7 +509,7 @@ export class UIScene extends Phaser.Scene implements Host {
       rush.setScale(1);
       unlockAudio();
       sfx.click();
-      this.game.events.emit("rush-start");
+      this.confirmStart("rush");
     });
     this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(rush);
@@ -537,11 +546,23 @@ export class UIScene extends Phaser.Scene implements Host {
       });
       this.lobby.add(b);
       if (badge) this.addBadge(x + 32, y - 32, badge);
+      return b;
     };
     side(0, "icon_map", "Map", () => this.openMap());
     side(1, "icon_quest", "Quests", () => this.showQuests(), () => save.quests.some(questDone));
     side(2, "icon_gift", "Daily", () => this.showDaily(), () => dailyDay() >= 0);
     side(3, "hero", "Hero", () => this.showHero());
+    const afk = side(4, "icon_auto", "AFK", () => {
+      save.afk = !save.afk;
+      persist();
+      this.refreshAfk();
+      this.toast(save.afk ? "AFK on: your hero walks around and picks up dice" : "AFK off: walk with the joystick", "#b6f59a");
+    });
+    this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
+    this.afkLabel = afk.list[2] as Phaser.GameObjects.Text;
+    this.refreshAfk();
+    this.bldCard = this.add.container(W / 2, this.L.navTop - 560).setVisible(false);
+    this.lobby.add(this.bldCard);
 
     // ── the fight: clock, level, crystal, gun, pause and stats
     this.run = this.add.container(0, 0).setVisible(false);
@@ -937,7 +958,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** The boss lands: a big title card with its name. */
-  private bossIntro(info: { name: string; tex: string }): void {
+  private bossIntro(info: { name: string; tex: string; moves: string[] }): void {
     const { W, H } = this;
     const cy = H * 0.4;
     const band = this.add.graphics().setDepth(5300);
@@ -947,16 +968,17 @@ export class UIScene extends Phaser.Scene implements Host {
     const portrait = this.add.image(W + 300, cy + 120, info.tex).setOrigin(0.5, 0.94).setScale(1.9).setDepth(5302);
     const title = text(this, -400, cy - 80, "BOSS FIGHT!", 96, "#ff5a5a").setOrigin(0, 0.5).setDepth(5303);
     const name = text(this, -400, cy + 40, info.name.toUpperCase(), 64, "#ffe066").setOrigin(0, 0.5).setDepth(5303);
-    const hint = text(this, 60, cy + 120, "Only you and your pets. Watch for the red marks!", 30, "#ffe0e0").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
+    const hint = text(this, 60, cy + 112, `Moves: ${info.moves.join("  •  ")}`, 30, "#ffe0e0").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
+    const tip = text(this, 60, cy + 152, "Dodge the red marks. Close the seals so it can't heal!", 24, "#ffb8b8").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
     this.tweens.add({ targets: rays, angle: 180, duration: 3000 });
     this.tweens.add({ targets: portrait, x: W - 250, duration: 450, ease: "Back.out" });
     this.tweens.add({ targets: title, x: 60, duration: 400, ease: "Back.out", delay: 100 });
     this.tweens.add({ targets: name, x: 60, duration: 400, ease: "Back.out", delay: 250 });
-    this.tweens.add({ targets: hint, alpha: 1, duration: 300, delay: 600 });
+    this.tweens.add({ targets: [hint, tip], alpha: 1, duration: 300, delay: 600 });
     this.cameras.main.flash(250, 255, 120, 80);
     sfx.fanfare();
     buzz(300);
-    const all = [band, rays, portrait, title, name, hint];
+    const all = [band, rays, portrait, title, name, hint, tip];
     this.time.delayedCall(2200, () => this.tweens.add({ targets: all, alpha: 0, duration: 350, onComplete: () => all.forEach((o) => o.destroy()) }));
   }
 
@@ -976,6 +998,94 @@ export class UIScene extends Phaser.Scene implements Host {
     this.questCount.setText(q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)}/${fmt(q.target)}`);
     this.questG.clear();
     drawBar(this.questG, -116, 14, 292, 24, q.progress / questGoal(q), ready ? 0xffd23f : 0x7ad651);
+  }
+
+  /** Where the minimap sits: top left in a fight, top right (under the quests) while roaming the lobby. */
+  private miniSpot(): [number, number] {
+    return battle.mode === "lobby" ? [this.W - 202, this.L.hudBottom + 170] : [22, this.L.hudBottom + 24];
+  }
+
+  private refreshAfk(): void {
+    this.afkLabel.setText(save.afk ? "AFK ON" : "AFK").setColor(save.afk ? "#8af06a" : "#fff3dc");
+    this.afkRing.setFillStyle(save.afk ? 0x2f6f3a : 0x3a2516, 0.7).setStrokeStyle(4, save.afk ? 0x8af06a : 0xffe6b8, 0.85);
+  }
+
+  /** What the arena and the boss tower are for: shown when you walk up to them and before you start. */
+  private eventInfo(kind: BuildingKind): { title: string; sub: string; tex: string; lines: string[]; color: BtnColor; css: string } {
+    const def = bossForStage(save.stage);
+    if (kind === "battle") {
+      const muts = mutationsAt(save.stage);
+      return {
+        title: "BATTLE", sub: `Stage ${save.stage}  •  ${regionForStage(save.stage).name}`, tex: def.tex, color: "orange", css: "#ffe066",
+        lines: [
+          "Survive 5:00, then beat the boss",
+          `Boss: ${def.name}. It heals: close its ${SEALS} seals!`,
+          muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet",
+          `Best: stage ${save.bestStage}/${MAX_STAGE}  •  boss pays +${gemsPerBoss()} gems`,
+        ],
+      };
+    }
+    return {
+      title: "BOSS RUSH", sub: `Boss ${save.stage}  •  ${def.name}`, tex: def.tex, color: "purple", css: "#e6c8ff",
+      lines: [
+        `${RUSH_MS / 1000}s per boss: each one you beat clears its stage`,
+        "No monsters and no skills: just you and your pets",
+        "Every 5th boss: +3 gems and 2 dice",
+        `Best: boss ${save.bossRushBest}`,
+      ],
+    };
+  }
+
+  /** The card over the lobby when you walk up to a building. */
+  private showBuilding(kind: BuildingKind | null): void {
+    const c = this.bldCard;
+    this.tweens.killTweensOf(c);
+    if (!kind || battle.mode !== "lobby") {
+      if (c.visible) this.tweens.add({ targets: c, scale: 0.7, alpha: 0, duration: 140, onComplete: () => c.setVisible(false) });
+      return;
+    }
+    const info = this.eventInfo(kind);
+    const w = 660;
+    const h = 330;
+    c.removeAll(true);
+    const face = this.add.image(-w / 2 + 92, -14, info.tex);
+    face.setScale(140 / Math.max(face.width, face.height));
+    c.add([
+      this.add.image(0, 0, panelTexture(this, "glass", w, h)),
+      this.add.image(-w / 2 + 92, -14, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(0.8).setAlpha(0.6), face,
+      text(this, -w / 2 + 184, -h / 2 + 42, info.title, 46, info.css).setOrigin(0, 0.5),
+      fitText(text(this, -w / 2 + 184, -h / 2 + 90, info.sub, 28).setOrigin(0, 0.5), w - 210),
+    ]);
+    info.lines.forEach((l, i) => c.add(fitText(text(this, -w / 2 + 184, -h / 2 + 138 + i * 38, l, 23, "#fff3dc").setOrigin(0, 0.5), w - 210)));
+    c.add(text(this, 0, h / 2 - 26, `Press ${info.title} below to start`, 24, "#b6f59a"));
+    c.setVisible(true).setScale(0.7).setAlpha(0);
+    this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
+    sfx.click();
+  }
+
+  /** Are you sure? The fight's info, then START walks your hero into its building. */
+  private confirmStart(kind: BuildingKind): void {
+    if (battle.mode !== "lobby" || this.openModal) return;
+    const info = this.eventInfo(kind);
+    const h = 920;
+    let go = false;
+    const m = this.showModal(modal(this, 900, h, `START ${info.title}?`, info.color, () => {
+      this.openModal = null;
+      if (go) this.game.events.emit(kind === "battle" ? "battle-start" : "rush-start");
+    }));
+    const b = m.body;
+    const top = -h / 2;
+    const face = this.add.image(0, top + 250, info.tex);
+    face.setScale(220 / Math.max(face.width, face.height));
+    b.add([this.add.image(0, top + 250, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(1.2).setAlpha(0.6), face]);
+    this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    b.add(text(this, 0, top + 400, info.sub, 44, "#c9663a"));
+    info.lines.forEach((l, i) => b.add(label(this, 0, top + 470 + i * 58, l, 29, "#7a5236", 800)));
+    b.add(button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
+      go = true;
+      m.close();
+    }, { size: 46 }));
+    b.add(button(this, 175, h / 2 - 110, 320, 130, "peach", "CANCEL", () => m.close(), { size: 40 }));
   }
 
   // ───────────────────────── rolling ─────────────────────────

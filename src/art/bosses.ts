@@ -395,6 +395,22 @@ const ART: Record<string, [number, number, (ctx: Ctx) => void]> = {
   b_frostdragon: [250, 254, frostDragon],
 };
 
+/** A glossy white shot with a dark rim: tinted in each boss's colour for its rings, volleys and rain. */
+function orb(ctx: Ctx): void {
+  ctx.beginPath();
+  ctx.arc(34, 34, 26, 0, Math.PI * 2);
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = "#3a2516";
+  ctx.stroke();
+  ctx.fillStyle = radial(ctx, 26, 24, 30, [[0, "#ffffff"], [0.6, "#e8e8e8"], [1, "#b8b8b8"]]);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(25, 23, 8, 5, -0.6, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fill();
+}
+
 export function makeBossTextures(scene: Phaser.Scene): void {
   for (const [key, [w, h, draw]] of Object.entries(ART)) canvasTexture(scene, key, w, h, draw);
+  canvasTexture(scene, "b_orb", 68, 68, orb);
 }

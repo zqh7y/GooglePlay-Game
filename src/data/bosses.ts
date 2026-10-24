@@ -1,37 +1,59 @@
 import { BOSS, MAX_STAGE, monsterHp } from "./balance";
 
 /**
- * Twenty bosses, a new one every 5 stages (four in each land). The same bosses guard the
- * stages and line up in the Boss Rush.
+ * Boss moves. Every boss walks at you and, every few seconds, does one of its three moves;
+ * each one shows where it will land first (red marks, circles or a cone) so you can dodge.
  */
+export type BossMoveId = "charge" | "stomp" | "rocks" | "jump" | "ring" | "volley" | "summon" | "spin" | "rain" | "blink" | "burrow" | "breath";
+
+export const BOSS_MOVES: Record<BossMoveId, string> = {
+  charge: "Charge",
+  stomp: "Stomp",
+  rocks: "Rock Throw",
+  jump: "Jump Slam",
+  ring: "Bullet Ring",
+  volley: "Aimed Shots",
+  summon: "Call Minions",
+  spin: "Spin Attack",
+  rain: "Sky Rain",
+  blink: "Teleport",
+  burrow: "Burrow",
+  breath: "Breath",
+};
+
 export interface BossDef {
   id: string;
   name: string;
   tex: string;
   color: number;
+  moves: [BossMoveId, BossMoveId, BossMoveId];
 }
 
+/**
+ * Twenty bosses, a new one every 5 stages (four in each land). The same bosses guard the
+ * stages and line up in the Boss Rush.
+ */
 export const BOSSES: BossDef[] = [
-  { id: "slimeking", name: "Slime King", tex: "b_slimeking", color: 0x7fd35a },
-  { id: "mushtitan", name: "Mushroom Titan", tex: "b_mushtitan", color: 0xe8434f },
-  { id: "batqueen", name: "Bat Queen", tex: "b_batqueen", color: 0x8a5ad0 },
-  { id: "golem", name: "Stone Golem", tex: "e_golem", color: 0xa8adb8 },
-  { id: "scarecrow", name: "Scarecrow", tex: "b_scarecrow", color: 0xc89a4a },
-  { id: "thundercrow", name: "Thunder Crow", tex: "b_thundercrow", color: 0xffe066 },
-  { id: "haybrute", name: "Haystack Brute", tex: "b_haybrute", color: 0xe8c860 },
-  { id: "pumpking", name: "Pumpkin King", tex: "e_pumpking", color: 0xff8a2a },
-  { id: "sporemother", name: "Spore Mother", tex: "b_sporemother", color: 0x3fd0e8 },
-  { id: "shadowwolf", name: "Shadow Wolf", tex: "b_shadowwolf", color: 0x6a4ab0 },
-  { id: "mosstroll", name: "Moss Troll", tex: "b_mosstroll", color: 0x7a9a4a },
-  { id: "treant", name: "Old Treant", tex: "e_treant", color: 0x4fae3a },
-  { id: "mummy", name: "Mummy Pharaoh", tex: "b_mummy", color: 0xe8dcc0 },
-  { id: "sandworm", name: "Sand Worm", tex: "b_sandworm", color: 0xd9a26a },
-  { id: "cactus", name: "Cactus Colossus", tex: "b_cactus", color: 0x5fb84a },
-  { id: "scorpion", name: "Sand Scorpion", tex: "e_scorpion", color: 0xd9a24a },
-  { id: "penguin", name: "Penguin Emperor", tex: "b_penguin", color: 0x2a3a5a },
-  { id: "icegolem", name: "Ice Golem", tex: "b_icegolem", color: 0x9fdcf4 },
-  { id: "yeti", name: "Frost Yeti", tex: "e_yeti", color: 0xf2f6ff },
-  { id: "frostdragon", name: "Frost Dragon", tex: "b_frostdragon", color: 0x8fd8ff },
+  { id: "slimeking", name: "Slime King", tex: "b_slimeking", color: 0x7fd35a, moves: ["jump", "summon", "ring"] },
+  { id: "mushtitan", name: "Mushroom Titan", tex: "b_mushtitan", color: 0xe8434f, moves: ["stomp", "ring", "summon"] },
+  { id: "batqueen", name: "Bat Queen", tex: "b_batqueen", color: 0x8a5ad0, moves: ["charge", "summon", "volley"] },
+  { id: "golem", name: "Stone Golem", tex: "e_golem", color: 0xa8adb8, moves: ["stomp", "rocks", "jump"] },
+  { id: "scarecrow", name: "Scarecrow", tex: "b_scarecrow", color: 0xc89a4a, moves: ["summon", "spin", "rain"] },
+  { id: "thundercrow", name: "Thunder Crow", tex: "b_thundercrow", color: 0xffe066, moves: ["charge", "rain", "volley"] },
+  { id: "haybrute", name: "Haystack Brute", tex: "b_haybrute", color: 0xe8c860, moves: ["spin", "stomp", "rocks"] },
+  { id: "pumpking", name: "Pumpkin King", tex: "e_pumpking", color: 0xff8a2a, moves: ["jump", "ring", "summon"] },
+  { id: "sporemother", name: "Spore Mother", tex: "b_sporemother", color: 0x3fd0e8, moves: ["ring", "rain", "summon"] },
+  { id: "shadowwolf", name: "Shadow Wolf", tex: "b_shadowwolf", color: 0x6a4ab0, moves: ["charge", "blink", "spin"] },
+  { id: "mosstroll", name: "Moss Troll", tex: "b_mosstroll", color: 0x7a9a4a, moves: ["stomp", "rocks", "jump"] },
+  { id: "treant", name: "Old Treant", tex: "e_treant", color: 0x4fae3a, moves: ["rain", "summon", "stomp"] },
+  { id: "mummy", name: "Mummy Pharaoh", tex: "b_mummy", color: 0xe8dcc0, moves: ["blink", "ring", "summon"] },
+  { id: "sandworm", name: "Sand Worm", tex: "b_sandworm", color: 0xd9a26a, moves: ["burrow", "rocks", "ring"] },
+  { id: "cactus", name: "Cactus Colossus", tex: "b_cactus", color: 0x5fb84a, moves: ["ring", "jump", "stomp"] },
+  { id: "scorpion", name: "Sand Scorpion", tex: "e_scorpion", color: 0xd9a24a, moves: ["charge", "volley", "burrow"] },
+  { id: "penguin", name: "Penguin Emperor", tex: "b_penguin", color: 0x2a3a5a, moves: ["charge", "summon", "rain"] },
+  { id: "icegolem", name: "Ice Golem", tex: "b_icegolem", color: 0x9fdcf4, moves: ["stomp", "rain", "breath"] },
+  { id: "yeti", name: "Frost Yeti", tex: "e_yeti", color: 0xf2f6ff, moves: ["jump", "rocks", "charge"] },
+  { id: "frostdragon", name: "Frost Dragon", tex: "b_frostdragon", color: 0x8fd8ff, moves: ["breath", "rain", "charge"] },
 ];
 
 /** A different boss every this many stages. */

@@ -462,6 +462,25 @@ export class RollScreen extends Screen {
     const shade = s.add.rectangle(W / 2, H / 2, W, H, 0x0a0614, 0.88).setAlpha(0).setInteractive();
     layer.add(shade);
     s.tweens.add({ targets: shade, alpha: 1, duration: 160 });
+    // AUTO and FAST stay at hand while the rolls take over the screen (so auto roll can always be stopped)
+    const ctrlY = H - 110;
+    const fastBtn = button(s, W / 2 + (autoUnlocked() ? 150 : 0), ctrlY, 260, 100, "mint", "FAST", () => {
+      this.host.setFast(!this.host.isFast());
+      paintCtrl();
+    }, { icon: "icon_bolt", iconSize: 44, size: 30 });
+    const autoBtn = autoUnlocked()
+      ? button(s, W / 2 - 150, ctrlY, 260, 100, "mint", "AUTO", () => {
+        save.autoRoll = !save.autoRoll;
+        persist();
+        paintCtrl();
+      }, { icon: "icon_auto", iconSize: 44, size: 30 })
+      : null;
+    const paintCtrl = () => {
+      fastBtn.setColor(this.host.isFast() ? "green" : "mint").setLabel(this.host.isFast() ? "FAST ON" : "FAST");
+      autoBtn?.setColor(save.autoRoll ? "green" : "mint").setLabel(save.autoRoll ? "AUTO ON" : "AUTO");
+    };
+    paintCtrl();
+    layer.add(autoBtn ? [fastBtn, autoBtn] : [fastBtn]);
 
     // as big as they fit, preferring wide rows
     const areaTop = this.host.L.headerBottom + 170;
@@ -699,10 +718,10 @@ export class RollScreen extends Screen {
     });
     // how long until it moves on
     const bar = s.add.graphics();
-    const hint = text(s, W / 2, bottom + 150, "Tap to continue", 30, "#e8e0ff");
+    const hint = text(s, W / 2, bottom + 100, "Tap to continue", 30, "#e8e0ff");
     layer.add([bar, hint]);
     const left = { v: 1 };
-    const countdown = s.tweens.add({ targets: left, v: 0, duration: ms, onUpdate: () => drawBar(bar.clear(), W / 2 - 200, bottom + 90, 400, 18, left.v, 0xffe066) });
+    const countdown = s.tweens.add({ targets: left, v: 0, duration: ms, onUpdate: () => drawBar(bar.clear(), W / 2 - 200, bottom + 52, 400, 18, left.v, 0xffe066) });
     return () => countdown.remove();
   }
 

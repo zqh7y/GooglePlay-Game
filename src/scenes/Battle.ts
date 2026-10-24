@@ -21,7 +21,7 @@ import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
 import { makePlaceTextures } from "../art/places";
-import { BOSS_EVERY, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
+import { BOSS_EVERY, BOSS_MOVES, BossMoveId, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
@@ -49,8 +49,21 @@ const PICK_R = 150;
 const AGGRO = 420;
 const REVIVE_GEMS = 5;
 /** Stand this close to a boss seal to close it; seals glow up when you are within SEAL_SEE. */
+/** Boss breath: a cone this long and this wide (half-angle, radians). */
+const BREATH_LEN = 700;
+const BREATH_HALF = 0.45;
 const SEAL_R = 130;
 const SEAL_SEE = 900;
+/** Free roam in the lobby: a die turns up every ROAM_DICE_MS, with at most ROAM_MAX lying around. */
+const ROAM_DICE_MS = 30000;
+const ROAM_MAX = 8;
+export type BuildingKind = "battle" | "rush";
+/** The two buildings by the crystal (offsets from the centre); walk within BLD_NEAR to see what they are for. */
+const BUILDINGS: { kind: BuildingKind; dx: number; dy: number; tex: string; name: string; color: string; glow: number }[] = [
+  { kind: "battle", dx: -620, dy: -170, tex: "bld_battle", name: "BATTLE", color: "#ffe066", glow: 0xffb03a },
+  { kind: "rush", dx: 620, dy: -170, tex: "bld_rush", name: "BOSS RUSH", color: "#e6c8ff", glow: 0xc080ff },
+];
+const BLD_NEAR = 470;
 
 export type BattleMode = "lobby" | "run" | "over";
 
@@ -144,6 +157,8 @@ interface EnemyType {
   flying?: boolean;
   boss?: boolean;
   fx: number;
+  /** a boss's three special moves */
+  moves?: BossMoveId[];
 }
 
 interface Enemy {
@@ -164,9 +179,12 @@ interface Enemy {
   /** once a monster goes for you (shield up, or you came close) it keeps hunting you */
   huntHero: boolean;
   attacking: boolean;
-  /** boss moves: walk, wind up a charge and dash, stomp, throw rocks */
-  phase: "walk" | "windup" | "dash" | "stomp" | "throw";
+  /** what a boss is doing: walking, or one of its moves (see bossMove) */
+  phase: "walk" | "windup" | "dash" | "stomp" | "throw" | "ring" | "volley" | "summon" | "spin" | "rain" | "jump" | "blink" | "burrow" | "rise" | "breath";
   phaseT: number;
+  /** shots left in a ring or volley */
+  shots: number;
+  tickT: number;
   dashX: number;
   dashY: number;
   /** mutations (see data/mutations.ts) and their state */
@@ -231,6 +249,16 @@ interface Bullet {
 }
 
 /** Rocks the boss throws at you. */
+/** A red circle on the ground that blows up when its time comes. */
+interface Strike {
+  x: number;
+  y: number;
+  r: number;
+  at: number;
+  ms: number;
+  dmg: number;
+}
+
 interface Rock {
   img: Phaser.GameObjects.Image;
   vx: number;
@@ -358,10 +386,17 @@ export class BattleScene extends Phaser.Scene {
   private shots: Shot[] = [];
   private bullets: Bullet[] = [];
   private rocks: Rock[] = [];
+  private strikes: Strike[] = [];
   private pickups: Pickup[] = [];
   private food: Food[] = [];
   private seals: Seal[] = [];
   private healPopT = 0;
+  private buildings: { kind: BuildingKind; x: number; y: number; door: Phaser.GameObjects.Image }[] = [];
+  private nearBld: BuildingKind | null = null;
+  private roamDiceT = 0;
+  private wander: [number, number] | null = null;
+  /** walking into a building to start a fight */
+  private entering = false;
   private spawnTimer = 0;
   private eliteTimer = 0;
   private chestTimer = 0;
@@ -419,7 +454,8 @@ export class BattleScene extends Phaser.Scene {
       revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], saws: [], sawHits: new Map(), mines: [], drone: null, droneT: 0, rangs: [], balls: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
-      combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0,
+      combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
+      buildings: [], nearBld: null, roamDiceT: ROAM_DICE_MS, wander: null, entering: false,
     });
     this.joy = { ...NO_JOY };
     this.heroMax = HERO_HP * villageHpMult();
@@ -488,7 +524,8 @@ export class BattleScene extends Phaser.Scene {
         this.game.events.emit("land-unlocked", this.land.name);
       });
     }
-    if (data?.autostart) this.time.delayedCall(350, () => this.begin());
+    if (data?.autostart) this.time.delayedCall(350, () => this.begin(true));
+    else if (!this.rush) for (let i = 0; i < 2; i++) this.roamDie();
     if (this.rush) this.time.delayedCall(300, () => this.beginRush());
   }
 
@@ -496,7 +533,11 @@ export class BattleScene extends Phaser.Scene {
 
   /** From the lobby (or the results screen): restart the scene as a Boss Rush. */
   private startRush(): void {
-    if (this.fighting || this.state === "intro" || this.state === "cutscene") return;
+    if (this.fighting || this.state === "intro" || this.state === "cutscene" || this.entering) return;
+    if (this.state === "lobby" && !this.rush) {
+      this.enter("rush", () => this.scene.restart({ rush: true }));
+      return;
+    }
     this.cameras.main.fadeOut(300, 40, 20, 40);
     this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ rush: true }));
   }
@@ -533,13 +574,13 @@ export class BattleScene extends Phaser.Scene {
         this.cameras.main.shake(400, 0.015);
         buzz(150);
         this.boom(x, y - 60, 2.2);
-        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true }, x, y, false, false, 1, n);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves }, x, y, false, false, 1, n);
         boss.hp = boss.maxHp = rushBossHp(n);
         // the clock is the real danger here: rush bosses hit softer
         boss.dmg *= 0.5;
         boss.huntHero = true;
         boss.phaseT = 1500;
-        this.toast(def.name, rgba(lighten(def.color, 0.3)));
+        this.toast(`${def.name}: ${def.moves.map((m) => BOSS_MOVES[m]).join(", ")}`, rgba(lighten(def.color, 0.3)));
         this.state = "boss";
       },
     });
@@ -557,6 +598,8 @@ export class BattleScene extends Phaser.Scene {
     const n = save.stage;
     const secs = (RUSH_MS - this.rushLeft) / 1000;
     this.rushBeaten++;
+    for (const e of [...this.enemies]) if (!e.type.boss) this.kill(e, true);
+    this.strikes = [];
     save.stage = Math.min(MAX_STAGE, n + 1);
     save.bestStage = Math.max(save.bestStage, save.stage);
     save.bossRushBest = Math.max(save.bossRushBest, n);
@@ -615,10 +658,31 @@ export class BattleScene extends Phaser.Scene {
     cam.setFollowOffset(0, (mid - this.scale.height / 2) / cam.zoom);
   }
 
-  /** The BATTLE button: the run starts. */
-  private begin(): void {
-    if (this.state !== "lobby") return;
+  /** The BATTLE button: the hero walks into the arena building, then the run starts. */
+  private begin(skipEnter = false): void {
+    if (this.state !== "lobby" || this.entering) return;
+    if (skipEnter) {
+      this.startRun();
+      return;
+    }
+    this.enter("battle", () => {
+      // back out by the crystal, where every run starts
+      const [cx, cy] = this.arena.center;
+      this.hero.setPosition(cx, cy + 260).setScale(1).setAlpha(1).setTexture("hero");
+      this.pets.forEach((p) => p.img.setPosition(cx + p.ox, cy + 260 + p.oy).setAlpha(1));
+      this.handImg.setVisible(true);
+      this.entering = false;
+      this.cameras.main.fadeIn(400, 74, 47, 29);
+      this.startRun();
+    });
+  }
+
+  /** The run starts: a fresh clock, the field fills with pickups. */
+  private startRun(): void {
     this.state = "intro";
+    // dice picked up while roaming the lobby are not part of this run's results
+    this.stats = freshStats();
+    battle.stats = this.stats;
     battle.mode = "run";
     this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
@@ -677,6 +741,111 @@ export class BattleScene extends Phaser.Scene {
     return this.state === "fight" || this.state === "boss";
   }
 
+  /** Free to walk around the lobby (not on the way into a building). */
+  private get roaming(): boolean {
+    return this.state === "lobby" && !this.rush && !this.entering;
+  }
+
+  // ───────────────────────── free roam ─────────────────────────
+
+  /**
+   * The hero heads into a building: runs to the door (or pops over first if far away), shrinks into
+   * the glowing doorway with the pets, the screen fades, then `then` starts the fight.
+   */
+  private enter(kind: BuildingKind, then: () => void): void {
+    const b = this.buildings.find((x) => x.kind === kind);
+    if (!b) {
+      then();
+      return;
+    }
+    this.entering = true;
+    this.joy = { ...NO_JOY };
+    this.nearBld = null;
+    this.game.events.emit("building-near", null);
+    this.handImg.setVisible(false);
+    const cam = this.cameras.main;
+    const [dx, dy] = [b.x, b.y - 30];
+    const goIn = () => {
+      this.hero.setTexture("hero");
+      sfx.lucky();
+      buzz(60);
+      this.tweens.killTweensOf(b.door);
+      this.tweens.add({ targets: b.door, alpha: 1, scaleX: 3, scaleY: 3.4, duration: 300, yoyo: true });
+      this.sparks.setParticleTint(BUILDINGS.find((x) => x.kind === kind)!.glow);
+      this.sparks.explode(30, dx, dy - 120);
+      this.tweens.add({ targets: this.hero, y: dy - 90, scale: 0.3, alpha: 0, duration: 380, ease: "Quad.in" });
+      this.pets.forEach((p, i) => this.tweens.add({ targets: p.img, x: dx, y: dy - 60, alpha: 0, duration: 420, delay: 60 * i, ease: "Quad.in" }));
+      this.time.delayedCall(380, () => {
+        cam.flash(180, 255, 240, 200);
+        cam.fadeOut(350, kind === "rush" ? 40 : 74, kind === "rush" ? 20 : 47, kind === "rush" ? 40 : 29);
+        cam.once("camerafadeoutcomplete", then);
+      });
+    };
+    const run = () => {
+      const d = Math.hypot(dx - this.hero.x, dy - this.hero.y);
+      this.hero.setFlipX(dx < this.hero.x);
+      let f = 0;
+      this.tweens.add({
+        targets: this.hero, x: dx, y: dy, duration: Phaser.Math.Clamp(d / 1.5, 200, 800), ease: "Sine.inOut",
+        onUpdate: () => {
+          if (++f % 4 === 0) this.hero.setTexture(f % 8 === 0 ? "hero_w1" : "hero_w2");
+          this.hero.setDepth(this.hero.y);
+        },
+        onComplete: goIn,
+      });
+    };
+    if (Math.hypot(dx - this.hero.x, dy - this.hero.y) > 1100) {
+      // far away: pop over next to the building first
+      this.puff.setParticleTint(0xffffff);
+      this.puff.explode(16, this.hero.x, this.hero.y - 60);
+      this.hero.setPosition(dx, dy + 340);
+      this.puff.explode(16, dx, dy + 280);
+      this.time.delayedCall(150, run);
+    } else {
+      run();
+    }
+  }
+
+  /** A die turns up somewhere around you. */
+  private roamDie(): void {
+    this.addDie(rollDiceTier(save.stage), ...this.randomSpot(450, 1700, [this.hero.x, this.hero.y]), 0);
+  }
+
+  /** Free roam: dice keep turning up, and walking up to a building shows what it is for. */
+  private roamTick(delta: number): void {
+    this.roamDiceT -= delta;
+    if (this.roamDiceT <= 0) {
+      this.roamDiceT = ROAM_DICE_MS;
+      if (this.pickups.filter((p) => p.kind === "dice").length < ROAM_MAX) this.roamDie();
+    }
+    const near = this.entering ? null : (this.buildings.find((b) => Math.hypot(b.x - this.hero.x, (b.y - this.hero.y) * 1.3) < BLD_NEAR)?.kind ?? null);
+    if (near !== this.nearBld) {
+      this.nearBld = near;
+      this.game.events.emit("building-near", near);
+    }
+  }
+
+  /** AFK: walk to the nearest die; with none around, stroll between spots near the crystal. */
+  private afkStep(): [number, number] {
+    const dice = this.pickups.filter((p) => p.kind === "dice");
+    let tx: number;
+    let ty: number;
+    let pace = 1;
+    if (dice.length) {
+      const dist = (p: Pickup) => Math.hypot(p.x - this.hero.x, p.y - this.hero.y);
+      const p = dice.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+      [tx, ty] = [p.x, p.y];
+      this.wander = null;
+    } else {
+      if (!this.wander || Math.hypot(this.wander[0] - this.hero.x, this.wander[1] - this.hero.y) < 40) this.wander = this.randomSpot(200, 900);
+      [tx, ty] = this.wander;
+      pace = 0.5;
+    }
+    const [vx, vy] = [tx - this.hero.x, ty - this.hero.y];
+    const d = Math.hypot(vx, vy);
+    return d < 20 ? [0, 0] : [(vx / d) * pace, (vy / d) * pace];
+  }
+
   // ───────────────────────── arena ─────────────────────────
 
   /** Scenery far from the camera is hidden, so the big field stays fast. */
@@ -709,13 +878,25 @@ export class BattleScene extends Phaser.Scene {
     });
     const [cx, cy] = a.center;
     this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    const spots = BUILDINGS.map((b) => [cx + b.dx, cy + b.dy]);
     for (const o of a.objects) {
+      if (spots.some(([bx, by]) => Math.abs(o.x - bx) < 340 && o.y > by - 560 && o.y < by + 220)) continue;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
       if (o.scale) img.setScale(o.scale);
       this.addStatic(img, o.x, o.y);
       if (o.tex.startsWith("tree") || o.tex === "palm") {
         this.tweens.add({ targets: img, angle: { from: -1.5, to: 1.5 }, duration: 2200 + (o.x % 900), yoyo: true, repeat: -1, ease: "Sine.inOut" });
       }
+    }
+    // the arena and the boss tower: walk up to them in the lobby to see what they are for
+    for (const b of BUILDINGS) {
+      const [x, y] = [cx + b.dx, cy + b.dy];
+      this.add.ellipse(x, y - 6, 480, 80, 0x000000, 0.18).setDepth(-700);
+      this.add.image(x, y, b.tex).setOrigin(0.5, 1).setDepth(y);
+      const door = this.add.image(x, y - 110, "glow").setTint(b.glow).setScale(1.4, 1.8).setAlpha(0.5).setDepth(y + 1);
+      this.tweens.add({ targets: door, alpha: 0.9, scaleX: 1.6, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      text(this, x, y - 640, b.name, 64, b.color).setDepth(y + 2);
+      this.buildings.push({ kind: b.kind, x, y, door });
     }
     // the crystal you protect: bobbing, glowing and sparkling
     const glow = this.add.image(cx, cy - 110, "glow").setTint(this.land.crystal).setScale(2.4).setAlpha(0.5).setDepth(cy - 1);
@@ -822,7 +1003,7 @@ export class BattleScene extends Phaser.Scene {
     const reach = Math.max(90, PICK_R * this.magnetMult() * 0.45);
     this.pickups = this.pickups.filter((p) => {
       const near = Math.abs(p.x - this.hero.x) < reach && Math.abs(p.y - this.hero.y) < reach * 0.8;
-      if (near && p.ready && this.fighting) {
+      if (near && p.ready && (this.fighting || this.roaming)) {
         this.collect(p);
         return false;
       }
@@ -1523,8 +1704,11 @@ export class BattleScene extends Phaser.Scene {
   private setupControls(): void {
     this.keys = this.input.keyboard!.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT") as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (this.joy.active || battle.mode !== "run" || !this.cameras.main.visible || p.y < this.L.hudBottom + 10) return;
+      const roam = battle.mode === "lobby" && this.roaming;
+      if (this.joy.active || (battle.mode !== "run" && !roam) || !this.cameras.main.visible || p.y < this.L.hudBottom + 10) return;
       if (p.x < 220 && p.y < this.L.hudBottom + 230) return;
+      // the lobby's buttons and pills sit at the bottom
+      if (roam && p.y > this.L.navTop - 380) return;
       this.joy = { active: true, id: p.id, bx: p.x, by: p.y, dx: 0, dy: 0 };
     });
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -1553,6 +1737,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private moveHero(time: number, delta: number): void {
+    if (this.entering) {
+      this.hero.setDepth(this.hero.y);
+      return;
+    }
     const k = this.keys;
     let vx = (k.D.isDown || k.RIGHT.isDown ? 1 : 0) - (k.A.isDown || k.LEFT.isDown ? 1 : 0);
     let vy = (k.S.isDown || k.DOWN.isDown ? 1 : 0) - (k.W.isDown || k.UP.isDown ? 1 : 0);
@@ -1560,7 +1748,9 @@ export class BattleScene extends Phaser.Scene {
       vx = this.joy.dx / 90;
       vy = this.joy.dy / 90;
     }
-    if (!this.fighting) vx = vy = 0;
+    const roaming = this.roaming;
+    if (roaming && save.afk && Math.hypot(vx, vy) < 0.05) [vx, vy] = this.afkStep();
+    if (!this.fighting && !roaming) vx = vy = 0;
     const len = Math.hypot(vx, vy);
     if (len > 1) {
       vx /= len;
@@ -1844,7 +2034,7 @@ export class BattleScene extends Phaser.Scene {
       xp: Math.round((elite ? 8 : type.stats.xp) * bonus),
       dmg: type.stats.dmg * (1 + 0.05 * (stage - 1)) * (1 + 0.2 * this.minute) * (elite ? 1.5 : 1),
       r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
-      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0,
+      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0,
       muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
       blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false,
     };
@@ -1962,13 +2152,13 @@ export class BattleScene extends Phaser.Scene {
         this.boom(x, y - 60, 3);
         this.puff.setParticleTint(0xd8c8a8);
         this.puff.explode(40, x, y);
-        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true }, x, y);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves }, x, y);
         boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP);
         boss.huntHero = true;
         boss.phaseT = 2500;
         this.placeSeals();
         music.play("boss");
-        this.game.events.emit("boss-intro", { name: def.name, tex: def.tex });
+        this.game.events.emit("boss-intro", { name: def.name, tex: def.tex, moves: def.moves.map((m) => BOSS_MOVES[m]) });
         this.time.delayedCall(1800, () => {
           if (this.state !== "cutscene") return;
           this.state = "boss";
@@ -2132,12 +2322,14 @@ export class BattleScene extends Phaser.Scene {
 
     this.moveEnemies(time, delta);
     if (this.state === "boss" && !this.rush) this.sealsTick(delta);
+    if (this.state === "lobby" && !this.rush) this.roamTick(delta);
     if (fighting) {
       this.gadgetsTick(delta);
       this.petAttacks(delta);
       this.crystalShards(delta);
     }
     this.moveRocks(delta);
+    this.strikesTick();
     this.moveBullets(delta);
     this.moveGadgets(time, delta);
     this.moveShots(delta);
@@ -2234,7 +2426,8 @@ export class BattleScene extends Phaser.Scene {
       }
       e.atkTimer -= delta;
       // touching you hurts
-      if (heroD < HERO_R + e.r + 10 && e.atkTimer <= 0) {
+      const away = e.phase === "jump" || e.phase === "burrow" || e.phase === "rise";
+      if (heroD < HERO_R + e.r + 10 && e.atkTimer <= 0 && !away) {
         e.atkTimer = 800;
         this.hurt(e.dmg * hurtMult);
         // vampires heal by biting
@@ -2274,32 +2467,22 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /**
-   * The boss walks at you and every few seconds does one of three moves, each shown before
-   * it lands: a charge (red marks on the ground), a stomp (a red circle) or a volley of rocks.
+   * The boss walks at you and every few seconds does one of its three moves (see data/bosses.ts),
+   * each shown before it lands: red marks for a charge, red circles for stomps, slams and falling
+   * rain, a red cone for breath. Returns the boss's walking speed this frame.
    */
   private bossMove(e: Enemy, delta: number, ux: number, uy: number): number {
     e.phaseT -= delta;
     if (this.state !== "boss") return 0;
+    const walk = e.type.stats.speed * 1.3;
     switch (e.phase) {
       case "walk": {
-        if (e.phaseT > 0) return e.type.stats.speed * 1.3;
-        const d = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
-        const r = Math.random();
-        if (r < 0.35 && d < 650) {
-          e.phase = "stomp";
-          e.phaseT = 950;
-          this.tweens.add({ targets: e.img, scaleY: 1.1, scaleX: 1.45, duration: 300, yoyo: true, repeat: 1 });
-        } else if (r < 0.7) {
-          e.phase = "windup";
-          e.phaseT = 750;
-          e.dashX = ux;
-          e.dashY = uy;
-          this.tweens.add({ targets: e.img, scaleX: 1.45, scaleY: 1.1, duration: 140, yoyo: true, repeat: 2 });
-        } else {
-          e.phase = "throw";
-          e.phaseT = 550;
-          this.tweens.add({ targets: e.img, angle: -12, duration: 250, yoyo: true });
-        }
+        if (e.phaseT > 0) return walk;
+        const moves = e.type.moves ?? ["charge", "stomp", "rocks"];
+        const far = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y) > 650;
+        // stomps and breath only reach you up close
+        const ok = moves.filter((m) => !far || (m !== "stomp" && m !== "breath"));
+        this.startBossMove(e, ok.length ? ok[Math.floor(Math.random() * ok.length)] : "charge", ux, uy);
         return 0;
       }
       case "windup":
@@ -2314,30 +2497,275 @@ export class BattleScene extends Phaser.Scene {
         return 1000;
       case "stomp":
         if (e.phaseT <= 0) {
-          // shockwave
-          const ring = this.add.image(e.img.x, e.img.y - 20, "ring").setTint(0xffb03b).setScale(0.5, 0.25).setDepth(e.img.y + 1);
-          this.tweens.add({ targets: ring, scaleX: 4.6, scaleY: 2.3, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
-          this.boom(e.img.x, e.img.y - 30, 1.6);
-          this.cameras.main.shake(350, 0.014);
-          for (const p of this.pets) if (Math.hypot(p.img.x - e.img.x, (p.img.y - e.img.y) * 1.4) < 360) this.hurtPet(p, e.dmg * 1.5);
-          if (Math.hypot(this.hero.x - e.img.x, (this.hero.y - e.img.y) * 1.4) < 360) this.hurt(e.dmg * 1.5);
+          this.shockwave(e.img.x, e.img.y, 360, e.dmg * 1.5);
           this.bossRest(e);
         }
         return 0;
       case "throw":
         if (e.phaseT <= 0) {
           const a0 = Math.atan2(this.hero.y - 40 - (e.img.y - 100), this.hero.x - e.img.x);
-          for (let k = -2; k <= 2; k++) {
-            const a = a0 + k * 0.22;
-            const img = this.add.image(e.img.x, e.img.y - 100, "rock_small").setScale(1.4).setDepth(9000);
-            this.rocks.push({ img, vx: Math.cos(a) * 720, vy: Math.sin(a) * 720, life: 2200, dmg: e.dmg * 0.8 });
-          }
+          for (let k = -2; k <= 2; k++) this.bossShot(e, a0 + k * 0.22, 720, e.dmg * 0.8, "rock_small");
           sfx.boom();
           this.bossRest(e);
         }
         return 0;
+      case "ring":
+        if (e.phaseT <= 0) {
+          // a ring of shots all around; the second ring is turned half a step
+          const n = 12;
+          for (let k = 0; k < n; k++) this.bossShot(e, ((k + (e.shots % 2) * 0.5) / n) * Math.PI * 2, 520, e.dmg * 0.7);
+          sfx.shoot(true);
+          if (--e.shots > 0) e.phaseT = 520;
+          else this.bossRest(e);
+        }
+        return 0;
+      case "volley":
+        if (e.phaseT <= 0) {
+          this.bossShot(e, Math.atan2(this.hero.y - 40 - (e.img.y - 100), this.hero.x - e.img.x), 820, e.dmg * 0.7);
+          sfx.shoot(false);
+          if (--e.shots > 0) e.phaseT = 240;
+          else this.bossRest(e);
+        }
+        return 0;
+      case "summon":
+        if (e.phaseT <= 0) {
+          this.summonMinions(e);
+          this.bossRest(e);
+        }
+        return 0;
+      case "spin":
+        if (e.phaseT <= 0) {
+          this.tweens.add({ targets: e.img, angle: 0, duration: 150 });
+          this.bossRest(e);
+          return 0;
+        }
+        e.img.angle += delta * 1.1;
+        return walk * 2.1;
+      case "rain":
+        if (e.phaseT <= 0) this.bossRest(e);
+        return walk * 0.4;
+      case "burrow":
+        // a mound of dirt rushes at you underground
+        e.tickT -= delta;
+        if (e.tickT <= 0) {
+          e.tickT = 90;
+          this.puff.setParticleTint(0xc8a878);
+          this.puff.explode(3, e.img.x, e.img.y);
+        }
+        if (e.phaseT <= 0) {
+          e.phase = "rise";
+          e.phaseT = 650;
+          this.addStrike(e.img.x, e.img.y, 240, 650, e.dmg * 1.6);
+        }
+        return 560;
+      case "rise":
+        if (e.phaseT <= 0) {
+          this.tweens.add({ targets: e.img, alpha: 1, duration: 120 });
+          this.puff.setParticleTint(0xc8a878);
+          this.puff.explode(26, e.img.x, e.img.y - 40);
+          this.bossRest(e);
+        }
+        return 0;
+      case "breath":
+        // first the cone is shown, then it burns for a moment
+        if (e.phaseT < 700) {
+          e.tickT -= delta;
+          if (e.tickT <= 0) {
+            e.tickT = 160;
+            this.puff.setParticleTint(e.type.fx);
+            const a = Math.atan2(e.dashY, e.dashX);
+            for (let k = 0; k < 4; k++) {
+              const aa = a + (Math.random() - 0.5) * 0.8;
+              const r = 120 + Math.random() * 560;
+              this.puff.explode(2, e.img.x + Math.cos(aa) * r, e.img.y - 60 + Math.sin(aa) * r);
+            }
+            if (this.inCone(e)) this.hurt(e.dmg * 0.45);
+          }
+        }
+        if (e.phaseT <= 0) this.bossRest(e);
+        return 0;
     }
+    // jump and blink are moved by their tweens
     return 0;
+  }
+
+  /** Starts a boss move: each one shows itself first so you can get out of the way. */
+  private startBossMove(e: Enemy, move: BossMoveId, ux: number, uy: number): void {
+    const glowUp = (color: number) => {
+      e.img.setTintFill(color);
+      this.time.delayedCall(90, () => e.img.clearTint());
+    };
+    switch (move) {
+      case "charge":
+        e.phase = "windup";
+        e.phaseT = 750;
+        e.dashX = ux;
+        e.dashY = uy;
+        this.tweens.add({ targets: e.img, scaleX: e.img.scaleX * 1.12, scaleY: e.img.scaleY * 0.85, duration: 140, yoyo: true, repeat: 2 });
+        break;
+      case "stomp":
+        e.phase = "stomp";
+        e.phaseT = 950;
+        this.tweens.add({ targets: e.img, scaleY: e.img.scaleY * 0.85, scaleX: e.img.scaleX * 1.12, duration: 300, yoyo: true, repeat: 1 });
+        break;
+      case "rocks":
+        e.phase = "throw";
+        e.phaseT = 550;
+        this.tweens.add({ targets: e.img, angle: -12, duration: 250, yoyo: true });
+        break;
+      case "ring":
+        e.phase = "ring";
+        e.phaseT = 600;
+        e.shots = 2;
+        glowUp(e.type.fx);
+        this.tweens.add({ targets: e.img, scaleX: e.img.scaleX * 1.1, scaleY: e.img.scaleY * 1.1, duration: 280, yoyo: true });
+        break;
+      case "volley":
+        e.phase = "volley";
+        e.phaseT = 500;
+        e.shots = 5;
+        glowUp(e.type.fx);
+        break;
+      case "summon":
+        e.phase = "summon";
+        e.phaseT = 900;
+        this.tweens.add({ targets: e.img, angle: { from: -10, to: 10 }, duration: 110, yoyo: true, repeat: 3 });
+        this.puff.setParticleTint(0xb36aff);
+        this.puff.explode(20, e.img.x, e.img.y - 80);
+        sfx.alarm();
+        break;
+      case "spin":
+        e.phase = "spin";
+        e.phaseT = 1800;
+        sfx.charge(3);
+        break;
+      case "rain": {
+        e.phase = "rain";
+        e.phaseT = 1500;
+        // one lands right on you, the rest around you
+        for (let k = 0; k < 6; k++) {
+          const a = Math.random() * Math.PI * 2;
+          const d = k === 0 ? 0 : 120 + Math.random() * 300;
+          this.addStrike(this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.7, 150, 800 + k * 120, e.dmg * 1.1, e.type.fx);
+        }
+        this.tweens.add({ targets: e.img, y: e.img.y - 30, duration: 200, yoyo: true });
+        break;
+      }
+      case "jump": {
+        e.phase = "jump";
+        e.phaseT = 99999;
+        const [sx, sy] = [e.img.x, e.img.y];
+        const [tx, ty] = [clampX(this.hero.x), clampY(this.hero.y)];
+        this.addStrike(tx, ty, 270, 1000, e.dmg * 1.6);
+        const k = { t: 0 };
+        this.tweens.add({
+          targets: k, t: 1, duration: 1000, ease: "Sine.inOut",
+          onUpdate: () => e.img.setPosition(sx + (tx - sx) * k.t, sy + (ty - sy) * k.t - Math.sin(k.t * Math.PI) * 520).setDepth(ty + 400),
+          onComplete: () => {
+            this.puff.setParticleTint(0xd8c8a8);
+            this.puff.explode(24, tx, ty);
+            this.bossRest(e);
+          },
+        });
+        break;
+      }
+      case "blink": {
+        e.phase = "blink";
+        e.phaseT = 99999;
+        this.puff.setParticleTint(0xb36aff);
+        this.puff.explode(16, e.img.x, e.img.y - 60);
+        this.tweens.add({
+          targets: e.img, alpha: 0.15, duration: 250,
+          onComplete: () => {
+            const a = Math.random() * Math.PI * 2;
+            e.img.setPosition(clampX(this.hero.x + Math.cos(a) * 300), clampY(this.hero.y + Math.sin(a) * 220));
+            this.puff.explode(16, e.img.x, e.img.y - 60);
+            this.tweens.add({ targets: e.img, alpha: 1, duration: 200 });
+            // straight into a quick stomp
+            e.phase = "stomp";
+            e.phaseT = 650;
+          },
+        });
+        break;
+      }
+      case "burrow":
+        e.phase = "burrow";
+        e.phaseT = 1400;
+        e.tickT = 0;
+        this.tweens.add({ targets: e.img, alpha: 0.08, duration: 250 });
+        this.puff.setParticleTint(0xc8a878);
+        this.puff.explode(24, e.img.x, e.img.y);
+        break;
+      case "breath":
+        e.phase = "breath";
+        e.phaseT = 1500;
+        e.tickT = 0;
+        e.dashX = ux;
+        e.dashY = uy;
+        this.tweens.add({ targets: e.img, scaleY: e.img.scaleY * 1.08, duration: 400, yoyo: true });
+        break;
+    }
+  }
+
+  /** Is the hero inside the boss's breath cone? */
+  private inCone(e: Enemy): boolean {
+    const dx = this.hero.x - e.img.x;
+    const dy = this.hero.y - 40 - (e.img.y - 60);
+    const d = Math.hypot(dx, dy);
+    if (d > BREATH_LEN) return false;
+    const diff = Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - Math.atan2(e.dashY, e.dashX));
+    return Math.abs(diff) < BREATH_HALF;
+  }
+
+  /** A shot from the boss (an orb in its colour, or a rock) flying straight. */
+  private bossShot(e: Enemy, a: number, speed: number, dmg: number, tex = "b_orb"): void {
+    const img = this.add.image(e.img.x, e.img.y - 100, tex).setScale(tex === "b_orb" ? 1.1 : 1.4).setDepth(9000);
+    if (tex === "b_orb") img.setTint(e.type.fx);
+    this.rocks.push({ img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 2600, dmg });
+  }
+
+  /** A ring blast on the ground: hurts you and your pets inside it. */
+  private shockwave(x: number, y: number, r: number, dmg: number): void {
+    const hits = dmg > 0;
+    const ring = this.add.image(x, y - 20, "ring").setTint(0xffb03b).setScale(0.5, 0.25).setDepth(y + 1);
+    this.tweens.add({ targets: ring, scaleX: (r / 360) * 4.6, scaleY: (r / 360) * 2.3, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
+    this.boom(x, y - 30, (r / 360) * 1.6);
+    this.cameras.main.shake(350, 0.014);
+    if (!hits) return;
+    for (const p of this.pets) if (Math.hypot(p.img.x - x, (p.img.y - y) * 1.4) < r) this.hurtPet(p, dmg);
+    if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 1.4) < r) this.hurt(dmg);
+  }
+
+  /** A red circle on the ground that blows up after `ms` (with something falling from the sky if `fall` is set). */
+  private addStrike(x: number, y: number, r: number, ms: number, dmg: number, fall?: number): void {
+    const [sx, sy] = [clampX(x), clampY(y)];
+    this.strikes.push({ x: sx, y: sy, r, at: this.time.now + ms, ms, dmg });
+    if (fall === undefined) return;
+    const img = this.add.image(sx, sy - 1500, "b_orb").setTint(fall).setScale(1.9).setDepth(sy + 5);
+    this.tweens.add({ targets: img, y: sy - 40, duration: ms, ease: "Quad.in", onComplete: () => img.destroy() });
+  }
+
+  private strikesTick(): void {
+    const now = this.time.now;
+    this.strikes = this.strikes.filter((s) => {
+      if (now < s.at) return true;
+      this.shockwave(s.x, s.y, s.r, this.fighting ? s.dmg : 0);
+      return false;
+    });
+  }
+
+  /** The boss calls a few monsters of this land around it. */
+  private summonMinions(e: Enemy): void {
+    const stage = this.rush ? battle.rushBoss : save.stage;
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      const [x, y] = [clampX(e.img.x + Math.cos(a) * 220), clampY(e.img.y + Math.sin(a) * 160)];
+      this.puff.setParticleTint(0xb36aff);
+      this.puff.explode(10, x, y - 30);
+      const m = this.addEnemy(this.types().a, x, y, false, false, 1, stage);
+      m.huntHero = true;
+    }
   }
 
   private bossRest(e: Enemy): void {
@@ -2736,11 +3164,28 @@ export class BattleScene extends Phaser.Scene {
         for (let d = 120; d <= 700; d += 75) {
           this.fx.fillStyle(0xff3a3a, blink).fillEllipse(e.img.x + e.dashX * d, e.img.y + e.dashY * d, 70, 32);
         }
+      } else if (e.phase === "breath") {
+        const a = Math.atan2(e.dashY, e.dashX);
+        const [ox, oy] = [e.img.x, e.img.y - 60];
+        const firing = e.phaseT < 700;
+        this.fx.fillStyle(firing ? 0xffa03a : 0xff3a3a, firing ? 0.4 : blink * 0.7).fillTriangle(
+          ox, oy, ox + Math.cos(a - BREATH_HALF) * BREATH_LEN, oy + Math.sin(a - BREATH_HALF) * BREATH_LEN,
+          ox + Math.cos(a + BREATH_HALF) * BREATH_LEN, oy + Math.sin(a + BREATH_HALF) * BREATH_LEN,
+        );
+      } else if (e.phase === "burrow") {
+        this.fx.fillStyle(0x8a6a3a, 0.85).fillEllipse(e.img.x, e.img.y, 150, 56);
+        this.fx.fillStyle(0xc8a878, 0.9).fillEllipse(e.img.x, e.img.y - 8, 100, 34);
       } else if (e.phase === "stomp") {
         const f = 1 - Math.max(0, e.phaseT) / 950;
         this.fx.fillStyle(0xff3a3a, 0.15 + f * 0.25).fillEllipse(e.img.x, e.img.y, 720 * f, 504 * f);
         this.fx.lineStyle(8, 0xff3a3a, blink).strokeEllipse(e.img.x, e.img.y, 720, 504);
       }
+    }
+    for (const st of this.strikes) {
+      const f = Phaser.Math.Clamp(1 - (st.at - time) / st.ms, 0, 1);
+      const blink = time % 200 < 100 ? 0.75 : 0.4;
+      this.fx.fillStyle(0xff3a3a, 0.1 + f * 0.3).fillEllipse(st.x, st.y, st.r * 2 * f, (st.r * 2 * f) / 1.4);
+      this.fx.lineStyle(8, 0xff3a3a, blink).strokeEllipse(st.x, st.y, st.r * 2, (st.r * 2) / 1.4);
     }
     this.bars.clear();
     for (const e of this.enemies) {
@@ -2775,6 +3220,10 @@ export class BattleScene extends Phaser.Scene {
       const color = p.kind === "dice" ? TIER_INFO[p.tier!].color : p.kind === "orb" ? 0xff9a2a : p.kind === "airdrop" ? 0xffffff : p.kind === "chest" ? 0xffe066 : 0xd8d8d8;
       const r = p.kind === "airdrop" || p.kind === "chest" || p.kind === "orb" ? 5 : 3.5;
       g.fillStyle(color, 1).fillRect(mx + p.x * s - r, my + p.y * s - r, r * 2, r * 2);
+    }
+    for (const b of this.buildings) {
+      g.fillStyle(b.kind === "battle" ? 0xffb03a : 0xc080ff, 1).fillRect(mx + b.x * s - 7, my + (b.y - 100) * s - 7, 14, 14);
+      g.lineStyle(2, INK_N, 1).strokeRect(mx + b.x * s - 7, my + (b.y - 100) * s - 7, 14, 14);
     }
     for (const sl of this.seals) {
       if (sl.done) continue;
