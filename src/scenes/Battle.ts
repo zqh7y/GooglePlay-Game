@@ -47,6 +47,11 @@ const HERO_R = 40;
 const PICK_R = 150;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;
+/** Crystal raiders keep marching on the crystal unless you get right in their way (or the shield is up). */
+const RAIDER_AGGRO = 140;
+/** Kills in a row: the streak lasts while each kill comes within STREAK_MS of the last; every STREAK_STEP kills add +1%. */
+const STREAK_MS = 3000;
+const STREAK_STEP = 50;
 const REVIVE_GEMS = 5;
 /** Stand this close to a boss seal to close it; seals glow up when you are within SEAL_SEE. */
 /** Boss breath: a cone this long and this wide (half-angle, radians). */
@@ -87,7 +92,8 @@ export const battle = {
   level: 1,
   xp: 0,
   dps: 0,
-  combo: 0,
+  /** kills in a row (each one within STREAK_MS of the last) */
+  streak: 0,
   /** a level-up skill choice is open */
   choosing: false,
   shielded: false,
@@ -173,6 +179,8 @@ interface Enemy {
   toCrystal: boolean;
   /** once a monster goes for you (shield up, or you came close) it keeps hunting you */
   huntHero: boolean;
+  /** a crystal raider: it goes for the crystal whenever the shield is down */
+  raider: boolean;
   attacking: boolean;
   /** what a boss is doing: walking, or one of its moves (see bossMove) */
   phase: "walk" | "windup" | "dash" | "stomp" | "throw" | "ring" | "volley" | "summon" | "spin" | "rain" | "jump" | "blink" | "burrow" | "rise" | "breath";
@@ -405,9 +413,9 @@ export class BattleScene extends Phaser.Scene {
   private crystalGlow!: Phaser.GameObjects.Image;
   private crystalSparkle!: Phaser.GameObjects.Particles.ParticleEmitter;
   private gloom!: Phaser.GameObjects.Rectangle;
-  private combo = 0;
-  private comboTimer = 0;
-  private comboText!: Phaser.GameObjects.Text;
+  private streak = 0;
+  private streakTimer = 0;
+  private streakText!: Phaser.GameObjects.Text;
 
   private fx!: Phaser.GameObjects.Graphics;
   private bars!: Phaser.GameObjects.Graphics;
@@ -452,7 +460,7 @@ export class BattleScene extends Phaser.Scene {
       revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
-      combo: 0, comboTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
+      streak: 0, streakTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
       roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
     });
     this.joy = { ...NO_JOY };
@@ -461,7 +469,7 @@ export class BattleScene extends Phaser.Scene {
     this.crystalMax = CRYSTAL_HP * villageHpMult();
     this.crystalHp = this.crystalMax;
     Object.assign(battle, {
-      mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, combo: 0, choosing: false,
+      mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
       bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0,
     });
@@ -491,7 +499,7 @@ export class BattleScene extends Phaser.Scene {
         text(this, 0, 0, "", 62, "#8af06a").setOrigin(0, 0.5),
       ]).setDepth(9350).setVisible(false));
     }
-    this.comboText = text(this, 0, 0, "", 74, "#ffe066").setDepth(9400).setVisible(false);
+    this.streakText = text(this, 0, 0, "", 74, "#ffe066").setDepth(9400).setVisible(false);
 
     this.buildPets();
     this.setupControls();
@@ -1307,7 +1315,7 @@ export class BattleScene extends Phaser.Scene {
   /** A gadget's numbers right now, with this run's skills. */
   private gStats(g: GadgetSlot): GadgetBase {
     const s = gadgetStats(g.kind, g.tier, g.level);
-    const quick = (1 + 0.15 * this.lv("hyper")) * (this.fortified ? 1 + 0.1 * this.lv("fort") : 1);
+    const quick = (1 + 0.15 * this.lv("hyper")) * (this.fortified ? 1 + 0.1 * this.lv("fort") : 1) * (1 + this.streakBonus);
     // Double Trouble: odd levels throw one more, even levels hit harder
     const multi = this.lv("double");
     return {
@@ -1907,7 +1915,12 @@ export class BattleScene extends Phaser.Scene {
   /** Team damage multiplier: tree upgrades plus "buff" pets. */
   private damageMult(): number {
     const buff = this.pets.filter((p) => p.def.kind === "buff").reduce((s, p) => s + this.petDamage(p) / 100, 0);
-    return dmgMult() * (1 + buff);
+    return dmgMult() * (1 + buff) * (1 + this.streakBonus);
+  }
+
+  /** +1% damage and attack speed for every 50 kills in the current streak. */
+  private get streakBonus(): number {
+    return Math.floor(this.streak / STREAK_STEP) * 0.01;
   }
 
   private heroDamage(): number {
@@ -1975,7 +1988,9 @@ export class BattleScene extends Phaser.Scene {
         // (the ones that appear around you come for you)
         const atCrystal = !this.shielded && this.elapsed > 8000 && Math.random() < CRYSTAL_SPAWN_SHARE;
         const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.offScreen();
-        this.addEnemy(this.pickType(), x, y).huntHero = !atCrystal;
+        const e = this.addEnemy(this.pickType(), x, y);
+        e.huntHero = !atCrystal;
+        e.raider = atCrystal;
       }
     }
     // tough elites carry dice
@@ -2030,7 +2045,7 @@ export class BattleScene extends Phaser.Scene {
       xp: Math.round((elite ? 8 : type.stats.xp) * bonus),
       dmg: type.stats.dmg * (1 + 0.05 * (stage - 1)) * (1 + 0.2 * this.minute) * (elite ? 1.5 : 1),
       r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
-      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0,
+      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, raider: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0,
       muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
       blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false, stunUntil: 0,
     };
@@ -2298,23 +2313,23 @@ export class BattleScene extends Phaser.Scene {
     this.spawn(delta);
     const fighting = this.fighting;
     if (fighting) {
-      // slowly heal between hits; the crystal regrows a little (more with Crystal Mend)
+      // you slowly heal between hits; the crystal never heals by itself
       if (time - this.hurtAt > 3000) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.01 * (delta / 1000));
-      this.crystalHp = Math.min(this.crystalMax, this.crystalHp + this.crystalMax * (0.003 + 0.008 * this.lv("mend")) * (delta / 1000));
     }
     battle.hp = this.heroHp / this.heroMax;
     battle.crystal = this.crystalHp / this.crystalMax;
     const boss = this.enemies.find((e) => e.type.boss);
     battle.bossFrac = boss ? boss.hp / boss.maxHp : -1;
 
-    if (this.comboTimer > 0) {
-      this.comboTimer -= delta;
-      if (this.comboTimer <= 0) {
-        this.combo = battle.combo = 0;
-        this.comboText.setVisible(false);
+    if (this.streakTimer > 0) {
+      this.streakTimer -= delta;
+      if (this.streakTimer <= 0) {
+        if (this.streak >= 50) this.toast(`Streak over: ${this.streak} kills`, "#ffd0a0");
+        this.streak = battle.streak = 0;
+        this.streakText.setVisible(false);
       }
     }
-    this.comboText.setPosition(this.hero.x, this.hero.y - 260);
+    this.streakText.setPosition(this.hero.x, this.hero.y - 260);
 
     this.moveEnemies(time, delta);
     if (this.state === "boss" && !this.rush) this.sealsTick(delta);
@@ -2373,7 +2388,9 @@ export class BattleScene extends Phaser.Scene {
       if (frozen || !fighting || this.time.now < e.stunUntil) continue;
       if (e.muts.length) this.mutantTick(e, delta);
       const heroD = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
-      if (this.shielded || e.type.boss || heroD <= AGGRO) e.huntHero = true;
+      // raiders go back to the crystal as soon as the shield drops; everyone else hunts you once you come close
+      if (e.raider && !e.type.boss) e.huntHero = this.shielded || heroD <= RAIDER_AGGRO;
+      else if (this.shielded || e.type.boss || heroD <= AGGRO) e.huntHero = true;
       e.toCrystal = !e.huntHero;
       if (!e.toCrystal) e.attacking = false;
       const tx = e.toCrystal ? cx : this.hero.x;
@@ -2899,7 +2916,7 @@ export class BattleScene extends Phaser.Scene {
   /** Pets attack the monster they are chasing once they are close enough. No lasers: orbs, bombs, bites and stars. */
   private petAttacks(delta: number): void {
     const mult = this.damageMult();
-    const speed = 1 + 0.2 * this.lv("pack");
+    const speed = (1 + 0.2 * this.lv("pack")) * (1 + this.streakBonus);
     for (const p of this.pets) {
       if (p.down > 0) continue;
       p.timer -= delta * speed;
@@ -3101,24 +3118,30 @@ export class BattleScene extends Phaser.Scene {
     if (snack && this.fighting) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.003 * snack);
     this.stats.kills++;
     save.totalKills++;
-    this.combo++;
-    battle.combo = this.combo;
-    this.comboTimer = 2200;
-    if (this.combo >= 10 && this.combo % 5 === 0) {
-      const c = this.combo;
-      this.comboText.setText(`x${c} COMBO!`).setColor(c >= 100 ? "#ff6a8a" : c >= 40 ? "#ffb347" : "#ffe066").setVisible(true).setScale(1.35);
-      this.tweens.add({ targets: this.comboText, scale: 1, duration: 150 });
-      if (c % 25 === 0) sfx.lucky();
+    this.streak++;
+    battle.streak = this.streak;
+    this.streakTimer = STREAK_MS;
+    const c = this.streak;
+    if (c % STREAK_STEP === 0) {
+      // every 50 kills in a row: +1% damage and attack speed while the streak lasts
+      this.streakText.setText(`STREAK ${c}!  +${Math.round(this.streakBonus * 100)}%`).setColor("#ff8a3a").setVisible(true).setScale(1.7);
+      this.tweens.add({ targets: this.streakText, scale: 1, duration: 260, ease: "Back.out" });
+      this.sparks.setParticleTint(0xffb03a);
+      this.sparks.explode(20, this.hero.x, this.hero.y - 200);
+      sfx.lucky();
+    } else if (c >= 10 && c % 5 === 0) {
+      this.streakText.setText(`STREAK ${c}`).setColor(c >= 100 ? "#ff6a8a" : c >= 40 ? "#ffb347" : "#ffe066").setVisible(true).setScale(1.3);
+      this.tweens.add({ targets: this.streakText, scale: 1, duration: 150 });
     }
     this.boom(e.img.x, cy, e.type.boss ? 2.4 : e.elite ? 1.2 : 0.7);
-    // combos pay up to +100% extra
-    const cash = e.cash * cashMult() * (1 + Math.min(this.combo, 100) * 0.01);
+    // streaks pay up to +100% extra
+    const cash = e.cash * cashMult() * (1 + Math.min(this.streak, 100) * 0.01);
     save.cash += cash;
     this.earnedWindow += cash;
     this.stats.earned += cash;
     questEvent("kill");
     if (e.type.boss) questEvent("boss");
-    if (this.combo >= 5) questEvent("combo", this.combo);
+    if (this.streak >= 5) questEvent("combo", this.streak);
     this.game.events.emit("kill", e.type.boss);
     if (e.elite || e.type.boss || Math.random() < 0.05) this.cashPop(e.img.x, cy - 40, cash);
     this.flyCash(e.img.x, cy, e.type.boss ? 14 : e.elite ? 4 : Math.random() < 0.1 ? 1 : 0);

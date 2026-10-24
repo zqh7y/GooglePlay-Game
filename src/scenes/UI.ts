@@ -108,6 +108,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private boostKey = "";
   private potionPill!: Pill;
   private skillBar!: Phaser.GameObjects.Container;
+  /** kill streak readout under the gadget panel */
+  private streakHud!: Phaser.GameObjects.Text;
   private picker: Phaser.GameObjects.Container | null = null;
   private questG!: Phaser.GameObjects.Graphics;
   private questLabel!: Phaser.GameObjects.Text;
@@ -583,8 +585,9 @@ export class UIScene extends Phaser.Scene implements Host {
     }
     gunPanel.setSize(340, 120).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
     this.skillBar = this.add.container(0, H - 80);
+    this.streakHud = text(this, W - 190, 392, "", 30, "#ffb347");
     this.run.add([
-      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar,
+      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
       iconButton(this, 160, 165, "icon_odds", 86, () => this.showStats()),
     ]);
@@ -642,6 +645,11 @@ export class UIScene extends Phaser.Scene implements Host {
     const W = this.W;
     const g = this.hudBars;
     g.clear();
+    // kill streak: every 50 in a row is +1% damage and attack speed
+    const st = battle.streak;
+    const bonus = Math.floor(st / 50);
+    this.streakHud.setVisible(st >= 10).setText(bonus ? `STREAK ${st}  •  +${bonus}% DMG & SPD` : `STREAK ${st}`).setColor(bonus ? "#ff8a3a" : "#ffe066");
+    fitText(this.streakHud, 360);
     if (battle.rush) {
       this.rushHud(time);
     } else if (battle.bossFrac >= 0) {

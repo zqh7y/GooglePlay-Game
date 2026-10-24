@@ -45,7 +45,7 @@ export function questText(q: Quest): string {
     case "dice": return `Find ${q.target} dice`;
     case "buy": return `Buy ${q.target} upgrades`;
     case "boss": return `Defeat ${q.target} boss${q.target > 1 ? "es" : ""}`;
-    case "combo": return `Reach a x${q.target} combo`;
+    case "combo": return `Reach a ${q.target} kill streak`;
     case "rare": return `Roll a ${RARITY_INFO[RARITY_ORDER[q.target]].label} pet`;
   }
 }

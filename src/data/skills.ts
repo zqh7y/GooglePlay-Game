@@ -34,7 +34,7 @@ export const SKILLS: SkillDef[] = [
   { id: "zoom", name: "Zoomies", icon: "sk_zoom", color: 0x4fd0b0, text: () => "+12% move speed" },
   { id: "vacuum", name: "Ghost Vacuum", icon: "sk_vacuum", color: 0x8a9aff, text: () => "Grab bones and meat from 50% farther" },
   { id: "pack", name: "Pet Party", icon: "sk_pack", color: 0xffa64d, text: () => "Pets attack 20% faster and harder" },
-  { id: "mend", name: "Crystal Glue", icon: "sk_mend", color: 0x67c3ff, text: () => "Crystal heals 35% and slowly regrows" },
+  { id: "mend", name: "Crystal Glue", icon: "sk_mend", color: 0x67c3ff, text: () => "The crystal heals 35% right away (it never heals by itself)" },
   { id: "shards", name: "Crystal Shards", icon: "sk_shards", color: 0xd8a8ff, text: (l) => (l === 0 ? "The crystal shoots shards at monsters around it" : "More shards, more damage") },
   { id: "luck", name: "Lucky Box", icon: "sk_luck", color: 0x3fd08a, text: () => "Better gadgets in airdrops, and more often" },
 ];
