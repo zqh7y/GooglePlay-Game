@@ -1,0 +1,56 @@
+name: Android build
+
+# Builds the Android app on GitHub's machines (they have the Android SDK, so you don't need Android Studio):
+#  - every time: a debug APK you can install on your phone to try the game
+#  - when you have added the repository secrets UPLOAD_KEY_BASE64, UPLOAD_KEY_PASSWORD and GOOGLE_SERVICES_JSON
+#    (GitHub → Settings → Secrets and variables → Actions): the signed .aab to upload to Google Play, online included.
+# The secrets never show in the logs and are not kept after the build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ["src/**", "android/**", "package.json", "package-lock.json", "capacitor.config.ts", "index.html", ".github/workflows/android.yml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - name: Use your key and Firebase config (only if you added them as secrets)
+        env:
+          UPLOAD_KEY_BASE64: ${{ secrets.UPLOAD_KEY_BASE64 }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json; fi
+          if [ -n "$UPLOAD_KEY_BASE64" ] && [ -n "$UPLOAD_KEY_PASSWORD" ]; then
+            printf '%s' "$UPLOAD_KEY_BASE64" | base64 -d > android/upload-key.jks
+            printf 'storeFile=upload-key.jks\nstorePassword=%s\nkeyAlias=upload\nkeyPassword=%s\n' "$UPLOAD_KEY_PASSWORD" "$UPLOAD_KEY_PASSWORD" > android/keystore.properties
+            echo "SIGNED=1" >> "$GITHUB_ENV"
+          fi
+      - name: Build
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          if [ "$SIGNED" = "1" ]; then ./gradlew bundleRelease --no-daemon; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dice-idle-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+      - if: env.SIGNED == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dice-idle-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab

@@ -10,7 +10,7 @@ const PATTERNS = [
   [/"type"\s*:\s*"service_account"/, "a service account key"],
   [/"client_secret"\s*:/, "an OAuth client secret"],
 ];
-const BANNED_FILES = [/(^|\/)google-services\.json$/, /(^|\/)GoogleService-Info\.plist$/, /\.(jks|keystore)$/, /(^|\/)\.env(\.(?!example$)[^/]*)?$/];
+const BANNED_FILES = [/(^|\/)google-services\.json$/, /(^|\/)GoogleService-Info\.plist$/, /\.(jks|keystore)$/, /(^|\/)keystore\.properties$/, /(^|\/)\.env(\.(?!example$)[^/]*)?$/];
 
 const staged = process.argv.includes("--staged");
 const files = execSync(staged ? "git diff --cached --name-only --diff-filter=ACM" : "git ls-files", { encoding: "utf8" }).split("\n").filter(Boolean);

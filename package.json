@@ -11,7 +11,9 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "check-bundle": "node dev/check-bundle.mjs",
     "emulators": "firebase emulators:start --project demo-dice-idle",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-dice-idle \"node --test dev/online/rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-dice-idle \"node --test dev/online/rules.test.mjs\"",
+    "online": "node dev/online.mjs",
+    "android": "node dev/android.mjs"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.5.2",
