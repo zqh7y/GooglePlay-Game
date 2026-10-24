@@ -22,13 +22,15 @@ import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, Tier, diceTierChances } from "../s
 import { FISH_UPGRADES, FishUpId, catchSecs, expectedCatch, upgradeCost } from "../src/data/fishing";
 import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
-import { TREE, TreeNode } from "../src/data/tree";
+import { TREE, TreeNode, perAt, stepCost, stepsOf } from "../src/data/tree";
 import { RUSH_MS, rushBossHp } from "../src/data/bosses";
 import { petChances } from "../src/data/luck";
 
+// hexagons fully bought, and the steps bought of each (hexagons can come in 3 steps)
 const owned = new Set<string>(["start"]);
-const sum = (e: TreeNode["effect"]) => TREE.reduce((s, t) => (t.effect === e && owned.has(t.id) ? s + t.per : s), 0);
-const prod = (e: TreeNode["effect"]) => TREE.reduce((p, t) => (t.effect === e && owned.has(t.id) ? p * t.per : p), 1);
+const steps = new Map<string, number>();
+const sum = (e: TreeNode["effect"]) => TREE.reduce((s, t) => (t.effect === e && steps.get(t.id) ? s + perAt(t, steps.get(t.id)!) : s), 0);
+const prod = (e: TreeNode["effect"]) => TREE.reduce((p, t) => (t.effect === e && steps.get(t.id) ? p * perAt(t, steps.get(t.id)!) : p), 1);
 
 const pets = PET_LIST.map(() => ({ have: 0, level: 0, copies: 0 }));
 pets[0] = { have: 1, level: 1, copies: 0 };
@@ -108,7 +110,7 @@ function run(s: number, dps: number): { won: boolean; secs: number; cash: number
   return { won: bossOk, secs: Math.max(60, minutesSurvived * 60) + (bossOk ? 30 : 0) + 20, cash, dice };
 }
 
-const rollTime = () => Math.max(150, 2000 * TREE.reduce((m, n) => (n.effect === "speed" && owned.has(n.id) ? m * (1 - n.per) : m), 1));
+const rollTime = () => Math.max(150, 2000 * TREE.reduce((m, n) => (n.effect === "speed" && steps.get(n.id) ? m * (1 - perAt(n, steps.get(n.id)!)) : m), 1));
 const luck = () => {
   const potion = potionLeft > 0 ? 2 + sum("potionPower") : 1;
   const index = 1 + 0.25 * Math.floor(discovered / 10);
@@ -218,13 +220,17 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
   } else {
     fails++;
   }
-  // shopping: cheapest open hexagon first
+  // shopping: the cheapest next step of an open hexagon first
+  const next = (n: TreeNode) => stepCost(n, steps.get(n.id) ?? 0);
   for (;;) {
-    const open = TREE.filter((n) => !owned.has(n.id) && n.req.every((q) => owned.has(q))).sort((a, b) => a.cost - b.cost)[0];
-    if (!open || open.cost > cash) break;
-    cash -= open.cost;
-    owned.add(open.id);
-    if (open.effect === "forge") forgeAt.push(t / 3600);
+    const open = TREE.filter((n) => !owned.has(n.id) && n.req.every((q) => owned.has(q))).sort((a, b) => next(a) - next(b))[0];
+    if (!open || next(open) > cash) break;
+    cash -= next(open);
+    steps.set(open.id, (steps.get(open.id) ?? 0) + 1);
+    if (steps.get(open.id)! >= stepsOf(open)) {
+      owned.add(open.id);
+      if (open.effect === "forge") forgeAt.push(t / 3600);
+    }
   }
   // Boss Rush: on through the stage bosses while each one dies in time
   while (stage <= MAX_STAGE && teamDps().dps * 0.8 * (RUSH_MS / 1000) >= rushBossHp(stage)) {

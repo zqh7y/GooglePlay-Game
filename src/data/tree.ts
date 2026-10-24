@@ -54,7 +54,9 @@ const TURN: Record<Dir, Dir> = { E: "NE", NE: "NW", NW: "W", W: "SW", SW: "SE", 
 
 /** Prices are bent upward so late hexagons take real saving up: price = base ^ COST_POWER. */
 export const COST_POWER = 1.16;
-const price = (c: number) => (c < 100 ? Math.round(c) : Math.round(c ** COST_POWER / 10 ** (2 * (COST_POWER - 1))));
+/** Everything costs this much more since fishing pays big money (keeps stage 100 at ~100 h). */
+export const PRICE_MULT = 2.5;
+const price = (c: number) => Math.round(PRICE_MULT * (c < 100 ? c : c ** COST_POWER / 10 ** (2 * (COST_POWER - 1))));
 
 /** [id, name, icon, cost, effect, per] */
 type Spec = [string, string, string, number, Effect, number];
@@ -156,7 +158,7 @@ branch("power", "W", [
     ["forge1", "Forge I", "sword", 300e6, "forge", 1],
     ["forge2", "Forge II", "sword", 40e9, "forge", 1],
     ["forge3", "Forge III", "sword", 5e12, "forge", 1],
-    ["forge4", "Titan Forge", "sword", 1e16, "forge", 1],
+    ["forge4", "Titan Forge", "sword", 7e15, "forge", 1],
   ],
   rage: series("berserk", "Berserk", "sword", 2, 600e9, 25, "dmg", 2),
 });
@@ -197,10 +199,44 @@ export function hexPos(node: TreeNode, size: number): { x: number; y: number } {
   return { x: size * Math.sqrt(3) * (node.q + node.r / 2), y: size * 1.5 * node.r };
 }
 
-/** Short text for what a node does. */
-export function effectText(node: TreeNode): string {
-  const p = node.per;
-  const pct = `${Math.round(p * 100)}%`;
+// ───────────────────────── steps ─────────────────────────
+
+/**
+ * Hexagons whose effect can be split are bought in 3 smaller steps, so there is nearly always
+ * something to buy: the steps cost 25%, 33% and 42% of the hexagon's price (the same in total)
+ * and each gives a third of the effect (multiplying effects compound: x2 luck = x1.26, x1.59, x2).
+ * The hexagons after it open once all its steps are bought. Slots, auto roll, the Forge, a new die
+ * and other whole things stay one purchase.
+ */
+const SPLIT: Effect[] = ["luck", "speed", "cash", "offline", "dmg", "heroDmg", "crit", "critDmg", "villageHp", "moveSpeed", "range", "potionPower", "potionTime", "chest", "luckyPower"];
+const MULTIPLY: Effect[] = ["luck", "die", "cash", "dmg", "heroDmg", "chest"];
+export const STEP_SHARES = [0.25, 0.33, 0.42];
+
+export const stepsOf = (node: TreeNode) => (SPLIT.includes(node.effect) && node.cost >= 40 ? STEP_SHARES.length : 1);
+
+/** Price of step `i` (0 = the first) of a hexagon; the steps add up to its full price. */
+export function stepCost(node: TreeNode, i: number): number {
+  const n = stepsOf(node);
+  if (n === 1) return node.cost;
+  const parts = STEP_SHARES.map((f) => Math.max(1, Math.round(node.cost * f)));
+  parts[n - 1] = node.cost - parts.slice(0, n - 1).reduce((a, b) => a + b, 0);
+  return parts[Math.min(i, n - 1)];
+}
+
+/** A hexagon's effect value with `steps` of its steps bought (`per` when complete). */
+export function perAt(node: TreeNode, steps: number): number {
+  const f = Math.min(1, steps / stepsOf(node));
+  if (MULTIPLY.includes(node.effect)) return node.per ** f;
+  if (node.effect === "speed") return 1 - (1 - node.per) ** f;
+  return node.per * f;
+}
+
+const num = (x: number) => (Math.abs(x - Math.round(x)) < 0.005 ? `${Math.round(x)}` : x >= 10 ? x.toFixed(1) : x.toFixed(2));
+
+/** Short text for what a node does (with `per` for part of it). */
+export function effectText(node: TreeNode, per = node.per): string {
+  const p = Number(num(per));
+  const pct = `${Math.round(per * 100)}%`;
   switch (node.effect) {
     case "start": return "Where it all begins";
     case "luck": return `x${p} luck`;

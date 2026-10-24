@@ -2,6 +2,7 @@ import { BOSS, MAX_STAGE, monsterHp } from "../data/balance";
 import { rushBossHp } from "../data/bosses";
 import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor } from "../data/items";
 import { DICE_TIERS, Tier } from "../data/tiers";
+import { TREE_BY_ID, stepsOf } from "../data/tree";
 
 export interface PetState {
   level: number;
@@ -79,6 +80,8 @@ export interface SaveData {
   tutorial: number;
   /** the story intro was shown */
   introSeen: boolean;
+  /** save.tree counts steps (older saves stored 1 per bought hexagon) */
+  treeSteps: boolean;
   /** your name on the leaderboards (named: you picked it yourself) */
   online: { name: string; named: boolean };
 }
@@ -150,6 +153,7 @@ function fresh(): SaveData {
     online: { name: "", named: false },
     tutorial: 0,
     introSeen: false,
+    treeSteps: true,
   };
 }
 
@@ -179,6 +183,11 @@ function load(): SaveData {
       const veteran = data.bestStage > 1 || data.totalRolls > 0;
       if (raw.tutorial === undefined) data.tutorial = veteran ? -1 : 0;
       if (raw.introSeen === undefined) data.introSeen = veteran;
+      // hexagons bought before they had steps are complete
+      if (!raw.treeSteps) {
+        for (const id of Object.keys(data.tree)) if (data.tree[id] > 0 && TREE_BY_ID[id]) data.tree[id] = stepsOf(TREE_BY_ID[id]);
+        data.treeSteps = true;
+      }
       // the first Boss Rush kept its own place and had weaker bosses. Now its bosses are the stages:
       // move on to the first stage whose boss is tougher than the last one you beat back then
       if (data.bossRush && data.bossRush > 1) {

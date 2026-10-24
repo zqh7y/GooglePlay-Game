@@ -33,23 +33,23 @@ export interface Prize {
 export const PRIZES: Prize[] = [
   // row 0: everyday catches
   { id: "boot", name: "Old Boot", kind: "shells", amount: 4, weight: 34, pow: 0, row: 0 },
-  { id: "sardine", name: "Sardine", kind: "cash", amount: 0.4, weight: 28, pow: 0, row: 0 },
+  { id: "sardine", name: "Sardine", kind: "cash", amount: 4, weight: 28, pow: 0, row: 0 },
   { id: "dieA", name: "Soggy Die", kind: "dice", amount: 1, tier: "A", weight: 5, pow: 0, row: 0 },
-  { id: "pouch", name: "Coin Pouch", kind: "cash", amount: 1.2, weight: 12, pow: 0, row: 0 },
+  { id: "pouch", name: "Coin Pouch", kind: "cash", amount: 12, weight: 12, pow: 0, row: 0 },
   // row 1: good catches
   { id: "puffer", name: "Puffer Die", kind: "dice", amount: 1, tier: "B", weight: 3, pow: 0.25, row: 1 },
   { id: "oyster", name: "Pearl Oyster", kind: "gems", amount: 1, weight: 0.6, pow: 0.15, row: 1 },
   { id: "luckPotion", name: "Luck Potion", kind: "luckPotion", amount: 1, weight: 1.4, pow: 0.15, row: 1 },
-  { id: "salmon", name: "Fat Salmon", kind: "cash", amount: 2.5, weight: 3, pow: 0.25, row: 1 },
+  { id: "salmon", name: "Fat Salmon", kind: "cash", amount: 25, weight: 3, pow: 0.25, row: 1 },
   // row 2: rare catches (from here down: tiny chances at first that luck lifts a lot)
   { id: "speedPotion", name: "Speed Potion", kind: "speedPotion", amount: 2, weight: 0.42, pow: 0.6, row: 2 },
   { id: "dieC", name: "Coral Die", kind: "dice", amount: 1, tier: "C", weight: 0.3, pow: 0.6, row: 2 },
-  { id: "chest", name: "Sunken Chest", kind: "cash", amount: 10, weight: 0.27, pow: 0.6, row: 2 },
+  { id: "chest", name: "Sunken Chest", kind: "cash", amount: 100, weight: 0.27, pow: 0.6, row: 2 },
   { id: "clover", name: "Sea Clover", kind: "lucky", amount: 3, weight: 0.15, pow: 0.6, row: 2 },
   // row 3: epic catches
   { id: "bottle", name: "Message Bottle", kind: "boost", amount: 1, weight: 0.05, pow: 0.9, row: 3 },
   { id: "swordfish", name: "Swordfish Die", kind: "dice", amount: 1, tier: "D", weight: 0.025, pow: 0.9, row: 3 },
-  { id: "koi", name: "Golden Koi", kind: "cash", amount: 60, weight: 0.01, pow: 0.9, row: 3 },
+  { id: "koi", name: "Golden Koi", kind: "cash", amount: 600, weight: 0.01, pow: 0.9, row: 3 },
   { id: "crown", name: "Mermaid Crown", kind: "gems", amount: 10, weight: 0.0015, pow: 0.9, row: 3 },
   // row 4: legends (the chances hide behind question marks)
   { id: "dieE", name: "Sun Die", kind: "dice", amount: 1, tier: "E", weight: 0.0008, pow: 1.1, row: 4 },

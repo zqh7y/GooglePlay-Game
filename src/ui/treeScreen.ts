@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { canvasTexture, darken, lighten, linear, mix, rgba } from "../art/draw";
-import { BRANCH_INFO, Branch, TREE, TREE_BY_ID, TreeNode, effectText, hexPos } from "../data/tree";
-import { buyNode, canBuy, nodeOwned, nodeUnlocked } from "../systems/stats";
+import { BRANCH_INFO, Branch, TREE, TREE_BY_ID, TreeNode, effectText, hexPos, perAt, stepsOf } from "../data/tree";
+import { buyNode, canBuy, nextCost, nodeOwned, nodeUnlocked, stepsBought } from "../systems/stats";
 import { sfx } from "../systems/sound";
 import { Layout } from "../layout";
 import { fmt } from "./format";
@@ -99,7 +99,10 @@ interface NodeView {
   q: Phaser.GameObjects.Text;
   check: Phaser.GameObjects.Image;
   glow: Phaser.GameObjects.Image;
+  /** one dot per step, for hexagons bought in steps */
+  pips: Phaser.GameObjects.Arc[];
   state: State | "";
+  steps: number;
 }
 
 const BRANCHES = (Object.keys(BRANCH_INFO) as Branch[]).filter((b) => b !== "start");
@@ -228,8 +231,10 @@ export class TreeScreen {
     const price = text(s, x, y + 52, "", 20);
     const q = text(s, x, y - 4, "?", 64, "#7f93a3", { stroke: false });
     const check = s.add.image(x + 46, y - 44, "icon_check").setScale(0.48);
-    this.map.add([glow, hex, icon, name, price, q, check]);
-    this.views.set(node.id, { node, hex, icon, name, price, q, check, glow, state: "" });
+    const n = stepsOf(node);
+    const pips = n > 1 ? [...Array(n)].map((_, i) => s.add.circle(x + (i - (n - 1) / 2) * 22, y - 54, 8, 0x0a1a20, 0.5).setStrokeStyle(3, 0xffffff, 0.9)) : [];
+    this.map.add([glow, hex, icon, name, price, q, check, ...pips]);
+    this.views.set(node.id, { node, hex, icon, name, price, q, check, glow, pips, state: "", steps: -1 });
   }
 
   private stateOf(node: TreeNode): State {
@@ -240,7 +245,7 @@ export class TreeScreen {
 
   /** The best thing to buy now: the cheapest one you can afford, else the cheapest open one. */
   private bestNext(): TreeNode | null {
-    const open = TREE.filter((n) => n.id !== "start" && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => a.cost - b.cost);
+    const open = TREE.filter((n) => n.id !== "start" && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => nextCost(a) - nextCost(b));
     return open.find((n) => this.stateOf(n) === "ready") ?? open[0] ?? null;
   }
 
@@ -274,14 +279,15 @@ export class TreeScreen {
     const ready = this.stateOf(node) === "ready";
     this.best.icon.setTexture(`icon_${node.icon}`);
     fitText(this.best.name.setText(`${node.name}  •  ${BRANCH_INFO[node.branch].label}`), this.scene.scale.width - 460);
-    fitText(this.best.info.setText(ready ? effectText(node) : `${effectText(node)}  •  need ${fmt(node.cost - save.cash)} more`), this.scene.scale.width - 460);
-    this.best.buy.setVisible(true).setColor(ready ? "green" : "grey").setSub(fmt(node.cost));
+    const what = this.stepText(node);
+    fitText(this.best.info.setText(ready ? what : `${what}  •  need ${fmt(nextCost(node) - save.cash)} more`), this.scene.scale.width - 460);
+    this.best.buy.setVisible(true).setColor(ready ? "green" : "grey").setSub(fmt(nextCost(node)));
   }
 
   /** Jump to a path: its best open hexagon, with its info. */
   private jumpTo(branch: Branch): void {
     sfx.click();
-    const open = TREE.filter((n) => n.branch === branch && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => a.cost - b.cost);
+    const open = TREE.filter((n) => n.branch === branch && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => nextCost(a) - nextCost(b));
     const node = open.find((n) => this.stateOf(n) === "ready") ?? open[0] ?? TREE.filter((n) => n.branch === branch).pop();
     if (node) this.focusOn(node, true);
   }
@@ -304,8 +310,14 @@ export class TreeScreen {
     for (const v of this.views.values()) {
       const st = this.stateOf(v.node);
       const showPrice = st === "ready" || st === "open";
-      if (showPrice) v.price.setText(fmt(v.node.cost)).setColor(st === "ready" ? "#b6ff8a" : "#ff9a9a");
+      if (showPrice) v.price.setText(fmt(nextCost(v.node))).setColor(st === "ready" ? "#b6ff8a" : "#ff9a9a");
       v.price.setVisible(showPrice);
+      const steps = stepsBought(v.node);
+      if (steps !== v.steps) {
+        v.steps = steps;
+        v.pips.forEach((pip, i) => pip.setFillStyle(i < steps ? BRANCH_INFO[v.node.branch].color : 0x0a1a20, i < steps ? 1 : 0.5));
+      }
+      v.pips.forEach((pip) => pip.setVisible(st !== "locked"));
       if (st === v.state) continue;
       changed = true;
       v.state = st;
@@ -454,11 +466,11 @@ export class TreeScreen {
     const parts: Phaser.GameObjects.GameObject[] = [
       g,
       fitText(label(s, 0, -h / 2 + 46, st === "locked" ? "???" : node.name, 44, "#2a2a2a"), w - 60),
-      fitText(label(s, 0, -h / 2 + 100, st === "locked" ? "Buy the hexagon before it first" : effectText(node), 32, "#6a6a6a"), w - 60),
+      fitText(label(s, 0, -h / 2 + 100, st === "locked" ? "Buy the hexagon before it first" : stepsOf(node) > 1 && st !== "owned" ? this.stepText(node) : effectText(node), 32, "#6a6a6a"), w - 60),
       fitText(label(s, 0, -h / 2 + 142, {
         owned: "You own this",
-        ready: "You can buy this now!",
-        open: `Need ${fmt(node.cost - save.cash)} more money`,
+        ready: stepsOf(node) > 1 ? `Step ${stepsBought(node) + 1} of ${stepsOf(node)}: you can buy it now!` : "You can buy this now!",
+        open: `Need ${fmt(nextCost(node) - save.cash)} more money`,
         locked: `Part of the ${BRANCH_INFO[node.branch].label} path`,
       }[st], 26, st === "ready" ? "#3f9a2f" : st === "open" ? "#c0564a" : "#8a8a8a"), w - 60),
     ];
@@ -467,13 +479,21 @@ export class TreeScreen {
     } else if (st === "locked") {
       parts.push(fitText(label(s, 0, h / 2 - 62, `Needs: ${node.req.map((r) => TREE_BY_ID[r].name).join(", ")}`, 30, "#c0564a"), w - 60));
     } else {
-      parts.push(button(s, 0, h / 2 - 66, 360, 100, st === "ready" ? "green" : "grey", "BUY", () => this.buy(node), {
-        sub: fmt(node.cost), subIcon: "icon_cash", size: 38,
+      parts.push(button(s, 0, h / 2 - 66, 360, 100, st === "ready" ? "green" : "grey", stepsOf(node) > 1 ? `BUY STEP ${stepsBought(node) + 1}` : "BUY", () => this.buy(node), {
+        sub: fmt(nextCost(node)), subIcon: "icon_cash", size: 34,
       }));
     }
     this.tip = s.add.container(tx, ty, parts).setScale(0.6).setAlpha(0);
     this.root.add(this.tip);
     s.tweens.add({ targets: this.tip, scale: 1, alpha: 1, duration: 180, ease: "Back.out" });
+  }
+
+  /** "x2 luck: x1.26 → x1.59" for a hexagon bought in steps; its whole effect otherwise. */
+  private stepText(node: TreeNode): string {
+    const n = stepsOf(node);
+    const k = stepsBought(node);
+    if (n === 1 || k >= n) return effectText(node);
+    return k === 0 ? `${effectText(node)} in ${n} steps: first ${effectText(node, perAt(node, 1))}` : `${effectText(node, perAt(node, k))} → ${effectText(node, perAt(node, k + 1))}`;
   }
 
   private buy(node: TreeNode): void {
@@ -499,6 +519,11 @@ export class TreeScreen {
     burst.explode(24);
     s.time.delayedCall(800, () => burst.destroy());
     this.refresh(true);
+    // more steps to go: keep its info open for the next one
+    if (!nodeOwned(node.id)) {
+      this.showTip(node);
+      return;
+    }
     // newly opened hexes pop in
     for (const child of TREE.filter((n) => n.req.includes(node.id))) {
       const cv = this.views.get(child.id)!;

@@ -314,7 +314,8 @@ hour of fishing brings.
     | Epic | Message Bottle (a Battle Boost), Swordfish Die (D), Golden Koi (money), Mermaid Crown (gems) |
     | Legend | Sun Die (E), Kraken Die (S), Titan Trident (SSS die), Leviathan Heart (uSSS die + 100 gems) |
 
-    Money prizes are worth a few seconds to minutes of what fighting earns you right now.
+    Money prizes are worth what fighting earns you in about 4 s (Sardine) up to 10 minutes (Golden Koi)
+    right now.
   - **The board** shows each prize as just its picture floating over its shadow (no boxes), with its
     **chance in %** at the picture's bottom right in a running **rainbow** (faster for rarer rows; epic and
     legend pictures glow). Below 0.01% the number hides: **?** under 0.01%, **??** under 0.001%, **???** under
@@ -352,6 +353,11 @@ hour of fishing brings.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.
+  **Most hexagons come in 3 steps** (three dots on top), so there is nearly always something to buy: the steps
+  cost 25%, 33% and 42% of the hexagon's price and each gives a third of its effect (x2 luck: x1.26, x1.59,
+  x2). The hexagons after it open once all its steps are bought. Whole things (a pet slot, auto roll, the
+  Forge, a new die, lucky-roll timing) stay one purchase. Its popup says "Step 2 of 3" and stays open after
+  a step so you can buy the next. Prices are 2.5x what they were, because fishing now pays 10x the money.
 - **Goals**: quests, a 7-day daily reward, +25% luck for every 10 pets in the Index, gems from bosses for luck potions.
 - **Online** (when set up, see ONLINE.md):
   - **No sign-up or sign-in needed**: the game quietly makes a guest account. **Settings → GOOGLE PLAY**

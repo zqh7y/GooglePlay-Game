@@ -1,11 +1,12 @@
 import { indexBonus } from "./goals";
-import { Effect, TREE, TREE_BY_ID, TreeNode } from "../data/tree";
+import { Effect, TREE, TREE_BY_ID, TreeNode, perAt, stepCost, stepsOf } from "../data/tree";
 import { persist, save } from "./save";
 
-/** Everything the upgrade tree (and the luck potion) adds up to. */
-const owned = (node: TreeNode) => (save.tree[node.id] ?? 0) > 0;
-const sum = (effect: Effect) => TREE.reduce((s, t) => (t.effect === effect && owned(t) ? s + t.per : s), 0);
-const product = (effect: Effect) => TREE.reduce((p, t) => (t.effect === effect && owned(t) ? p * t.per : p), 1);
+/** Everything the upgrade tree (and the luck potion) adds up to. A hexagon bought in part counts in part. */
+export const stepsBought = (node: TreeNode) => save.tree[node.id] ?? 0;
+const owned = (node: TreeNode) => stepsBought(node) >= stepsOf(node);
+const sum = (effect: Effect) => TREE.reduce((s, t) => (t.effect === effect && stepsBought(t) ? s + perAt(t, stepsBought(t)) : s), 0);
+const product = (effect: Effect) => TREE.reduce((p, t) => (t.effect === effect && stepsBought(t) ? p * perAt(t, stepsBought(t)) : p), 1);
 
 export const potionActive = () => Date.now() < save.potionUntil;
 export const potionMult = () => 2 + sum("potionPower");
@@ -33,7 +34,7 @@ export const luckyMult = () => 2 + sum("luckyPower");
 /** Milliseconds between rolls. */
 export const speedActive = () => Date.now() < save.speedUntil;
 export const rollTime = () =>
-  Math.max(120, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && owned(t) ? m * (1 - t.per) : m), 1) * (speedActive() ? 0.5 : 1));
+  Math.max(120, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && stepsBought(t) ? m * (1 - perAt(t, stepsBought(t))) : m), 1) * (speedActive() ? 0.5 : 1));
 export const dicePerRoll = () => 1 + sum("multi");
 export const autoUnlocked = () => sum("auto") > 0;
 export const cashMult = () => product("cash");
@@ -57,15 +58,18 @@ export const dieSkin = () => TREE.filter((t) => t.effect === "die" && owned(t)).
 
 // ───────────────────────── tree purchases ─────────────────────────
 
-export const nodeOwned = (id: string) => id === "start" || (save.tree[id] ?? 0) > 0;
+/** All its steps bought (the hexagons after it open). */
+export const nodeOwned = (id: string) => id === "start" || owned(TREE_BY_ID[id]);
 export const nodeUnlocked = (node: TreeNode) => node.req.every(nodeOwned);
-export const canBuy = (node: TreeNode) => nodeUnlocked(node) && !nodeOwned(node.id) && save.cash >= node.cost;
+/** Price of the next step of a hexagon. */
+export const nextCost = (node: TreeNode) => stepCost(node, stepsBought(node));
+export const canBuy = (node: TreeNode) => nodeUnlocked(node) && !nodeOwned(node.id) && save.cash >= nextCost(node);
 
 export function buyNode(id: string): boolean {
   const node = TREE_BY_ID[id];
   if (!canBuy(node)) return false;
-  save.cash -= node.cost;
-  save.tree[id] = 1;
+  save.cash -= nextCost(node);
+  save.tree[id] = stepsBought(node) + 1;
   persist();
   return true;
 }
