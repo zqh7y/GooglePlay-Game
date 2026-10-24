@@ -3,7 +3,8 @@
 An idle RNG game for Android. Roll dice for **100 pets** (from 1 in 2 up to 1 in 500Sp),
 grow your **luck** through the **upgrade tree**, and fight with your box-shaped survivor and pets:
 every stage is a **5 minute survival run** (Survivor.io style) on a big open field where you also have to
-protect the land's crystal. The game ends at **stage 100**.
+protect the land's crystal. Meanwhile your hero's **fishing line** catches money, dice, gems, potions and
+legends around the clock. The game ends at **stage 100**.
 
 Built with **Phaser 3 + TypeScript + Vite**. Will be wrapped for Google Play with **Capacitor**.
 
@@ -21,8 +22,11 @@ frames), `/dev/chars.html` the hero and monsters, `/dev/world.html` every tree, 
 `/dev/places.html` the boss seals.
 
 Balance check: `npx esbuild dev/sim.ts --bundle --platform=node --outfile=/tmp/sim.js && node /tmp/sim.js`
-plays the game run by run (and tries the Boss Rush after each run) with the real numbers and prints how many
-hours (and failed runs) a steady player needs per stage.
+plays the game run by run (and tries the Boss Rush after each run) with the real numbers, fishing all the
+while, and prints how many hours (and failed runs) a steady player needs per stage and when each Forge level
+is bought. It is tuned so **stage 100 takes about 100 hours** and the **Titan Forge** (the best, SSS gadgets)
+about **110-125 hours**. `dev/fishsim.ts` (same way) shows how fast fishing upgrades max out and what an
+hour of fishing brings.
 
 ## How the game works
 
@@ -41,8 +45,8 @@ hours (and failed runs) a steady player needs per stage.
   roll or the SUPER ROLL).
 - **Pets** come in one kind only. Extra copies **level a pet up** (+15% damage per level, up to Lv.30).
   Pet damage grows with rarity, so rarer pets are what push you further.
-- **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll** and **Upgrades** (the honeycomb
-  tree), all described below. The **Map** (from Battle) shows the 100-stage journey:
+- **Screens** (bottom tab bar): **Shop**, **Pets**, **Battle**, **Roll**, **Fish** and **Upgrades** (the
+  honeycomb tree), all described below. The **Map** (from Battle) shows the 100-stage journey:
   - a road through the five lands, each with its own colours, trees, banner and sparkles, and clouds drifting by
   - every 5th stage shows its boss (a dark shape until you get there), and cleared stages get a gold star
   - lands you haven't reached are hidden in fog
@@ -221,12 +225,14 @@ hours (and failed runs) a steady player needs per stage.
   stars; support pets stay by your side. Monsters that bump into a pet hurt it; at zero health it is knocked
   out for 8 s. Over each pet: its name and odds ("Kitty 1 in 10A") and a health bar. No lasers anywhere.
 - **The crystal shield**: the crystal is open for 45 s, then shielded for 45 s, and so on. While it is open,
-  monsters marching in from far away go for the crystal (and turn on you if you get close); while it is
-  shielded every monster hunts you, and the ones hunting you keep hunting you afterwards.
+  raiders march in from far away and **bite the crystal** (they only turn on you if you get right in their
+  way); while it is shielded every monster hunts you. **The crystal never heals by itself** (only the Crystal
+  Glue skill mends it), so defend it while it is open. Its health grows 5% a stage, as fast as the bites, and
+  the first stages send fewer raiders.
 - **The hero**: something living in a cardboard box. You only see its glowing eyes through a dark slot,
   plus two little legs. It is drawn as a 3D box: a lit front, a shaded side and an open top with flaps.
-- **Gadgets** (the weapons): they all fire on their own, and you carry up to **3** at once (shown top right
-  in a fight). Every stage starts with a Shuriken.
+- **Gadgets** (the weapons): they all fire on their own, and you carry up to **3** at once. Every stage
+  starts with a Shuriken.
 
   | Gadget | What it does |
   |---|---|
@@ -239,19 +245,30 @@ hours (and failed runs) a steady player needs per stage.
   | Popcorn Pop | Pops a ring of hot kernels in every direction |
   | Grenade | Lobbed into crowds; at S tier and up it becomes a Black Hole that pulls monsters in, then bursts |
 
-  **Airdrops** parachute in about every 40 s with a gadget of tier A (Common), B (Rare), C (Super Rare),
-  D (Epic), E (Legendary), S (Mythic) or SSS (Titanic, almost impossible). The longer you survive, the better
-  the odds, and a light beam shows the tier before you open it. What the airdrop does:
-  - A new kind fills a free slot, or replaces your weakest gadget if it is stronger.
-  - The same kind moves up to the better tier, or gains a level (up to 5).
-  - Anything else is scrapped for money.
+  **Gadgets come from levelling up.** Every level up freezes the fight and three cards fly in:
+  - **NEW!**: a gadget you don't have (while a slot is free there is always one), in a tier rolled for how
+    long you have survived.
+  - **Lv 2 → 3**: the next level of one you carry (up to 5, +20% damage each).
+  - **C → D**: the next tier of a maxed one (more damage, faster, more shots or jumps).
+
+  Tiers: A (Common), B (Rare), C (Super Rare), D (Epic), E (Legendary), S (Mythic), SSS (Titanic). How high
+  they go is set by the **Forge** in the upgrade tree: C at first, then D, E, S and finally SSS with the
+  **Titan Forge**, the most expensive upgrade in the game (about 120 hours in).
+
+  You can tell what you picked: each card has a living medal (bobbing icon, tier chip, rays for good tiers),
+  stars for the level, and the medal flies to its slot. In the fight the top right panel shows a medal per
+  gadget (tier top left, level bottom right) with a dark **cooldown sweep**; it pops every time that gadget
+  fires. The gadget in your hero's hand swaps to whichever just fired and kicks up, and thrown things are
+  bigger and leave **glowing trails** (blue stars, orange kernels, gold boomerangs, purple black holes...).
+  The name of what you picked floats over your hero.
 - **Crystal dice**: every 30 s you survive, the crystal pops out a die that lands nearby. It is an A die on
   stages 1-20, B on 21-40, C on 41-60, D on 61-80 and E on 81-100.
 - **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
-- **Skills**: monsters drop small glowing bones and meat (XP). Every level up freezes the fight and offers 3
-  skills. You carry at most **4 different skills** per stage, each up to level 5, and a good run levels high
-  enough (about 22) to max all four. They reset every stage. Each has a big picture icon and a badge colour
-  (red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky):
+- **Skills come from drops**: airdrops (a gold beam and "SKILL DROP!"), skill orbs on the map, and elites
+  (half of them drop an orb). Each one freezes the fight with three skill cards. Monsters still drop bones
+  and meat (XP), which level you up for gadgets. You carry at most **4 different skills** per stage, each up
+  to level 5; they reset every stage and sit as medals along the bottom. Each has a big picture icon and a
+  badge colour (red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky):
 
   | Skill | What it does |
   |---|---|
@@ -268,10 +285,59 @@ hours (and failed runs) a steady player needs per stage.
   | Zoomies | +12% move speed |
   | Ghost Vacuum | Grab bones and meat from 50% farther |
   | Pet Party | Pets attack 20% faster and harder |
-  | Crystal Glue | The crystal heals 35% and slowly regrows |
+  | Crystal Glue | The crystal heals 35% right away (it never heals by itself) |
   | Crystal Shards | The crystal shoots shards at monsters around it |
-  | Lucky Box | Better gadgets in airdrops, and more often |
-- **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and airdrops.
+  | Lucky Box | Level-ups offer better gadget tiers, and skill drops come more often |
+
+- **STREAK**: kills in a row (each within 3 s of the last). Every **50** in a row gives **+1% damage and +1%
+  attack speed** (gadgets and pets) for as long as the streak lasts; it shows under the gadgets.
+- **Stats** (the bar chart button in a fight): your gadgets and skills as medals with their level number,
+  then the numbers as icons: time, monsters defeated, damage, DPS, money, airdrops, damage taken, shots,
+  and the dice you found.
+- **On the map**: dice, hearts, magnets, bombs, freeze, skill orbs (a free skill), treasure chests and skill airdrops.
+- **Fishing** (the Fish tab): your hero sits on a dock and fishes, **all the time**: on this screen, while
+  you fight or roll, and while you are away (until the Cooler Box is full).
+  - **One catch every 60 s** at first, down to **every 5 s**. Every catch also brings **shells**, which buy
+    the fishing upgrades.
+  - **The prizes**, 4 per row and 5 rows, from junk to legends:
+
+    | Row | Prizes |
+    |---|---|
+    | Common | Old Boot (shells), Sardine (money), Soggy Die (A), Coin Pouch (money) |
+    | Good | Puffer Die (B), Pearl Oyster (gem), Luck Potion, Fat Salmon (money) |
+    | Rare | Speed Potion, Coral Die (C), Sunken Chest (money), Sea Clover (lucky rolls) |
+    | Epic | Message Bottle (a Battle Boost), Swordfish Die (D), Golden Koi (money), Mermaid Crown (gems) |
+    | Legend | Sun Die (E), Kraken Die (S), Titan Trident (SSS die), Leviathan Heart (uSSS die + 100 gems) |
+
+    Money prizes are worth a few seconds to minutes of what fighting earns you right now.
+  - **Each tile shows its chance in %**, bottom right, in living colours: commons softly pulse, rarer rows
+    shift through their colours, legends run a rainbow. Below 0.01% the number hides: **?** under 0.01%,
+    **??** under 0.001%, **???** under 0.0001%, and under 0.00001% a scrambling, flickering mystery. A prize
+    you have never caught is a dark silhouette; tap a tile for its name, reward, chance and how many you
+    caught. Your first catch of each prize brings bonus shells.
+  - **The scene**: sky, drifting clouds, hills, glittering water with waves, lily pads, reeds, fish shadows
+    swimming about. The bobber bobs and sends out ripples; as a bite nears, a fish swims up and nibbles, then
+    a "!" pops over your hero, the bobber goes under with a splash, the rod bends, and the prize leaps out
+    of the water in a spray of drops. Commons bounce and fly to their tile; rare, shiny, super and first-ever
+    catches get a **full-screen reveal** (rays, name, what you got, tags; legends flash and shake, tap to go
+    on). Then the rod swings and the bobber plops back in.
+  - **Upgrades** (paid in shells):
+
+    | Upgrade | Max | Effect |
+    |---|---|---|
+    | Quick Reel | 24 | A catch every 60 s → 5 s |
+    | Lucky Bait | 30 | Fishing luck x1 → x30 (lifts the rare rows; commons stay common) |
+    | Deeper Water | 12 | Prizes in reach: 8 → all 20 |
+    | Double Hook | 15 | Up to 30% chance of two prizes at once |
+    | Golden Line | 20 | Up to x3 shells |
+    | Big Net | 10 | Up to x1.5 dice, gems and potions per prize |
+    | Super Bite | 25 | Every 40th → every 15th catch is a SUPER catch with x10 luck (the water glows gold before it) |
+    | Shiny Lure | 15 | Up to 19% chance a catch is shiny: x2 the prize |
+    | Cooler Box | 22 | Fishes on while you are away for 2 h → 24 h |
+
+  - Coming back after a while shows **GONE FISHING**: how long the line fished and everything it caught.
+    Rare catches made while you are on another screen pop up as a note. The Fish tab gets a "!" when an
+    upgrade is affordable, and there are fishing quests.
 - **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
@@ -286,7 +352,7 @@ hours (and failed runs) a steady player needs per stage.
 | `src/data/items.ts` | Turns that table into pets with odds, rarity, attack type, damage and levels |
 | `src/data/tree.ts` | Every upgrade hexagon: position, price, effect |
 | `src/data/balance.ts` | Stage length, monster health / speed / money per stage and minute, spawn rate, XP (shared with the simulator) |
-| `src/data/skills.ts` | The 16 in-run skills |
+| `src/data/skills.ts` | The 16 in-run skills (from drops) |
 | `src/data/gadgets.ts` | The 8 gadgets, their tiers, levels and stats |
 | `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
 | `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
@@ -299,7 +365,7 @@ hours (and failed runs) a steady player needs per stage.
 | `src/systems/sound.ts` | Synthesized sound effects, the music sequencer and vibration |
 | `src/game/arena.ts` | Lays out each land's field (tree fence, groves, plants, ground patches) |
 | `src/scenes/Battle.ts` | A stage (lobby, clock, crystal shield, spawning, mutations, gadgets, airdrops, pets, skills, pickups, boss, win / lose) and the Boss Rush |
-| `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget panel), pause, stats, skill picker, defeat screen, rolling, popups |
+| `src/scenes/UI.ts` | Tab bar, top bar, lobby, battle HUD (minimap, joystick, gadget medals), pause, stats, gadget and skill pickers, defeat screen, rolling, fishing ticks, popups |
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, x1/x3/x10, the full-screen reveal and its 3 s showcase, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
@@ -316,7 +382,12 @@ hours (and failed runs) a steady player needs per stage.
 | `src/art/world.ts` | Trees, plants, rocks, chests and each land's crystal |
 | `src/art/ground.ts` | Paints each land's seamless floor tile, ground patches, the stone circle and the minimap |
 | `src/art/pickups.ts` | Bones and meat, dice of every tier, airdrop crate and parachute, crystal shield, power-ups |
-| `src/art/skills.ts` | The level-up skill icons |
+| `src/art/skills.ts` | The skill icons, the medal every skill and gadget sits on, the card shine |
+| `src/ui/badge.ts` | The living medal (icon, tier chip, level, glow, bob) used on cards, the HUD and Stats |
+| `src/data/fishing.ts` | Fishing prizes, rows, chances and how they show, upgrades (shared with the simulators) |
+| `src/systems/fishing.ts` | The fishing line: catches, payouts, offline catches, buying upgrades |
+| `src/ui/fishScreen.ts` | The Fish screen: prize grid with living chances, the animated pond, catch reveals, upgrades |
+| `src/art/fishing.ts` | Prize pictures, upgrade icons, shells, dock, bobber, fish shadows, hills, lily pads, reeds, bucket |
 | `src/art/places.ts` | The boss seals |
 | `src/art/gadgets.ts` | The gadgets (icons and the things they throw), the glue puddle, popcorn kernel and black hole |
 | `src/art/mutations.ts` | The mutation badges over monsters |

@@ -44,6 +44,9 @@ import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal
 import { badge } from "../ui/badge";
 import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
 
+/** A tier's color dark enough to read on cream (commons in plain brown). */
+const tierText = (t: Tier) => (t === "A" ? "#4a2f1d" : rgba(darken(TIER_INFO[t].color, 0.35)));
+
 /** One card on the level-up and skill-drop pickers. */
 interface PickCard {
   icon: string;
@@ -793,7 +796,7 @@ export class UIScene extends Phaser.Scene implements Host {
       cards: info.options.map((o) => {
         const tinfo = TIER_INFO[o.tier];
         const card: PickCard = {
-          icon: gadgetIcon(o.kind), color: tinfo.color, tier: o.tier, name: gadgetName(o.kind, o.tier), nameColor: rgba(darken(tinfo.color, 0.35)),
+          icon: gadgetIcon(o.kind), color: tinfo.color, tier: o.tier, name: gadgetName(o.kind, o.tier), nameColor: tierText(o.tier),
           tag: "NEW!", tagColor: 0xff5a8a, desc: GADGETS[o.kind].desc, stars: o.level, max: MAX_GADGET_LEVEL, newStar: -1, fresh: o.what === "new", glow: tierIndex(o.tier) >= 3,
         };
         const own = battle.gadgets.find((g) => g.kind === o.kind);
@@ -1033,7 +1036,7 @@ export class UIScene extends Phaser.Scene implements Host {
       }
       const info = TIER_INFO[g.tier];
       m.body.add(badge(this, x, y + 120, 170, info.color, gadgetIcon(g.kind), { tier: g.tier, level: g.level, max: MAX_GADGET_LEVEL, glow: tierIndex(g.tier) >= 3, live: true }));
-      m.body.add(fitText(label(this, x, y + 236, gadgetName(g.kind, g.tier), 28, rgba(darken(info.color, 0.35))), 250));
+      m.body.add(fitText(label(this, x, y + 236, gadgetName(g.kind, g.tier), 28, tierText(g.tier)), 250));
     }
     // skills: level bottom right
     y += 330;
