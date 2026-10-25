@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { INK_N, canvasTexture, linear, starPath } from "../art/draw";
+import { INK_N, canvasTexture, lighten, linear, starPath } from "../art/draw";
 import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, dieTexture, panelTexture, pillTexture } from "../art/ui";
@@ -9,7 +9,7 @@ import { RARITY_INFO, RARITY_ORDER, rainbowColor, rarityRank } from "../data/rar
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { TOP_ROW, TOP_Y } from "../layout";
 import { RollResult } from "../systems/roll";
-import { ROLL_BATCHES, persist, save, totalDice } from "../systems/save";
+import { ROLL_BATCHES, persist, save, totalDice, hasPass } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { autoUnlocked, dieSkin, luck, luckParts, luckyEvery, luckyMult, potionActive, rollTime, speedActive } from "../systems/stats";
 import { fmt, luckText, oneIn } from "./format";
@@ -18,7 +18,8 @@ import { Host, Screen } from "./screens";
 import { Button, button, drawBar, fitText, label, lockedCard, text } from "./widgets";
 
 /** Every this many rolls is a SUPER ROLL with x10 luck. */
-export const SUPER_EVERY = 50;
+/** Rolls per SUPER ROLL (30 with the Super Roller pass). */
+export const superEvery = () => (hasPass("super") ? 30 : 50);
 export const SUPER_MULT = 10;
 /** Every this many rolls you get a little gift of dice and gems. */
 export const GIFT_EVERY = 25;
@@ -460,11 +461,11 @@ export class RollScreen extends Screen {
 
     // meters (a batch of dice can hold the lucky roll or the SUPER ROLL)
     const batch = Math.max(1, Math.min(save.rollBatch, totalDice()));
-    const superIn = SUPER_EVERY - 1 - save.superCount;
+    const superIn = superEvery() - 1 - save.superCount;
     const superNext = superIn < batch;
     const giftLeft = GIFT_EVERY - save.giftCount;
     const g = this.meterG.clear();
-    drawBar(g, 136, this.meterY + 4, 360, 26, superNext ? 1 : save.superCount / (SUPER_EVERY - 1), superNext ? rainbowColor(time) : 0xb06cff);
+    drawBar(g, 136, this.meterY + 4, 360, 26, superNext ? 1 : save.superCount / (superEvery() - 1), superNext ? rainbowColor(time) : 0xb06cff);
     drawBar(g, 640, this.meterY + 4, 340, 26, save.giftCount / GIFT_EVERY, 0xffb22e);
     this.superCount.setText(superIn === 0 ? "NEXT ROLL!" : superNext ? `IN THIS x${batch}!` : `${superIn} rolls`);
     this.superLabel.setColor(superNext ? "#fff27a" : "#e6d4ff");
@@ -728,12 +729,15 @@ export class RollScreen extends Screen {
       const odds = classText(s, 0, CARD_H / 2 - 66, "", 23, "A");
       const badge = classBadge(s, -CARD_W / 2 + 6, -CARD_H / 2 + 6, "A", 46);
       const name = text(s, 0, CARD_H / 2 - 27, "", 25);
-      const card = s.add.container(x, y + 200, [frame, rar, pet, odds, name, badge]).setScale(0);
+      // a paint splat behind the pet, like an inventory slot
+      const splat = s.add.image(0, -12, "paint_splash").setScale(1.15).setAngle(Phaser.Math.Between(0, 359)).setAlpha(0.9);
+      const card = s.add.container(x, y + 200, [frame, rar, splat, pet, odds, name, badge]).setScale(0);
       layer.add([rays, glow, card]);
       cards.push(card);
       extras.push(glow, rays);
       const show = (def: ItemDef, real: boolean) => {
         frame.setTexture(`card_${def.rarity}`);
+        splat.setTint(lighten(RARITY_INFO[def.rarity].color, 0.45));
         fitText(rar.setText(RARITY_INFO[def.rarity].label.toUpperCase()), CARD_W - 84);
         if (badge.cls !== def.cls) badge.setClass(def.cls);
         setClassTint(odds, def.cls);

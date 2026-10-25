@@ -1,17 +1,19 @@
 import Phaser from "phaser";
-import { INK_N, canvasTexture, darken, rgba } from "../art/draw";
+import { INK_N, canvasTexture, darken, lighten, rgba } from "../art/draw";
 import { makeEventTextures } from "../art/fishing";
 import { makeGadgetTextures } from "../art/gadgets";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { BtnColor, btnTexture, panelTexture } from "../art/ui";
+import { itemSplash, vividCard } from "../art/ps";
 import { BOOSTS } from "../data/boosts";
+import { PASSES } from "../data/passes";
 import { FISH_UPGRADES, upgradeCost } from "../data/fishing";
 import { ITEMS, ItemDef, PET_LIST } from "../data/items";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, rollDiceTier, tierIndex } from "../data/tiers";
 import { fishLv } from "../systems/fishing";
 import { dailyDay } from "../systems/goals";
-import { addPet, persist, save } from "../systems/save";
+import { addPet, hasPass, persist, save } from "../systems/save";
 import { buzz, sfx } from "../systems/sound";
 import { POTION_GEMS, potionMinutes, potionMult } from "../systems/stats";
 import { fmt } from "./format";
@@ -358,19 +360,28 @@ const CARD_HEX: Record<string, number> = {
   peach: 0xffb08a, mint: 0x5fe0a8, orange: 0xff9a3a, green: 0x6fd25a, red: 0xff5a5a, grey: 0xa8b0bc, blue: 0x4fa8ff,
   purple: 0xb36aff, gold: 0xffc93a, brown: 0xb07a4a, cream: 0xf4dcb0, pink: 0xff7ab8,
 };
-const NAVY = "#14213d";
+/** Paint splat colours behind rewards, like inventory slots. */
+const SPLASH = [0x7fd8ff, 0xffe066, 0xff9ad0, 0x9cf07a, 0xc9a0ff, 0xffb070];
+/** The daily pack chain: the first step costs gems, then every next one is free. */
+const PACK: { gems: number; rewards: () => Reward[] }[] = [
+  { gems: 60, rewards: () => [diceReward("B", 10)] },
+  { gems: 0, rewards: () => [gemReward(10)] },
+  { gems: 0, rewards: () => [potionReward(10)] },
+  { gems: 0, rewards: () => [diceReward("C", 5)] },
+  { gems: 0, rewards: () => [gemReward(25)] },
+];
 
 /** The shop window: bright sky blue with soft diagonal stripes. */
 function shopBg(scene: Phaser.Scene, w: number, h: number): string {
   return canvasTexture(scene, `ps_shop_bg_${w}_${h}`, w, h, (c) => {
     const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#7fdcff");
-    g.addColorStop(0.5, "#45a8f5");
-    g.addColorStop(1, "#2a6fd8");
+    g.addColorStop(0, "#d4f4ff");
+    g.addColorStop(0.5, "#9fdcff");
+    g.addColorStop(1, "#6cb8f5");
     c.fillStyle = g;
     c.fillRect(0, 0, w, h);
     c.save();
-    c.globalAlpha = 0.07;
+    c.globalAlpha = 0.18;
     c.fillStyle = "#ffffff";
     for (let x = -h; x < w; x += 90) {
       c.beginPath();
@@ -390,40 +401,9 @@ function shopBg(scene: Phaser.Scene, w: number, h: number): string {
   });
 }
 
-/** An item card: white to pale blue, a thick navy outline and a coloured name strip on top. */
+/** An item card: a vivid gradient with sunburst rays, sparkles and a thick black outline. */
 function psCard(scene: Phaser.Scene, color: number, w: number, h: number): string {
-  return canvasTexture(scene, `ps_card_${color}_${w}_${h}`, w + 12, h + 16, (c) => {
-    const shape = (x: number, y: number) => {
-      c.beginPath();
-      c.roundRect(x, y, w - 8, h - 8, 30);
-    };
-    shape(10, 16);
-    c.fillStyle = "rgba(10,20,50,0.35)";
-    c.fill();
-    shape(4, 4);
-    const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#ffffff");
-    g.addColorStop(1, "#d6ebff");
-    c.fillStyle = g;
-    c.fill();
-    c.save();
-    shape(4, 4);
-    c.clip();
-    const hex = `#${color.toString(16).padStart(6, "0")}`;
-    const band = c.createLinearGradient(0, 0, 0, 64);
-    band.addColorStop(0, "#ffffff");
-    band.addColorStop(0.25, hex);
-    band.addColorStop(1, hex);
-    c.fillStyle = band;
-    c.fillRect(0, 0, w + 12, 64);
-    c.fillStyle = "rgba(255,255,255,0.35)";
-    c.fillRect(0, 64, w + 12, 4);
-    c.restore();
-    shape(4, 4);
-    c.lineWidth = 8;
-    c.strokeStyle = NAVY;
-    c.stroke();
-  });
+  return vividCard(scene, color, w, h);
 }
 
 /** The lucky wheel: 8 prizes, rarer ones less likely. */
@@ -608,8 +588,8 @@ export class ShopScreen extends Screen {
     const size = Math.min(iconSize, h - 240);
     const tint = CARD_HEX[bg] ?? 0xffffff;
     // a shine spins slowly behind every item
-    const glow = s.add.image(x, 0, "rays").setTint(tint).setScale((size / 640) * 2.6).setAlpha(0.55);
-    s.tweens.add({ targets: glow, angle: 360, duration: 8000, repeat: -1 });
+    const glow = s.add.image(x, 0, "paint_splash").setTint(lighten(tint, 0.6)).setScale((size * 1.45) / 200).setAngle(Math.random() * 360);
+    s.tweens.add({ targets: glow, scale: glow.scale * 1.06, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     const icons = s.add.container(x, 0);
     for (let i = 0; i < count; i++) {
       const k = count === 1 ? 0 : i / (count - 1) - 0.5;
@@ -619,7 +599,7 @@ export class ShopScreen extends Screen {
     }
     // the last ones in the pile sit on top, so put the middle one there
     if (count > 1) icons.bringToTop(icons.list[Math.floor(count / 2)]);
-    const d = label(s, x, bot - 104, desc(), 24, NAVY, w - 70).setOrigin(0.5, 1);
+    const d = label(s, x, bot - 104, desc(), 24, "#ffffff", w - 70).setOrigin(0.5, 1).setStroke("#111111", 6);
     const place = () => {
       const iy = (top + 66 + bot - 104 - d.height) / 2;
       icons.y = iy;
@@ -634,7 +614,7 @@ export class ShopScreen extends Screen {
     this.list.add([
       s.add.image(x + 2, y + 4, psCard(s, tint, w, h)),
       glow, icons,
-      fitText(text(s, x, top + 30, title, 34, "#ffffff", { stroke: 8 }), w - 40),
+      fitText(text(s, x, top + 40, title, 40, "#ffffff", { stroke: 10 }), w - 40),
       d, btn,
     ]);
   }
@@ -649,6 +629,8 @@ export class ShopScreen extends Screen {
     const tab = this.tab;
     if (tab === "featured") {
       y = this.buildEventShop(y);
+      y = this.buildPack(y);
+      y = this.buildPasses(y);
       // ── Deal of the Day
       const deal = DEALS[day() % DEALS.length];
       const dh = 380;
@@ -683,9 +665,9 @@ export class ShopScreen extends Screen {
         return true;
       });
       this.list.add([
-        s.add.image(W / 2, cy, btnTexture(s, "purple", 1000, dh)), rays, ...pile,
+        s.add.image(W / 2, cy, vividCard(s, 0xb36aff, 1000, dh)), rays, ...pile,
         text(s, W / 2, y + 38, "DEAL OF THE DAY", 34, "#fff3dc"),
-        text(s, 660, cy - 70, deal.title, 56, "#ffe066"),
+        text(s, 660, cy - 70, deal.title, 60, "#ffe066", { stroke: 10 }),
         fitText(text(s, 660, cy, deal.desc, 30), 560),
         timer, was, strike, dealBtn, sticker,
       ]);
@@ -695,7 +677,7 @@ export class ShopScreen extends Screen {
       y = this.header(y, "LUCKY WHEEL", "pink");
       const wh = 560;
       const wy = y + wh / 2;
-      this.list.add(s.add.image(W / 2, wy, btnTexture(s, "pink", 1000, wh)));
+      this.list.add(s.add.image(W / 2, wy, vividCard(s, 0xff7ab8, 1000, wh)));
       this.wheel = s.add.container(330, wy + 10);
       this.wheel.add(s.add.image(0, 0, wheelTexture(s)));
       WHEEL.forEach((seg, i) => {
@@ -716,12 +698,12 @@ export class ShopScreen extends Screen {
         this.spin();
         return true;
       });
-      const wheelInfo = label(s, 800, wy - 60, "", 28, "#4a2f1d", 340);
+      const wheelInfo = label(s, 800, wy - 60, "", 28, "#ffffff", 340).setStroke("#111111", 6);
       this.ticking.push(() => wheelInfo.setText(Date.now() >= save.wheelAt ? "A free spin is ready!" : `Free spin in ${clock(save.wheelAt - Date.now())}`));
       this.list.add([
         this.wheel, pointer,
-        text(s, 800, wy - 170, "Spin to win!", 46, "#ffffff"),
-        label(s, 800, wy - 110, "Dice, gems, money, potions... or the MEGA JACKPOT", 26, "#4a2f1d", 340),
+        text(s, 800, wy - 170, "Spin to win!", 52, "#ffffff", { stroke: 10 }),
+        label(s, 800, wy - 110, "Dice, gems, money, potions... or the MEGA JACKPOT", 26, "#ffffff", 340).setStroke("#111111", 6),
         wheelInfo, wheelBtn,
       ]);
       y += wh + 40;
@@ -978,6 +960,72 @@ export class ShopScreen extends Screen {
   // ───────────────────────── Playtime Gifts ─────────────────────────
 
   /** 12 gifts that open as you play today; the last one is big. */
+  /** The Classic Pack: a chain of rewards, the first one paid and the rest free, new every day. */
+  private buildPack(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    let y = this.header(y0, "CLASSIC PACK", "blue");
+    if (save.pack.day !== day()) save.pack = { day: day(), step: 0 };
+    const ph = 400;
+    const cy = y + ph / 2;
+    const timer = text(s, W / 2, y + 44, "", 30, "#ffffff", { stroke: 8 });
+    this.ticking.push(() => timer.setText(`New pack in ${clock((day() + 1) * DAY_MS - Date.now())}`));
+    this.list.add([s.add.image(W / 2, cy, vividCard(s, 0x4fa8ff, 1000, ph)), timer]);
+    const step = 186;
+    const x0 = W / 2 - ((PACK.length - 1) * step) / 2;
+    PACK.forEach((p, i) => {
+      const x = x0 + i * step;
+      const slot = s.add.graphics();
+      slot.fillStyle(0xffffff, 0.92).fillRoundedRect(x - 78, cy - 120, 156, 170, 24);
+      slot.lineStyle(6, 0x111111, 1).strokeRoundedRect(x - 78, cy - 120, 156, 170, 24);
+      const r = p.rewards()[0];
+      const item = itemSplash(s, r.icon, 110, SPLASH[i % SPLASH.length], r.amount, i === PACK.length - 1);
+      item.setPosition(x, cy - 36);
+      this.list.add([slot, item]);
+      if (i < PACK.length - 1) this.list.add(s.add.triangle(x + step / 2, cy - 36, 0, 0, 0, 30, 22, 15, 0xffe066).setStrokeStyle(4, 0x111111));
+      const btn = this.priceButton(x, cy + 112, 164, 84, () => {
+        const done = save.pack.step > i;
+        const now = save.pack.step === i;
+        if (done) return { label: "DONE", color: "grey", ok: false };
+        if (p.gems) return { label: `${p.gems}`, icon: "icon_gem", color: now && save.gems >= p.gems ? "green" : "grey", ok: now && save.gems >= p.gems };
+        return { label: "FREE", color: now ? "green" : "grey", ok: now };
+      }, () => {
+        if (p.gems && !this.spendGems(p.gems)) return false;
+        save.pack.step = i + 1;
+        const got = p.rewards();
+        got.forEach((x) => x.give());
+        this.rewardShow(p.gems ? "CLASSIC PACK" : "FREE!", null, got);
+        return true;
+      });
+      this.list.add(btn);
+    });
+    return y + ph + 40;
+  }
+
+  /** Gamepasses: bought once, bonuses forever. */
+  private buildPasses(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    let y = this.header(y0, "GAMEPASSES", "gold");
+    const th = 420;
+    PASSES.forEach((p, i) => {
+      const col = i % 2;
+      if (i > 0 && col === 0) y += th + 30;
+      const btn = this.priceButton(0, 0, 280, 92, () => {
+        if (hasPass(p.id)) return { label: "OWNED", color: "grey", ok: false };
+        return { label: `${p.gems}`, icon: "icon_gem", color: save.gems >= p.gems ? "green" : "grey", ok: save.gems >= p.gems };
+      }, () => {
+        if (hasPass(p.id) || !this.spendGems(p.gems)) return false;
+        save.passes.push(p.id);
+        this.host.toast(`${p.name.replace("!", "")} is yours forever!`, "#ffe066");
+        s.cameras.main.flash(200, 255, 240, 180);
+        return true;
+      });
+      this.tile(W / 2 + (col ? 255 : -255), y + th / 2, 490, th, p.color, p.icon, 150, p.name, () => p.desc, btn);
+    });
+    return y + th + 40;
+  }
+
   private buildPlaytime(y0: number): number {
     const s = this.scene;
     const W = s.scale.width;
@@ -1216,7 +1264,7 @@ export class ShopScreen extends Screen {
         const icon = s.add.image(0, 0, rw.icon);
         icon.setScale(110 / Math.max(icon.width, icon.height));
         const item = s.add.container(W / 2, cy, [
-          s.add.image(0, 0, "glow").setTint(0xffe066).setScale(0.9).setAlpha(0.7), icon, text(s, 0, 78, rw.amount, 40),
+          s.add.image(0, 0, "paint_splash").setTint(SPLASH[i % SPLASH.length]).setScale(0.95).setAngle(i * 67), icon, text(s, 52, 58, rw.amount, 40, "#ffffff", { stroke: 9 }).setOrigin(0.5),
         ]).setScale(0);
         root.add(item);
         s.tweens.add({ targets: item, x, y, scale: 1, duration: 420, delay: 120 + i * 140, ease: "Back.out", onStart: () => sfx.reveal(2 + Math.min(4, i)) });

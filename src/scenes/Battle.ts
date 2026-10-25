@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
-import { INK_N, lighten, rgba } from "../art/draw";
+import { INK_N, canvasTexture, lighten, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGadgetTextures } from "../art/gadgets";
 import { makeComicTextures } from "../art/comic";
@@ -27,7 +27,7 @@ import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier
 import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
-import { persist, save } from "../systems/save";
+import { hasPass, persist, save } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
 import {
   cashMult, chestMult, critChance, critDamage, dmgMult, gadgetTierCap, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
@@ -1152,6 +1152,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private addDice(tier: Tier, n: number): void {
+    // the Super Drops pass: every die counts twice
+    if (hasPass("drops")) n *= 2;
     save.dice[tier] += n;
     this.stats.dice[tier] += n;
     persist();
@@ -2189,8 +2191,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /**
-   * 5:00 - every monster runs off, a storm rolls in over the crystal, a claw comes out of
-   * the sky and carries the crystal away, then the boss drops down next to you.
+   * 5:00 - every monster runs off, a storm rolls in over the crystal, a beam of light shines down
+   * from the clouds and the crystal dissolves up into it, then the boss drops down next to you.
    */
   private bossCutscene(): void {
     this.state = "cutscene";
@@ -2220,27 +2222,53 @@ export class BattleScene extends Phaser.Scene {
       cam.flash(120, 255, 255, 255);
       sfx.thunder();
     });
-    const claw = this.add.image(cx, cy - 1500, "sky_claw").setOrigin(0.5, 1).setDepth(19999);
-    this.tweens.add({ targets: claw, y: cy - 40, duration: 900, delay: 1400, ease: "Quad.in" });
+    // a beam of light from the clouds onto the crystal
+    canvasTexture(this, "light_beam", 128, 256, (c) => {
+      const g = c.createLinearGradient(0, 0, 128, 0);
+      g.addColorStop(0, "rgba(255,240,180,0)");
+      g.addColorStop(0.3, "rgba(255,245,200,0.75)");
+      g.addColorStop(0.5, "rgba(255,255,255,1)");
+      g.addColorStop(0.7, "rgba(255,245,200,0.75)");
+      g.addColorStop(1, "rgba(255,240,180,0)");
+      c.fillStyle = g;
+      c.fillRect(0, 0, 128, 256);
+    });
+    const beamTop = cy - 1050;
+    const beam = this.add.image(cx, beamTop, "light_beam").setOrigin(0.5, 0).setDepth(19999).setBlendMode(Phaser.BlendModes.ADD)
+      .setDisplaySize(260, 1).setAlpha(0.95);
+    const halo = this.add.image(cx, cy - 120, "glow").setTint(0xfff3b0).setScale(0).setDepth(19998).setBlendMode(Phaser.BlendModes.ADD);
+    this.time.delayedCall(1400, () => {
+      sfx.shield(true);
+      this.tweens.add({ targets: beam, displayHeight: cy - beamTop + 40, duration: 450, ease: "Quad.in" });
+      this.tweens.add({ targets: halo, scale: 2.4, duration: 600, delay: 400, ease: "Back.out" });
+      this.tweens.add({ targets: beam, displayWidth: 320, duration: 300, yoyo: true, repeat: -1, delay: 450 });
+    });
     this.time.delayedCall(2350, () => {
-      claw.setTexture("sky_claw_shut");
-      sfx.claw();
-      cam.shake(300, 0.01);
+      sfx.superRoll();
+      cam.shake(300, 0.008);
+      cam.flash(250, 255, 250, 210);
       this.tweens.killTweensOf(this.crystal);
       this.crystalSparkle.stop();
       this.tweens.killTweensOf(this.crystalGlow);
       this.tweens.add({ targets: this.crystalGlow, alpha: 0, duration: 400 });
-      const lift = cy - 40 - this.crystal.y;
-      this.tweens.add({
-        targets: claw, y: cy - 2600, duration: 1600, delay: 300, ease: "Sine.in",
-        onUpdate: () => this.crystal.setY(claw.y - lift).setDepth(19998),
+      this.crystal.setTintFill(0xffffff).setDepth(19998);
+      // the crystal rises into the light, shrinking to a sparkle, and is gone
+      this.tweens.add({ targets: this.crystal, y: this.crystal.y - 260, scaleX: 0.05, scaleY: 0.4, alpha: 0, duration: 1200, ease: "Quad.in" });
+      for (let i = 0; i < 4; i++) this.time.delayedCall(i * 220, () => {
+        this.sparks.setParticleTint(0xfff3b0);
+        this.sparks.explode(18, cx, cy - 120 - i * 120);
       });
+    });
+    this.time.delayedCall(3500, () => {
+      this.tweens.add({ targets: [beam, halo], alpha: 0, duration: 600, onComplete: () => {
+        beam.destroy();
+        halo.destroy();
+      } });
     });
     this.time.delayedCall(4200, () => {
       this.tweens.add({ targets: storm, alpha: 0, duration: 600, onComplete: () => storm.destroy() });
       this.tweens.add({ targets: this.gloom, fillAlpha: 0.18, duration: 800 });
-      claw.destroy();
-      this.crystal.setVisible(false);
+      this.crystal.setVisible(false).clearTint().setAlpha(1);
       cam.pan(this.hero.x, this.hero.y - 100, 700, "Sine.easeInOut");
       cam.zoomTo(ZOOM, 700, "Sine.easeInOut");
     });
@@ -2309,7 +2337,7 @@ export class BattleScene extends Phaser.Scene {
     this.rocks.forEach((r) => r.img.destroy());
     this.rocks = [];
     this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1500 });
-    this.crystal.setVisible(true).setPosition(hx, hy - 1600).setDepth(hy);
+    this.crystal.setVisible(true).setScale(1).setAlpha(1).clearTint().setPosition(hx, hy - 1600).setDepth(hy);
     this.tweens.add({ targets: this.crystal, y: hy, duration: 1600, delay: 600, ease: "Bounce.out" });
     this.time.delayedCall(2300, () => {
       this.crystalSparkle.start();

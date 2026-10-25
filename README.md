@@ -122,7 +122,14 @@ hour of fishing brings.
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
 - **The Shop** (looks and works like the Pet Simulator 99 shop): a bright blue striped window, big
   category buttons down the left (FEATURED, MERCHANT, GIFTS, ITEMS, with red dots when something is free),
-  and white outlined item cards with a coloured name strip and a shine spinning behind each item.
+  and vivid cards: colour gradients with sunburst rays, sparkles and thick black outlines, big outlined
+  titles, chunky green price buttons, and every item sitting on a paint splat. Rewards (chests, rolls,
+  fishing) show on paint splats too, like an inventory.
+  - **Classic Pack** (FEATURED): a daily chain of 5 rewards. The first costs 60 gems, then each next one is
+    FREE, in order. A new pack every day.
+  - **Gamepasses** (FEATURED): bought once, kept forever (gems for now, real money later): **VIP** +25% money,
+    **Magic Dice** +50% luck, **Super Drops** every die from battles counts twice, **Super Roller** a SUPER
+    ROLL every 30 rolls instead of 50, **Fast Fisher** catches twice as fast, **Gem Hunter** double boss gems.
   - **Traveling Merchant**: a striped market stall with 6 slots that restock every 30 minutes (everyone sees
     the same wares). Each slot rolls a rarity (Common 48%, Uncommon 28%, Rare 15%, Epic 7%, Legendary 2%)
     and a ware of that rarity with 1-3 in stock: dice of your stage's tier and better, potions, boosts,
@@ -196,8 +203,9 @@ hour of fishing brings.
   zoomed out (1.66x) so you see more of the field. Survive **5:00** against hordes of monsters that come
   faster and tougher every minute (a ring of them closes in at each minute mark). If you fall or the crystal
   breaks, the run is over: revive once for gems, try again, or go back to the lobby.
-- **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and a claw carries the
-  crystal into the sky. The boss drops down next to you with a title card (its name and its three moves)
+- **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and the clouds shine a
+  beam of light down on the crystal, which melts into sparkles and disappears. The last 5 seconds before
+  5:00 (and the last 5 seconds of each Boss Rush boss) count down in huge numbers. The boss drops down next to you with a title card (its name and its three moves)
   and its own music. It is just you and your pets against it. Beat it and the crystal floats back down.
 - **Boss seals**: stage bosses **heal themselves** (2% of their health a second; not in the Boss Rush).
   Five rune seals appear around the field when the boss lands: faint until you get close, on the minimap

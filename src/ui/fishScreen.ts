@@ -361,13 +361,13 @@ export class FishScreen extends Screen {
       const inRow = Math.min(cols, piles.length - row * cols);
       const x = ((i % cols) - (inRow - 1) / 2) * cellW;
       const y = -h / 2 + 150 + cellH / 2 + row * cellH;
-      const glow = s.add.image(0, -16, "glow").setTint(pl.color).setScale(0.6).setAlpha(0.6);
+      const glow = s.add.image(0, -16, "paint_splash").setTint(pl.color).setScale(0.72).setAngle(i * 67);
       const icon = s.add.image(0, -16, pl.icon);
       const k = (pl.icon === "icon_ticket" ? 120 : 92) / Math.max(icon.width, icon.height);
       icon.setScale(k);
       const cell = s.add.container(x, y, [
         glow, icon,
-        text(s, 0, 56, pl.amount, 34, pl.icon === "icon_ticket" ? "#e8434f" : "#ffffff"),
+        text(s, 44, 40, pl.amount, 34, pl.icon === "icon_ticket" ? "#ffe066" : "#ffffff", { stroke: 8 }),
         fitText(label(s, 0, 88, pl.name, 20, "#7a5236"), cellW - 16),
       ]).setAlpha(0);
       m.body.add(cell);

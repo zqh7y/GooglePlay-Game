@@ -38,7 +38,7 @@ import { heroMaxHp, teamDps } from "../systems/power";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
-import { GIFT_EVERY, RollScreen, SUPER_EVERY, SUPER_MULT } from "../ui/rollScreen";
+import { GIFT_EVERY, RollScreen, SUPER_MULT, superEvery } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
 import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
@@ -148,6 +148,9 @@ export class UIScene extends Phaser.Scene implements Host {
   private questCount!: Phaser.GameObjects.Text;
   private questGlow!: Phaser.GameObjects.Image;
   private badges: { obj: Phaser.GameObjects.Container; show: () => boolean }[] = [];
+  /** the big 5-4-3-2-1 before the boss comes (and before a Boss Rush boss gets away) */
+  private countText!: Phaser.GameObjects.Text;
+  private lastCount = 0;
   /** the fishing event's card in the lobby */
   private eventCard!: Phaser.GameObjects.Container;
   private eventBar!: Phaser.GameObjects.Graphics;
@@ -353,6 +356,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.cashPill.setValue(fmt(save.cash));
     this.gemPill.setValue(fmt(save.gems));
     this.diceTop.setValue(fmt(totalDice()));
+    this.countdown();
     if (this.tab === "battle" && !this.mapOpen) {
       this.updateHud(time);
       const b = this.battleScene;
@@ -676,6 +680,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.overlay = this.add.graphics();
     this.joyG = this.add.graphics();
     this.hud.add([this.mini, this.overlay, this.joyG]);
+    this.countText = text(this, W / 2, H * 0.36, "", 260, "#ffe066").setStroke("#1a1030", 26).setDepth(7400).setVisible(false);
   }
 
   /**
@@ -754,6 +759,29 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Where the event card is (the tutorial points at it). */
   private eventSpot(): [number, number] | null {
     return battle.mode === "lobby" && this.tab === "battle" && !this.mapOpen ? [this.eventCard.x, this.eventCard.y] : null;
+  }
+
+  /** The last five seconds before the boss arrives (or a Boss Rush boss escapes): big numbers. */
+  private countdown(): void {
+    let left = Infinity;
+    if (battle.mode === "run" && this.tab === "battle" && !this.mapOpen) {
+      if (battle.rush) left = battle.bossFrac >= 0 ? battle.rushLeft : Infinity;
+      else if (!battle.bossFight) left = STAGE_MS - battle.time;
+    }
+    const n = left > 0 && left <= 5000 ? Math.ceil(left / 1000) : 0;
+    if (n === this.lastCount) return;
+    this.lastCount = n;
+    if (!n) {
+      this.countText.setVisible(false);
+      return;
+    }
+    const rush = battle.rush;
+    this.countText.setText(String(n)).setColor(n <= 2 ? "#ff4a4a" : rush ? "#e6b8ff" : "#ffe066").setVisible(true).setAlpha(1).setScale(2.2).setAngle(Phaser.Math.Between(-8, 8));
+    this.tweens.killTweensOf(this.countText);
+    this.tweens.add({ targets: this.countText, scale: 1, duration: 260, ease: "Back.out" });
+    this.tweens.add({ targets: this.countText, alpha: 0.15, scale: 0.8, delay: 600, duration: 380 });
+    sfx.charge(6 - n);
+    buzz(40);
   }
 
   private addBadge(x: number, y: number, show: () => boolean): void {
@@ -1370,7 +1398,7 @@ export class UIScene extends Phaser.Scene implements Host {
       const isLucky = save.luckyBoost > 0 || save.luckyCount >= luckyEvery() - 1;
       if (save.luckyBoost > 0) save.luckyBoost--;
       else save.luckyCount = isLucky ? 0 : save.luckyCount + 1;
-      const isSuper = save.superCount >= SUPER_EVERY - 1;
+      const isSuper = save.superCount >= superEvery() - 1;
       save.superCount = isSuper ? 0 : save.superCount + 1;
       lucky ||= isLucky;
       superRoll ||= isSuper;

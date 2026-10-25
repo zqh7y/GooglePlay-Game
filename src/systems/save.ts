@@ -76,6 +76,10 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** gamepasses bought (kept forever) */
+  passes: string[];
+  /** the daily pack chain: which day and how many steps claimed */
+  pack: { day: number; step: number };
   /** Golden Tickets (very rare, from events) for the Event Shop */
   tickets: number;
   eventShop: EventShopState;
@@ -168,6 +172,8 @@ function fresh(): SaveData {
     bossRushBest: 0,
     fishing: freshFishing(),
     tickets: 0,
+    passes: [],
+    pack: { day: -1, step: 0 },
     eventShop: { slot: -1, bought: [], week: -1, special: false },
     merchant: { cycle: -1, shift: 0, bought: [] },
     playtime: { day: -1, secs: 0, claimed: [] },
@@ -278,3 +284,6 @@ export function resetSave(): void {
   Object.assign(save, fresh());
   persist();
 }
+
+/** Owns this gamepass. */
+export const hasPass = (id: string) => save.passes.includes(id);

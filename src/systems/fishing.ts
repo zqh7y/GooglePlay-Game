@@ -4,7 +4,7 @@ import {
   deepMult, doubleChance, eventGoal, eventReward, fishLuck, goldMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
 } from "../data/fishing";
 import { questEvent } from "./goals";
-import { save } from "./save";
+import { hasPass, save } from "./save";
 
 /**
  * The fishing line runs all the time: catches come in on the fishing screen, while you fight
@@ -32,7 +32,7 @@ export interface Catch {
 }
 
 export const fishLv = (id: FishUpId) => save.fishing.lv[id] ?? 0;
-export const catchMs = () => catchSecs(fishLv("speed")) * 1000;
+export const catchMs = () => catchSecs(fishLv("speed")) * 1000 * (hasPass("fish") ? 0.5 : 1);
 export const currentLuck = () => fishLuck(fishLv("luck"));
 export const currentDeep = () => deepMult(fishLv("pond"));
 /** Catches left until the next SUPER catch (1 = the next one). */

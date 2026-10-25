@@ -1,6 +1,6 @@
 import { indexBonus } from "./goals";
 import { Effect, TREE, TREE_BY_ID, TreeNode, perAt, stepCost, stepsOf } from "../data/tree";
-import { persist, save } from "./save";
+import { hasPass, persist, save } from "./save";
 
 /** Everything the upgrade tree (and the luck potion) adds up to. A hexagon bought in part counts in part. */
 export const stepsBought = (node: TreeNode) => save.tree[node.id] ?? 0;
@@ -24,7 +24,7 @@ export function luckParts(): { tree: number; die: number; index: number; potion:
 
 export function luck(): number {
   const p = luckParts();
-  return p.tree * p.die * p.index * p.potion;
+  return p.tree * p.die * p.index * p.potion * (hasPass("luck") ? 1.5 : 1);
 }
 
 /** Every Nth roll is a lucky roll. */
@@ -37,7 +37,7 @@ export const rollTime = () =>
   Math.max(120, 2000 * TREE.reduce((m, t) => (t.effect === "speed" && stepsBought(t) ? m * (1 - perAt(t, stepsBought(t))) : m), 1) * (speedActive() ? 0.5 : 1));
 export const dicePerRoll = () => 1 + sum("multi");
 export const autoUnlocked = () => sum("auto") > 0;
-export const cashMult = () => product("cash");
+export const cashMult = () => product("cash") * (hasPass("vip") ? 1.25 : 1);
 export const dmgMult = () => product("dmg");
 export const heroDmgMult = () => product("heroDmg");
 /** You start with one pet in your team and can unlock up to three. */
@@ -46,7 +46,7 @@ export const petSlots = () => Math.min(MAX_PETS, 1 + sum("slot"));
 export const critChance = () => 0.05 + sum("crit");
 export const critDamage = () => 3 + sum("critDmg");
 export const offlineRate = () => 0.25 + sum("offline");
-export const gemsPerBoss = () => 2 + sum("gems");
+export const gemsPerBoss = () => (2 + sum("gems")) * (hasPass("gems") ? 2 : 1);
 export const villageHpMult = () => 1 + sum("villageHp");
 export const moveSpeedMult = () => 1 + sum("moveSpeed");
 export const rangeMult = () => 1 + sum("range");
