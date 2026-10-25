@@ -134,45 +134,130 @@ function wrap(x: number, y: number, r: number, draw: (x: number, y: number) => v
   }
 }
 
-/** The repeating floor tile: base colour, soft colour variation and tiny grass / sand / snow details. */
+/**
+ * The repeating floor tile, cartoon style: the land's colour with wide mowed stripes, soft colour
+ * blotches, chunky grass tufts with a dark outline, little flowers, clovers and mushrooms
+ * (pebbles on sand, sparkles on snow). Everything wraps around the edges, so the tile is seamless.
+ */
 function paintTile(ctx: Ctx, land: Region, rand: () => number): void {
   ctx.fillStyle = rgba(land.ground);
   ctx.fillRect(0, 0, TILE, TILE);
-  for (let i = 0; i < 14; i++) {
-    const r = 90 + rand() * 200;
-    const color = rand() < 0.5 ? land.groundDark : land.groundLight;
-    wrap(rand() * TILE, rand() * TILE, r, (x, y) => softBlob(ctx, x, y, r, color, 0.45));
+  // mowed stripes, like a cartoon lawn (8 per tile, so they line up across tiles)
+  ctx.fillStyle = rgba(lighten(land.ground, 0.1));
+  const band = TILE / 8;
+  for (let i = -8; i < 8; i += 1) {
+    if (i % 2) continue;
+    const x = i * band;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + band, 0);
+    ctx.lineTo(x + band + TILE, TILE);
+    ctx.lineTo(x + TILE, TILE);
+    ctx.fill();
   }
+  for (let i = 0; i < 10; i++) {
+    const r = 90 + rand() * 180;
+    const color = rand() < 0.5 ? land.groundDark : land.groundLight;
+    wrap(rand() * TILE, rand() * TILE, r, (x, y) => softBlob(ctx, x, y, r, color, 0.2));
+  }
+  const ink = rgba(darken(land.groundDark, 0.28));
   const b = new Batch();
-  for (let n = 0; n < 700; n++) {
+  const outlined = (fill: string, draw: () => void, width = 5) => {
+    b.add(ink, true, width + 4, draw);
+    b.add(fill, false, 0, draw);
+  };
+  const grassy = land.detail !== "sand" && land.detail !== "snow";
+  // chunky tufts: three round-tipped blades, dark outline, light tips
+  for (let n = 0; n < (grassy ? 60 : 30); n++) {
     const x0 = rand() * TILE;
     const y0 = rand() * TILE;
-    const a = rand();
-    const w = 4 + rand() * 7;
-    wrap(x0, y0, 20, (x, y) => {
+    const s = 0.8 + rand() * 0.7;
+    const col = rand() < 0.5 ? lighten(land.ground, 0.22) : land.groundDark;
+    wrap(x0, y0, 30, (x, y) => {
+      const tuft = () => {
+        ctx.moveTo(x - 12 * s, y);
+        ctx.quadraticCurveTo(x - 14 * s, y - 14 * s, x - 9 * s, y - 20 * s);
+        ctx.quadraticCurveTo(x - 6 * s, y - 10 * s, x - 3 * s, y - 6 * s);
+        ctx.quadraticCurveTo(x - 2 * s, y - 20 * s, x + 2 * s, y - 27 * s);
+        ctx.quadraticCurveTo(x + 5 * s, y - 14 * s, x + 4 * s, y - 6 * s);
+        ctx.quadraticCurveTo(x + 9 * s, y - 14 * s, x + 13 * s, y - 18 * s);
+        ctx.quadraticCurveTo(x + 13 * s, y - 6 * s, x + 12 * s, y);
+        ctx.closePath();
+      };
       if (land.detail === "sand") {
-        b.add(rgba(a < 0.5 ? darken(land.ground, 0.08) : lighten(land.ground, 0.2)), true, 4, () => {
-          ctx.moveTo(x - 16, y);
-          ctx.quadraticCurveTo(x, y - 7, x + 16, y);
-        });
+        outlined(rgba(lighten(land.ground, 0.12)), () => {
+          ctx.moveTo(x + 14 * s, y);
+          ctx.ellipse(x, y, 14 * s, 9 * s, 0, 0, Math.PI * 2);
+        }, 3);
       } else if (land.detail === "snow") {
-        b.add(a < 0.6 ? "rgba(170,200,230,0.5)" : "#ffffff", false, 0, () => {
-          ctx.moveTo(x + w, y);
-          ctx.ellipse(x, y, w, 2.5, 0, 0, Math.PI * 2);
+        b.add("rgba(150,190,230,0.6)", true, 5, () => {
+          for (let k = 0; k < 3; k++) {
+            const a = (k * Math.PI) / 3;
+            ctx.moveTo(x - Math.cos(a) * 12 * s, y - Math.sin(a) * 12 * s);
+            ctx.lineTo(x + Math.cos(a) * 12 * s, y + Math.sin(a) * 12 * s);
+          }
         });
       } else {
-        b.add(rgba(a < 0.6 ? land.groundDark : lighten(land.ground, 0.14)), true, 4, () => {
-          ctx.moveTo(x - 6, y);
-          ctx.lineTo(x - 9, y - 12);
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y - 16);
-          ctx.moveTo(x + 6, y);
-          ctx.lineTo(x + 9, y - 12);
-        });
+        outlined(rgba(col), tuft, 3);
       }
     });
   }
   b.flush(ctx);
+  // little flowers, clovers and mushrooms with outlines
+  const petals = ["#ffffff", "#ff9ad0", "#ffe066", "#9ad8ff", "#c8a0ff"];
+  for (let n = 0; n < (grassy ? 22 : 10); n++) {
+    const x0 = rand() * TILE;
+    const y0 = rand() * TILE;
+    const kind = rand();
+    const col = petals[Math.floor(rand() * petals.length)];
+    wrap(x0, y0, 30, (x, y) => {
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = ink;
+      if (kind < 0.55) {
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.arc(x + Math.cos(a) * 8, y + Math.sin(a) * 8, 7, 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffc23a";
+        ctx.fill();
+        ctx.stroke();
+      } else if (kind < 0.8 && grassy) {
+        for (let k = 0; k < 3; k++) {
+          const a = (k / 3) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.arc(x + Math.cos(a) * 7, y + Math.sin(a) * 7, 7, 0, Math.PI * 2);
+          ctx.fillStyle = rgba(lighten(land.ground, 0.3));
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else {
+        // a tiny red mushroom with white dots
+        ctx.beginPath();
+        ctx.rect(x - 4, y - 4, 8, 12);
+        ctx.fillStyle = "#fff3dc";
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y - 4, 12, Math.PI, 0);
+        ctx.closePath();
+        ctx.fillStyle = "#ff5a5a";
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#ffffff";
+        for (const [dx, dy] of [[-5, -9], [4, -11], [6, -5]]) {
+          ctx.beginPath();
+          ctx.arc(x + dx, y + dy, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    });
+  }
 }
 
 /** A ring of flat stones around the crystal (centred in a 760 x 560 texture). */

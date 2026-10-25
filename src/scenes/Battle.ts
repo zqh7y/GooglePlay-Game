@@ -3,6 +3,7 @@ import { HERO_HAND } from "../art/characters";
 import { INK_N, lighten, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGadgetTextures } from "../art/gadgets";
+import { makeComicTextures } from "../art/comic";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
@@ -443,6 +444,9 @@ export class BattleScene extends Phaser.Scene {
   private puff!: Phaser.GameObjects.Particles.ParticleEmitter;
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   private dmgTexts: Phaser.GameObjects.Text[] = [];
+  /** comic "POW!" bursts, reused */
+  private bursts: Phaser.GameObjects.Container[] = [];
+  private stars!: Phaser.GameObjects.Particles.ParticleEmitter;
   private cashTexts: Phaser.GameObjects.Container[] = [];
 
   private buckets = new Map<number, Phaser.GameObjects.Image[]>();
@@ -516,7 +520,20 @@ export class BattleScene extends Phaser.Scene {
     this.trail = this.add.particles(0, 0, "puff", {
       speed: 0, lifespan: 300, scale: { start: 0.9, end: 0 }, alpha: { start: 0.75, end: 0 }, blendMode: "ADD", emitting: false,
     }).setDepth(8990);
-    for (let i = 0; i < 70; i++) this.dmgTexts.push(text(this, 0, 0, "", 66).setDepth(9300).setVisible(false));
+    for (let i = 0; i < 70; i++) this.dmgTexts.push(text(this, 0, 0, "", 66).setStroke("#1a1030", 14).setDepth(9300).setVisible(false));
+    // cartoon extras: comic bursts, star pops, and magic sparkles floating over the field
+    makeComicTextures(this);
+    this.bursts = [];
+    for (let i = 0; i < 6; i++) {
+      this.bursts.push(this.add.container(0, 0, [this.add.image(0, 0, "comic_burst"), text(this, 0, -4, "", 44, "#ffffff").setStroke("#1a1030", 10)]).setDepth(9250).setVisible(false));
+    }
+    this.stars = this.add.particles(0, 0, "comic_star", {
+      speed: { min: 180, max: 420 }, lifespan: 650, scale: { start: 0.9, end: 0 }, rotate: { start: 0, end: 360 }, gravityY: 500, emitting: false,
+    }).setDepth(9000);
+    this.add.particles(0, 0, "spark", {
+      x: { min: 0, max: this.scale.width }, y: { min: 0, max: this.scale.height }, lifespan: 3500, speedY: { min: -40, max: -10 }, speedX: { min: -15, max: 15 },
+      scale: { start: 0.45, end: 0 }, alpha: { start: 0.9, end: 0 }, frequency: 140, tint: [0xffffff, 0xffe066, 0xff9ad0, 0x9ae6ff, 0xb98aff],
+    }).setScrollFactor(0).setDepth(8800);
     for (let i = 0; i < 24; i++) {
       this.cashTexts.push(this.add.container(0, 0, [
         this.add.image(-10, 0, "icon_cash").setScale(0.66).setOrigin(1, 0.5),
@@ -3131,7 +3148,16 @@ export class BattleScene extends Phaser.Scene {
       sfx.hit();
       this.sparks.setParticleTint(0xffffff);
       this.sparks.explode(3, e.img.x, hy + 30);
-      if (crit) this.boom(e.img.x, hy + 30, 0.55);
+      if (crit) {
+        this.boom(e.img.x, hy + 30, 0.55);
+        this.comicBurst(e.img.x, hy - 40, true);
+      }
+      // a cartoon squash
+      if (!e.type.boss && !this.tweens.isTweening(e.img)) {
+        const sx = e.img.scaleX;
+        const sy = e.img.scaleY;
+        this.tweens.add({ targets: e.img, scaleX: sx * 1.18, scaleY: sy * 0.82, duration: 60, yoyo: true, onComplete: () => e.img.setScale(sx, sy) });
+      }
     }
     this.damageNumber(e.img.x, hy, amount, crit);
     if (e.hp <= 0 && e.lives > 0) {
@@ -3161,12 +3187,26 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** Chunky cartoon numbers: they pop, tilt and bounce up (crits are big, red and shouting). */
   private damageNumber(x: number, y: number, amount: number, crit: boolean): void {
     const t = this.dmgTexts.find((d) => !d.visible);
     if (!t) return;
-    t.setText(crit ? `${fmt(amount)}!` : fmt(amount)).setColor(crit ? "#ff5a5a" : "#ffffff").setPosition(x + Phaser.Math.Between(-30, 30), y).setVisible(true).setAlpha(1).setScale(0.5);
-    this.tweens.add({ targets: t, scale: crit ? 1.5 : 1, duration: 120, ease: "Back.out" });
-    this.tweens.add({ targets: t, y: y - 110, alpha: 0, delay: 300, duration: 450, onComplete: () => t.setVisible(false) });
+    t.setText(crit ? `${fmt(amount)}!` : fmt(amount)).setColor(crit ? "#ff4a4a" : "#fff3a0").setPosition(x + Phaser.Math.Between(-30, 30), y).setVisible(true).setAlpha(1).setScale(0.3).setAngle(Phaser.Math.Between(-14, 14));
+    this.tweens.add({ targets: t, scale: crit ? 1.7 : 1.1, duration: 160, ease: "Back.out" });
+    this.tweens.add({ targets: t, y: y - 60, duration: 260, ease: "Quad.out" });
+    this.tweens.add({ targets: t, y: y - 120, alpha: 0, scale: 0.6, delay: 380, duration: 380, ease: "Quad.in", onComplete: () => t.setVisible(false) });
+  }
+
+  /** A comic-book word in a spiky burst: POW! BAM! ZAP! */
+  private comicBurst(x: number, y: number, big = false): void {
+    const b = this.bursts.find((o) => !o.visible);
+    if (!b) return;
+    const words = ["POW!", "BAM!", "ZAP!", "BOOM!", "WHAM!", "BONK!", "KAPOW!"];
+    const t = b.list[1] as Phaser.GameObjects.Text;
+    t.setText(words[Math.floor(Math.random() * words.length)]);
+    b.setPosition(x + Phaser.Math.Between(-40, 40), y).setVisible(true).setAlpha(1).setScale(0.2).setAngle(Phaser.Math.Between(-18, 18));
+    this.tweens.add({ targets: b, scale: big ? 1.1 : 0.8, duration: 140, ease: "Back.out" });
+    this.tweens.add({ targets: b, alpha: 0, scale: big ? 1.3 : 1, delay: 380, duration: 220, onComplete: () => b.setVisible(false) });
   }
 
   /** `sweep`: cleared away at the end of a stage (no rewards). */
@@ -3191,6 +3231,11 @@ export class BattleScene extends Phaser.Scene {
     const cy = e.img.y - e.img.displayHeight * 0.4;
     this.puff.setParticleTint(e.type.fx);
     this.puff.explode(e.type.boss ? 60 : sweep ? 6 : 14, e.img.x, cy);
+    // cartoon stars pop out; big ones and every so often a comic word
+    if (!sweep) {
+      this.stars.explode(e.type.boss ? 24 : 4, e.img.x, cy);
+      if (e.type.boss || e.elite || Math.random() < 0.08) this.comicBurst(e.img.x, cy - 60, e.type.boss || !!e.elite);
+    }
     this.tweens.killTweensOf(e.img);
     this.tweens.add({ targets: e.img, scale: e.type.boss ? 1.6 : 0, alpha: 0, angle: 30, duration: e.type.boss ? 500 : 160, onComplete: () => e.img.destroy() });
     if (sweep) return;
