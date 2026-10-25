@@ -44,6 +44,7 @@ import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/sh
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
+import { arrowButton, cardButton, itemSplash } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
 import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
@@ -167,7 +168,10 @@ export class UIScene extends Phaser.Scene implements Host {
   private map!: MapScreen;
   private openModal: Modal | null = null;
   private tutorial!: Tutorial;
-  private goBtn!: Button;
+  private goBtn!: Phaser.GameObjects.Container;
+  private battleSub!: Phaser.GameObjects.Text;
+  private stagePrev!: Phaser.GameObjects.Container;
+  private stageNext!: Phaser.GameObjects.Container;
   private startBtn: Button | null = null;
   /** what the fishing line caught while you were away, shown once the other welcome popups are gone */
   private fishAwayResult: { catches: Catch[]; secs: number } | null = null;
@@ -328,16 +332,22 @@ export class UIScene extends Phaser.Scene implements Host {
     this.mini.setVisible(true);
     this.mini.setPosition(...this.miniSpot());
     this.overlay.clear();
-    if (lobby) {
-      this.lobbyTitle.setText(`Stage ${save.stage}`);
-      this.lobbyLand.setText(regionForStage(save.stage).name);
-      this.lobbyBest.setText(`Best: stage ${save.bestStage} / ${MAX_STAGE}`);
-      this.rushFace.setTexture(bossForStage(save.stage).tex);
-      this.rushFace.setScale(96 / Math.max(this.rushFace.width, this.rushFace.height));
-      this.rushNum.setText(`Boss ${save.stage}`);
-      const muts = mutationsAt(save.stage);
-      fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
-    }
+    if (lobby) this.refreshLobby();
+  }
+
+  /** The lobby texts and buttons for the stage you are on. */
+  private refreshLobby(): void {
+    this.lobbyTitle.setText(`Stage ${save.stage}`);
+    this.lobbyLand.setText(regionForStage(save.stage).name);
+    this.lobbyBest.setText(save.stage < save.bestStage ? `Replaying  •  best: stage ${save.bestStage} / ${MAX_STAGE}` : `Best: stage ${save.bestStage} / ${MAX_STAGE}`);
+    this.battleSub.setText(save.stage < save.bestStage ? `Replay stage ${save.stage}` : `Stage ${save.stage}  •  survive 5:00`);
+    this.stagePrev.setPosition(this.lobbyTitle.x + this.lobbyTitle.width + 56, 178).setVisible(save.stage > 1);
+    this.stageNext.setPosition(this.stagePrev.x + 84, 178).setVisible(save.stage < Math.min(MAX_STAGE, save.bestStage));
+    this.rushFace.setTexture(bossForStage(save.stage).tex);
+    this.rushFace.setScale(100 / Math.max(this.rushFace.width, this.rushFace.height));
+    this.rushNum.setText(`Boss ${save.stage}  •  ${RUSH_MS / 1000}s each`);
+    const muts = mutationsAt(save.stage);
+    fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
   }
 
   update(time: number, delta: number): void {
@@ -571,29 +581,38 @@ export class UIScene extends Phaser.Scene implements Host {
     this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
     this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
-    const go = this.goBtn = button(this, W / 2 - 112, bottom - 170, 600, 190, "orange", "BATTLE", () => {
+    // BATTLE: a big sunny orange card with a sword on a paint splat
+    const sword = itemSplash(this, "icon_sword", 130, 0xffe066).setPosition(-196, 0);
+    this.tweens.add({ targets: sword, angle: { from: -8, to: 8 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.battleSub = text(this, 70, 52, "", 30, "#ffffff", { stroke: 8 });
+    const go = this.goBtn = cardButton(this, 352, bottom - 172, 620, 210, 0xff8a2a, [
+      sword, text(this, 70, -26, "BATTLE", 88, "#ffffff", { stroke: 14 }), this.battleSub,
+    ], () => {
       unlockAudio();
+      sfx.click();
       this.confirmStart("battle");
-    }, { icon: "icon_sword", iconSize: 84, size: 76, sub: "Survive 5:00 and beat the boss" });
-    // Boss Rush: the next boss's face and number
-    this.rushFace = this.add.image(0, -24, "e_golem");
-    this.rushNum = text(this, 0, 58, "", 26);
-    const rush = this.add.container(W - 128, bottom - 170, [
-      this.add.image(0, 0, btnTexture(this, "purple", 230, 190)),
-      this.add.image(0, -24, "glow").setTint(0xff5a8a).setScale(0.55).setAlpha(0.7),
-      this.rushFace, text(this, 0, 32, "BOSS RUSH", 28), this.rushNum,
-    ]).setSize(230, 190).setInteractive({ useHandCursor: true });
-    rush.on("pointerdown", () => this.tweens.add({ targets: rush, scale: 0.92, duration: 60 }));
-    rush.on("pointerout", () => rush.setScale(1));
-    rush.on("pointerup", () => {
-      rush.setScale(1);
+    });
+    // BOSS RUSH: a dark red card, the boss's face in a ring of fire and a stopwatch
+    const fire = this.add.image(0, -22, "rays").setTint(0xff7a2a).setScale(0.34).setAlpha(0.9);
+    this.tweens.add({ targets: fire, angle: 360, duration: 4000, repeat: -1 });
+    this.rushFace = this.add.image(0, -22, "e_golem");
+    this.rushNum = text(this, 0, 76, "", 24, "#ffd0d0", { stroke: 6 });
+    const rush = cardButton(this, W - 196, bottom - 172, 340, 210, 0xb01e3a, [
+      fire, this.add.circle(0, -22, 56, 0x2a0a14).setStrokeStyle(6, 0x111111), this.rushFace,
+      this.add.image(-128, -70, "icon_skull").setScale(0.55), this.add.image(128, -70, "icon_clock").setScale(0.55),
+      text(this, 0, 44, "BOSS RUSH", 42, "#ffe066", { stroke: 10 }), this.rushNum,
+    ], () => {
       unlockAudio();
       sfx.click();
       this.confirmStart("rush");
     });
     this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(rush);
-    this.tweens.add({ targets: go, scale: 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.tweens.add({ targets: go.list.slice(2, 3), scale: 1.08, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // pick any stage you already reached
+    this.stagePrev = arrowButton(this, 0, 178, -1, () => this.pickStage(save.stage - 1));
+    this.stageNext = arrowButton(this, 0, 178, 1, () => this.pickStage(save.stage + 1));
+    this.lobby.add([this.stagePrev, this.stageNext]);
     this.boostRow = this.add.container(W / 2, bottom - 432);
     this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
     // quest tracker
@@ -1310,6 +1329,22 @@ export class UIScene extends Phaser.Scene implements Host {
   private refreshAfk(): void {
     this.afkLabel.setText(save.afk ? "AFK ON" : "AFK").setColor(save.afk ? "#8af06a" : "#fff3dc");
     this.afkRing.setFillStyle(save.afk ? 0x2f6f3a : 0x3a2516, 0.7).setStrokeStyle(4, save.afk ? 0x8af06a : 0xffe6b8, 0.85);
+  }
+
+  /** Play a stage you already reached: the lobby (and its land) switches to it. */
+  pickStage(n: number, play = false): void {
+    if (battle.mode !== "lobby") return;
+    const st = Phaser.Math.Clamp(n, 1, Math.min(MAX_STAGE, save.bestStage));
+    const newLand = regionForStage(st).id !== regionForStage(save.stage).id;
+    this.game.events.emit("stage-pick", st);
+    sfx.click();
+    this.refreshLobby();
+    if (play) this.setTab("battle");
+    // a new land rebuilds the battle world first
+    this.time.delayedCall(newLand ? 650 : 50, () => {
+      this.refreshLobby();
+      if (play) this.confirmStart("battle");
+    });
   }
 
   /** What a fight is about, for the "Start?" popup. */

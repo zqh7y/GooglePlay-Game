@@ -553,6 +553,7 @@ export class BattleScene extends Phaser.Scene {
       ["retry", this.retry],
       ["give-up", this.giveUp],
       ["rush-start", this.startRush],
+      ["stage-pick", this.pickStage],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -2194,6 +2195,19 @@ export class BattleScene extends Phaser.Scene {
    * 5:00 - every monster runs off, a storm rolls in over the crystal, a beam of light shines down
    * from the clouds and the crystal dissolves up into it, then the boss drops down next to you.
    */
+  /** The player picked a stage they have reached (in the lobby); a new land rebuilds the world. */
+  private pickStage(n: number): void {
+    if (this.state !== "lobby") return;
+    const st = Phaser.Math.Clamp(Math.round(n), 1, Math.min(MAX_STAGE, save.bestStage));
+    if (st === save.stage) return;
+    save.stage = st;
+    persist();
+    if (regionForStage(st).id !== this.land.id) {
+      this.cameras.main.fadeOut(250, 0, 0, 0);
+      this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({}));
+    }
+  }
+
   private bossCutscene(): void {
     this.state = "cutscene";
     battle.bossFight = true;

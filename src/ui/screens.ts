@@ -20,6 +20,8 @@ export interface Host {
   isFast(): boolean;
   setFast(on: boolean): void;
   setTab(tab: Tab): void;
+  /** Play a stage you already reached (play: open the START popup too). */
+  pickStage(n: number, play?: boolean): void;
   /** the full-screen "GOLDEN TICKET!" moment */
   ticketShow(how: string): void;
 }

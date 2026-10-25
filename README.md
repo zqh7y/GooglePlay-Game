@@ -71,7 +71,13 @@ hour of fishing brings.
   - a road through the five lands, each with its own colours, trees, banner and sparkles, and clouds drifting by
   - every 5th stage shows its boss (a dark shape until you get there), and cleared stages get a gold star
   - lands you haven't reached are hidden in fog
-  - a panel up top shows your stage and the next boss, with a HERE button
+  - a panel up top shows your best stage and the next boss, with a HERE button
+  - **replay any stage you reached**: tap it on the map (a green ring marks it) and its card at the bottom
+    shows the stage or boss, whether you cleared it, and PLAY. In the lobby the ◀ ▶ arrows next to
+    "Stage N" do the same. Picking a stage in another land rebuilds the lobby in that land. Clearing a
+    replayed stage moves you on to the next one; your best stage stays.
+- **Lobby buttons**: BATTLE is a big orange card with a sword on a paint splat; BOSS RUSH is a dark red card
+  with the boss's face in a ring of fire.
 - **Top bar**: one slim row with settings, money, gems and dice. Tap money or gems to open the Shop, or
   dice to open Roll. During a fight only the money stays.
 - **The Roll screen**:

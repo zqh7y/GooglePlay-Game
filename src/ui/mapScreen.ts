@@ -5,6 +5,7 @@ import { ribbonTexture, panelTexture } from "../art/ui";
 import { MAX_STAGE } from "../data/balance";
 import { BOSS_EVERY, bossForStage } from "../data/bosses";
 import { REGIONS, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
+import { itemSplash, vividCard } from "../art/ps";
 import { save } from "../systems/save";
 import { Host, Screen } from "./screens";
 import { button, drawBar, fitText, iconButton, label, text } from "./widgets";
@@ -25,6 +26,9 @@ export class MapScreen extends Screen {
   private drag = { on: false, y: 0, oy: 0, v: 0, lastY: 0 };
   private info: Phaser.GameObjects.Container;
   private ambient: Phaser.GameObjects.Particles.ParticleEmitter;
+  /** the stage card at the bottom: the stage you tapped and PLAY */
+  private card: Phaser.GameObjects.Container;
+  private pickRing!: Phaser.GameObjects.Arc;
 
   constructor(scene: Phaser.Scene, host: Host, onBack: () => void) {
     super(scene, host, "map");
@@ -40,10 +44,11 @@ export class MapScreen extends Screen {
       scale: { start: 0.45, end: 0 }, alpha: { start: 0.8, end: 0 }, frequency: 220,
     });
     this.info = s.add.container(0, 0);
-    this.root.add([this.path, this.ambient, this.info]);
+    this.card = s.add.container(W / 2, this.bottom - 150);
+    this.root.add([this.path, this.ambient, this.info, this.card]);
     this.root.add(iconButton(s, 70, this.top + 70, "icon_back", 100, onBack));
     s.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (!this.visible || p.y < this.top + 150 || p.y > this.bottom) return;
+      if (!this.visible || p.y < this.top + 150 || p.y > this.bottom - 270) return;
       this.drag = { on: true, y: p.y, oy: this.path.y, v: 0, lastY: p.y };
     });
     s.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -96,6 +101,7 @@ export class MapScreen extends Screen {
     this.drawFog(W);
     this.drawInfo(W);
     this.path.y = this.clampY((this.top + this.bottom) / 2 + 60 - this.nodePos(save.stage).y);
+    this.pick(save.stage);
   }
 
   /** Each land: its ground, scattered blobs, rows of its trees and plants, and a big banner. */
@@ -151,7 +157,7 @@ export class MapScreen extends Screen {
     for (let st = 1; st < MAX_STAGE; st++) {
       const a = this.nodePos(st);
       const b = this.nodePos(st + 1);
-      const walked = st < save.stage;
+      const walked = st < save.bestStage;
       for (let k = 1; k < 4; k++) {
         const t = k / 4;
         const x = a.x + (b.x - a.x) * t;
@@ -171,7 +177,7 @@ export class MapScreen extends Screen {
     for (let st = 1; st <= MAX_STAGE; st++) {
       const { x, y } = this.nodePos(st);
       const boss = st % BOSS_EVERY === 0;
-      const done = st < save.stage;
+      const done = st < save.bestStage;
       const here = st === save.stage;
       const locked = st > save.bestStage;
       const land = regionForStage(st);
@@ -180,7 +186,7 @@ export class MapScreen extends Screen {
         const r = 78;
         const g = s.add.graphics();
         g.fillStyle(0x000000, 0.25).fillEllipse(x, y + r * 0.85, r * 2, r * 0.5);
-        g.fillStyle(INK_N, 1).fillCircle(x, y + 6, r + 8);
+        g.fillStyle(0x111111, 1).fillCircle(x, y + 6, r + 9);
         g.fillStyle(done ? 0x7ad651 : locked ? 0x5a5a6a : 0xf26464, 1).fillCircle(x, y, r);
         g.fillStyle(locked ? 0x3a3a4a : lighten(def.color, 0.5), 1).fillCircle(x, y, r - 12);
         this.path.add(g);
@@ -203,7 +209,7 @@ export class MapScreen extends Screen {
       } else {
         const r = 44;
         const g = s.add.graphics();
-        g.fillStyle(INK_N, 1).fillCircle(x, y + 6, r + 7);
+        g.fillStyle(0x111111, 1).fillCircle(x, y + 6, r + 8);
         const color = here ? 0xff9a3c : done ? 0xffcf3a : locked ? 0x9aa4b2 : lighten(land.crystal, 0.55);
         g.fillStyle(darken(color, 0.2), 1).fillCircle(x, y + 3, r);
         g.fillStyle(color, 1).fillCircle(x, y - 2, r - 3);
@@ -213,7 +219,43 @@ export class MapScreen extends Screen {
         else this.path.add(text(s, x, y - 2, `${st}`, 34, locked ? "#e8ecf2" : "#ffffff"));
       }
       if (here) this.drawHere(x, y, boss);
+      // stages you reached can be tapped (a drag is not a tap)
+      if (!locked) {
+        const r = boss ? 90 : 56;
+        const zone = s.add.zone(x, y, r * 2, r * 2).setInteractive({ useHandCursor: true });
+        zone.on("pointerup", (p: Phaser.Input.Pointer) => {
+          if (Math.abs(p.y - p.downY) < 14 && p.y > this.top + 150 && p.y < this.bottom - 260) this.pick(st);
+        });
+        this.path.add(zone);
+      }
     }
+    this.pickRing = s.add.circle(0, 0, 66).setStrokeStyle(10, 0x5aff8a);
+    s.tweens.add({ targets: this.pickRing, scale: 1.18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.path.add(this.pickRing);
+  }
+
+  /** Tapped a stage: ring it and show its card with PLAY. */
+  private pick(st: number): void {
+    const s = this.scene;
+    const boss = st % BOSS_EVERY === 0;
+    const p = this.nodePos(st);
+    this.pickRing.setPosition(p.x, p.y).setRadius(boss ? 98 : 62);
+    const c = this.card.removeAll(true);
+    const land = regionForStage(st);
+    const cleared = st < save.bestStage;
+    const icon = boss ? bossForStage(st).tex : crystalKey(land.id);
+    const splat = itemSplash(s, icon, 130, boss ? 0xff8a8a : lighten(land.crystal, 0.5)).setPosition(-380, 0);
+    c.add([
+      s.add.image(2, 4, vividCard(s, land.crystal, 1000, 230)),
+      splat,
+      text(s, -280, -50, boss ? `BOSS ${st}` : `STAGE ${st}`, 60, "#ffffff", { stroke: 12 }).setOrigin(0, 0.5),
+      fitText(text(s, -280, 14, boss ? bossForStage(st).name : land.name, 32, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5), 400),
+      text(s, -280, 66, st === save.stage ? "You are here" : cleared ? "Cleared!  Play it again" : "Your next stage!", 28, cleared ? "#b6ff8a" : "#ffe066", { stroke: 7 }).setOrigin(0, 0.5),
+      button(s, 330, 0, 250, 130, "green", "PLAY", () => this.host.pickStage(st, true), { size: 52 }),
+    ]);
+    if (cleared) c.add(s.add.star(-438, -70, 5, 14, 30, 0xffe066).setStrokeStyle(5, 0x111111));
+    c.setScale(0.9).setAlpha(0);
+    s.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
   }
 
   /** You are here: the hero on the node, a pulsing ring and a flag. */
@@ -275,19 +317,19 @@ export class MapScreen extends Screen {
     const s = this.scene;
     const c = this.info.removeAll(true);
     const y = this.top + 70;
-    const next = Math.min(MAX_STAGE, Math.ceil(save.stage / BOSS_EVERY) * BOSS_EVERY);
+    const next = Math.min(MAX_STAGE, Math.ceil(save.bestStage / BOSS_EVERY) * BOSS_EVERY);
     const def = bossForStage(next);
     const g = s.add.graphics();
-    drawBar(g, 150, y + 16, 480, 22, (save.stage - 1) / MAX_STAGE, 0xffcf3a);
+    drawBar(g, 150, y + 16, 480, 22, (save.bestStage - 1) / MAX_STAGE, 0xffcf3a);
     const face = s.add.image(W - 150, y, def.tex);
     face.setScale(120 / Math.max(face.width, face.height));
     c.add([
-      s.add.image(W / 2 + 40, y, panelTexture(s, "glass", 920, 130)),
-      text(s, 150, y - 26, `Stage ${save.stage} of ${MAX_STAGE}`, 36).setOrigin(0, 0.5),
+      s.add.image(W / 2 + 42, y + 4, vividCard(s, 0x4fa8ff, 920, 140)),
+      text(s, 150, y - 26, `Best: stage ${save.bestStage} of ${MAX_STAGE}`, 36, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5),
       g,
       s.add.image(W - 150, y, "glow").setTint(0xff5a5a).setScale(0.6).setAlpha(0.7),
       face,
-      fitText(text(s, W - 150, y + 52, next === save.stage ? "BOSS NOW!" : `boss at ${next}`, 22, "#ffd0d0"), 180),
+      fitText(text(s, W - 150, y + 52, next === save.bestStage ? "BOSS NOW!" : `boss at ${next}`, 22, "#ffd0d0"), 180),
       fitText(text(s, W - 330, y - 30, def.name, 26, rgba(lighten(def.color, 0.4))), 210),
       button(s, W - 330, y + 24, 130, 56, "orange", "HERE", () => this.scrollTo(save.stage), { size: 24 }),
     ]);

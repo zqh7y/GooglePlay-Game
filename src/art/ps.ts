@@ -160,3 +160,31 @@ export function itemSplash(scene: Phaser.Scene, icon: string, size: number, colo
   if (star) parts.push(scene.add.star(-size * 0.48, -size * 0.48, 5, size * 0.09, size * 0.2, 0xffe066).setStrokeStyle(4, 0x111111));
   return scene.add.container(0, 0, parts);
 }
+
+/** A big tappable vivid card (lobby buttons): squishes when pressed. */
+export function cardButton(scene: Phaser.Scene, x: number, y: number, w: number, h: number, color: number, parts: Phaser.GameObjects.GameObject[], onTap: () => void): Phaser.GameObjects.Container {
+  const c = scene.add.container(x, y, [scene.add.image(2, 4, vividCard(scene, color, w, h)), ...parts]).setSize(w, h).setInteractive({ useHandCursor: true });
+  c.on("pointerdown", () => scene.tweens.add({ targets: c, scale: 0.93, duration: 60 }));
+  c.on("pointerout", () => c.setScale(1));
+  c.on("pointerup", () => {
+    c.setScale(1);
+    onTap();
+  });
+  return c;
+}
+
+/** A round arrow button (left or right) with a black outline. */
+export function arrowButton(scene: Phaser.Scene, x: number, y: number, dir: -1 | 1, onTap: () => void): Phaser.GameObjects.Container {
+  const c = scene.add.container(x, y, [
+    scene.add.circle(0, 3, 34, 0x111111),
+    scene.add.circle(0, 0, 30, 0xffcf3a).setStrokeStyle(6, 0x111111),
+    (dir > 0 ? scene.add.triangle(3, 0, 0, 0, 0, 30, 24, 15, 0xffffff) : scene.add.triangle(-3, 0, 24, 0, 24, 30, 0, 15, 0xffffff)).setStrokeStyle(4, 0x111111),
+  ]).setSize(84, 84).setInteractive({ useHandCursor: true });
+  c.on("pointerdown", () => scene.tweens.add({ targets: c, scale: 0.85, duration: 60 }));
+  c.on("pointerout", () => c.setScale(1));
+  c.on("pointerup", () => {
+    c.setScale(1);
+    onTap();
+  });
+  return c;
+}
