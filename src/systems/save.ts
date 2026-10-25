@@ -79,6 +79,10 @@ export interface SaveData {
   /** Golden Tickets (very rare, from events) for the Event Shop */
   tickets: number;
   eventShop: EventShopState;
+  /** the Traveling Merchant: which restock you shopped in, rerolls bought, how many of each slot you bought */
+  merchant: { cycle: number; shift: number; bought: number[] };
+  /** Playtime Gifts: minutes played today (in seconds) and the gifts claimed today */
+  playtime: { day: number; secs: number; claimed: number[] };
   /** the first-time guide: which step you are on (-1 = done or skipped) */
   tutorial: number;
   /** the story intro was shown */
@@ -165,6 +169,8 @@ function fresh(): SaveData {
     fishing: freshFishing(),
     tickets: 0,
     eventShop: { slot: -1, bought: [], week: -1, special: false },
+    merchant: { cycle: -1, shift: 0, bought: [] },
+    playtime: { day: -1, secs: 0, claimed: [] },
     online: { name: "", named: false },
     tutorial: 0,
     introSeen: false,

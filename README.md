@@ -120,7 +120,16 @@ hour of fishing brings.
   - The pet popup shows its power now and at the next level. Levelling up bursts with "+POWER".
 - **Lands**: five big open fields (you can walk everywhere), 20 stages each: Sunny Meadow (1-20), Golden
   Fields (21-40), Misty Forest (41-60), Sunset Dunes (61-80) and Frost Peak (81-100).
-- **The Shop**:
+- **The Shop** (looks and works like the Pet Simulator 99 shop): a bright blue striped window, big
+  category buttons down the left (FEATURED, MERCHANT, GIFTS, ITEMS, with red dots when something is free),
+  and white outlined item cards with a coloured name strip and a shine spinning behind each item.
+  - **Traveling Merchant**: a striped market stall with 6 slots that restock every 30 minutes (everyone sees
+    the same wares). Each slot rolls a rarity (Common 48%, Uncommon 28%, Rare 15%, Epic 7%, Legendary 2%)
+    and a ware of that rarity with 1-3 in stock: dice of your stage's tier and better, potions, boosts,
+    chests, shells... Legendary slots can hold a Legendary Die, a Lucky Egg or even a Golden Ticket (for
+    gems). Don't like them? REROLL for 15 gems.
+  - **Playtime Gifts**: 12 gifts that open after 1, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50 and 60 minutes of play
+    each day (the last one is a golden chest), plus the Free Gift and the daily reward.
   - **EVENT SHOP** (first in the shop): limited-time offers you can only buy with **Golden Tickets**, the
     rarest thing in the game. Tickets come only from events: every fishing catch has a tiny chance to hook
     one (about 1 in 20,000 at first, a bit better with Lucky Bait, x3 on a SUPER catch), and each event

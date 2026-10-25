@@ -40,7 +40,7 @@ import { MapScreen } from "../ui/mapScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
 import { GIFT_EVERY, RollScreen, SUPER_EVERY, SUPER_MULT } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
-import { ShopScreen, freeGiftReady } from "../ui/shopScreen";
+import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
@@ -367,6 +367,7 @@ export class UIScene extends Phaser.Scene implements Host {
       }
     }
     this.fishing();
+    tickPlaytime(delta);
     this.rollScreen.setReadyAt(this.rollReadyAt);
     for (const s of Object.values(this.screens)) s.update(time);
     if (this.mapOpen) this.map.update();
@@ -1257,7 +1258,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private updateGoals(): void {
     for (const b of this.badges) b.obj.setVisible(b.show());
     const owned = Object.keys(save.pets);
-    this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0);
+    this.nav.shop.badge.setVisible(freeGiftReady() || dailyDay() >= 0 || playGiftReady());
     this.nav.pets.badge.setVisible((save.equipped.length < petSlots() && owned.length > save.equipped.length) || anyLevelReady() || save.newPets.length > 0);
     this.nav.upgrades.badge.setVisible(TREE.some((n) => canBuy(n)));
     this.refreshEventCard();

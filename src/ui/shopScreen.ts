@@ -4,7 +4,7 @@ import { makeEventTextures } from "../art/fishing";
 import { makeGadgetTextures } from "../art/gadgets";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
-import { BtnColor, btnTexture, panelTexture, ribbonTexture } from "../art/ui";
+import { BtnColor, btnTexture, panelTexture } from "../art/ui";
 import { BOOSTS } from "../data/boosts";
 import { FISH_UPGRADES, upgradeCost } from "../data/fishing";
 import { ITEMS, ItemDef, PET_LIST } from "../data/items";
@@ -217,6 +217,215 @@ function shopState() {
   return e;
 }
 
+// ───────────────────────── the Traveling Merchant ─────────────────────────
+
+/** The merchant restocks every 30 minutes: 6 slots, each a random ware of a random rarity. */
+const MERCHANT_MS = 30 * 60 * 1000;
+const REROLL_GEMS = 15;
+const cycleNow = () => Math.floor(Date.now() / MERCHANT_MS);
+const RARITY_NAMES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
+const RARITY_BG: BtnColor[] = ["mint", "blue", "purple", "orange", "gold"];
+/** chance of each rarity per slot, in % */
+const RARITY_ODDS = [48, 28, 15, 7, 2];
+
+interface Ware {
+  id: string;
+  name: string;
+  icon: string;
+  /** price in gems, or else in minutes of your income */
+  gems?: number;
+  minutes?: number;
+  rewards: (scene: Phaser.Scene) => Reward[];
+}
+
+const boostPack = (n: number): Reward[] => {
+  const b = BOOSTS[Math.floor(Math.random() * BOOSTS.length)];
+  return [{ icon: b.icon, amount: `x${n}`, give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + n) }];
+};
+const stageTierPlus = (k: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), Math.floor((save.stage - 1) / 20) + k)];
+
+/** Wares by rarity (common to legendary). Dice follow your stage's tier. */
+const WARES: Ware[][] = [
+  [
+    { id: "dice0", name: "Dice Bag", icon: "die_A", minutes: 8, rewards: () => [diceReward(stageTierPlus(0), 8)] },
+    { id: "cash0", name: "Coin Sack", icon: "icon_cash", gems: 4, rewards: () => [cashReward(income(30))] },
+    { id: "speed0", name: "Speed Potion", icon: "icon_clock", gems: 5, rewards: () => [{ icon: "icon_clock", amount: "10m", give: () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 600000) }] },
+    { id: "shell0", name: "Shell Pouch", icon: "fish_shell", minutes: 10, rewards: () => [{ icon: "fish_shell", amount: "x60", give: () => (save.fishing.shells += 60) }] },
+  ],
+  [
+    { id: "dice1", name: "Better Dice", icon: "die_B", gems: 12, rewards: () => [diceReward(stageTierPlus(1), 4)] },
+    { id: "potion1", name: "Luck Potion", icon: "icon_potion", gems: 8, rewards: () => [potionReward(10)] },
+    { id: "boost1", name: "Battle Boost", icon: "skill_orb", minutes: 12, rewards: () => boostPack(1) },
+    { id: "lucky1", name: "Lucky Rolls", icon: "icon_clover", gems: 10, rewards: () => [{ icon: "icon_clover", amount: "x10", give: () => (save.luckyBoost += 10) }] },
+  ],
+  [
+    { id: "dice2", name: "Rare Dice", icon: "die_C", gems: 35, rewards: () => [diceReward(stageTierPlus(2), 3)] },
+    { id: "boost2", name: "Boost Bundle", icon: "pk_heart", gems: 25, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x1", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1) })) },
+    { id: "chest2", name: "Silver Chest", icon: "chest_silver", gems: 20, rewards: () => CHESTS[1].rewards() },
+  ],
+  [
+    { id: "dice3", name: "Epic Dice", icon: "die_D", gems: 90, rewards: () => [diceReward(stageTierPlus(3), 2)] },
+    { id: "chest3", name: "Golden Chest", icon: "chest_gold", gems: 60, rewards: () => CHESTS[2].rewards() },
+    { id: "potion3", name: "Mega Potion", icon: "icon_potion", gems: 40, rewards: () => [potionReward(45)] },
+  ],
+  [
+    { id: "dice4", name: "Legendary Die", icon: "die_S", gems: 300, rewards: () => [diceReward(stageTierPlus(4), 1)] },
+    { id: "egg4", name: "Lucky Egg", icon: "icon_egg", gems: 450, rewards: (sc) => eggReward(sc, 0, 1) },
+    { id: "ticket4", name: "Golden Ticket", icon: "icon_ticket", gems: 800, rewards: () => [{ icon: "icon_ticket", amount: "x1", give: () => save.tickets++ }] },
+  ],
+];
+
+interface Slot {
+  ware: Ware;
+  rarity: number;
+  stock: number;
+}
+
+/** This restock's six slots (everyone sees the same ones, until they buy a reroll). */
+function merchantNow(): Slot[] {
+  const m = save.merchant;
+  if (m.cycle !== cycleNow()) {
+    m.cycle = cycleNow();
+    m.shift = 0;
+    m.bought = [];
+  }
+  const rnd = seeded(cycleNow() * 31 + m.shift * 7919 + 17);
+  const used = new Set<string>();
+  return [0, 1, 2, 3, 4, 5].map(() => {
+    let r = rnd() * 100;
+    let rarity = 0;
+    while (rarity < 4 && r >= RARITY_ODDS[rarity]) r -= RARITY_ODDS[rarity++];
+    // no ware twice: take the next rarity up when this one is used up
+    while (rarity < 4 && WARES[rarity].every((w) => used.has(w.id))) rarity++;
+    const pool = WARES[rarity].filter((w) => !used.has(w.id));
+    const ware = pool.length ? pool[Math.floor(rnd() * pool.length)] : WARES[rarity][0];
+    used.add(ware.id);
+    return { ware, rarity, stock: rarity >= 3 ? 1 : 1 + Math.floor(rnd() * 3) };
+  });
+}
+
+// ───────────────────────── Playtime Gifts ─────────────────────────
+
+/** Gifts that unlock as you play today (minutes), better and better. */
+const PLAY_GIFTS = [1, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50, 60];
+const GIFT_COLORS = [0xff7ab8, 0x5ac8ff, 0x8af06a, 0xffd23f, 0xb36aff, 0xff9a3a];
+
+function playState() {
+  const p = save.playtime;
+  if (p.day !== day()) {
+    p.day = day();
+    p.secs = 0;
+    p.claimed = [];
+  }
+  return p;
+}
+
+/** Counts time played (called every frame by the game). */
+export function tickPlaytime(ms: number): void {
+  playState().secs += ms / 1000;
+}
+
+/** A playtime gift is waiting. */
+export const playGiftReady = () => {
+  const p = playState();
+  return PLAY_GIFTS.some((m, i) => p.secs >= m * 60 && !p.claimed.includes(i));
+};
+
+function playGiftRewards(i: number): Reward[] {
+  const big = i === PLAY_GIFTS.length - 1;
+  if (big) return [diceReward(stageTierPlus(2), 3), gemReward(15), potionReward(15)];
+  switch (i % 4) {
+    case 0: return [diceReward(stageTierPlus(Math.floor(i / 4)), 3 + i)];
+    case 1: return [gemReward(2 + Math.floor(i / 2))];
+    case 2: return [cashReward(income(5 + i * 2)), ...(i >= 6 ? boostPack(1) : [])];
+    default: return [potionReward(3 + i), { icon: "fish_shell", amount: `x${20 + i * 10}`, give: () => (save.fishing.shells += 20 + i * 10) }];
+  }
+}
+
+export type ShopTab = "featured" | "merchant" | "gifts" | "items";
+const SHOP_TABS: { id: ShopTab; label: string; icon: string; color: BtnColor }[] = [
+  { id: "featured", label: "FEATURED", icon: "icon_star", color: "gold" },
+  { id: "merchant", label: "MERCHANT", icon: "chest", color: "orange" },
+  { id: "gifts", label: "GIFTS", icon: "icon_gift", color: "pink" },
+  { id: "items", label: "ITEMS", icon: "icon_dice", color: "blue" },
+];
+
+// ───────────────────────── the look (PS99-style) ─────────────────────────
+
+/** Width of the category rail on the left, and how much the content is scaled to fit beside it. */
+const RAIL = 170;
+const CARD_HEX: Record<string, number> = {
+  peach: 0xffb08a, mint: 0x5fe0a8, orange: 0xff9a3a, green: 0x6fd25a, red: 0xff5a5a, grey: 0xa8b0bc, blue: 0x4fa8ff,
+  purple: 0xb36aff, gold: 0xffc93a, brown: 0xb07a4a, cream: 0xf4dcb0, pink: 0xff7ab8,
+};
+const NAVY = "#14213d";
+
+/** The shop window: bright sky blue with soft diagonal stripes. */
+function shopBg(scene: Phaser.Scene, w: number, h: number): string {
+  return canvasTexture(scene, `ps_shop_bg_${w}_${h}`, w, h, (c) => {
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#7fdcff");
+    g.addColorStop(0.5, "#45a8f5");
+    g.addColorStop(1, "#2a6fd8");
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+    c.save();
+    c.globalAlpha = 0.07;
+    c.fillStyle = "#ffffff";
+    for (let x = -h; x < w; x += 90) {
+      c.beginPath();
+      c.moveTo(x, 0);
+      c.lineTo(x + 40, 0);
+      c.lineTo(x + 40 + h, h);
+      c.lineTo(x + h, h);
+      c.fill();
+    }
+    c.restore();
+    // the darker rail on the left
+    const r = c.createLinearGradient(0, 0, RAIL, 0);
+    r.addColorStop(0, "rgba(20,33,61,0.55)");
+    r.addColorStop(1, "rgba(20,33,61,0.35)");
+    c.fillStyle = r;
+    c.fillRect(0, 0, RAIL, h);
+  });
+}
+
+/** An item card: white to pale blue, a thick navy outline and a coloured name strip on top. */
+function psCard(scene: Phaser.Scene, color: number, w: number, h: number): string {
+  return canvasTexture(scene, `ps_card_${color}_${w}_${h}`, w + 12, h + 16, (c) => {
+    const shape = (x: number, y: number) => {
+      c.beginPath();
+      c.roundRect(x, y, w - 8, h - 8, 30);
+    };
+    shape(10, 16);
+    c.fillStyle = "rgba(10,20,50,0.35)";
+    c.fill();
+    shape(4, 4);
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(1, "#d6ebff");
+    c.fillStyle = g;
+    c.fill();
+    c.save();
+    shape(4, 4);
+    c.clip();
+    const hex = `#${color.toString(16).padStart(6, "0")}`;
+    const band = c.createLinearGradient(0, 0, 0, 64);
+    band.addColorStop(0, "#ffffff");
+    band.addColorStop(0.25, hex);
+    band.addColorStop(1, hex);
+    c.fillStyle = band;
+    c.fillRect(0, 0, w + 12, 64);
+    c.fillStyle = "rgba(255,255,255,0.35)";
+    c.fillRect(0, 64, w + 12, 4);
+    c.restore();
+    shape(4, 4);
+    c.lineWidth = 8;
+    c.strokeStyle = NAVY;
+    c.stroke();
+  });
+}
+
 /** The lucky wheel: 8 prizes, rarer ones less likely. */
 const WHEEL: { icon: string; label: string; color: number; weight: number; jackpot?: boolean; rewards: () => Reward[] }[] = [
   { icon: "die_A", label: "5", color: 0xff7ab8, weight: 20, rewards: () => [diceReward("A", 5)] },
@@ -292,29 +501,40 @@ export class ShopScreen extends Screen {
   private overlay: Phaser.GameObjects.Container | null = null;
   /** the Event Shop's offers change with the rotation: the shop is rebuilt then */
   private builtSlot = -1;
+  private builtCycle = -1;
+  private tab: ShopTab = "featured";
+  private tabBtns: { id: ShopTab; bg: Phaser.GameObjects.Image; dot: Phaser.GameObjects.Arc }[] = [];
+  /** content scale beside the rail, and where the list sits when scrolled to the top */
+  private readonly k = (1080 - RAIL - 8) / 1080;
+  private baseY = 0;
 
   constructor(scene: Phaser.Scene, host: Host) {
-    super(scene, host, "shop");
+    super(scene, host, null);
     const s = scene;
     makePickupTextures(s);
     makeGadgetTextures(s);
     makeEventTextures(s);
     const W = s.scale.width;
-    this.top = host.L.headerBottom + 10;
+    this.root.add(s.add.image(0, 0, shopBg(s, W, host.L.navTop)).setOrigin(0).setInteractive());
+    // categories down the left, the items beside them (scaled to fit)
+    this.top = host.L.headerBottom + 14;
     this.bottom = host.L.navTop - 10;
-    this.list = s.add.container(0, 0);
-    const mask = s.make.graphics({}, false).fillRect(0, this.top, W, this.bottom - this.top);
+    this.buildTabs(this.top);
+    this.list = s.add.container(RAIL, 0).setScale(this.k);
+    this.baseY = this.top * (1 - this.k) - 6;
+    this.list.y = this.baseY;
+    const mask = s.make.graphics({}, false).fillRect(RAIL, this.top, W - RAIL, this.bottom - this.top);
     this.list.setMask(mask.createGeometryMask());
     this.root.add(this.list);
     this.build();
     s.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (!this.visible || this.overlay || p.y < this.top || p.y > this.bottom) return;
+      if (!this.visible || this.overlay || p.y < this.top || p.y > this.bottom || p.x < RAIL) return;
       this.drag = { on: true, y: p.y, oy: this.list.y, moved: 0 };
     });
     s.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (!this.drag.on || !p.isDown) return;
       this.drag.moved = Math.max(this.drag.moved, Math.abs(p.y - this.drag.y));
-      this.list.y = Phaser.Math.Clamp(this.drag.oy + p.y - this.drag.y, -this.max, 0);
+      this.list.y = Phaser.Math.Clamp(this.drag.oy + p.y - this.drag.y, this.baseY - this.max, this.baseY);
     });
     s.input.on("pointerup", () => (this.drag.on = false));
   }
@@ -328,9 +548,11 @@ export class ShopScreen extends Screen {
 
   private header(y: number, title: string, color: BtnColor): number {
     const s = this.scene;
-    const W = s.scale.width;
-    this.list.add([s.add.image(W / 2, y + 50, ribbonTexture(s, color, 640, 110)), text(s, W / 2, y + 38, title, 48)]);
-    return y + 120;
+    const bar = s.add.graphics();
+    bar.fillStyle(0x14213d, 0.35).fillRoundedRect(40, y + 8, 1000, 88, 28);
+    bar.fillStyle(CARD_HEX[color] ?? 0xffffff, 1).fillRoundedRect(52, y + 22, 14, 60, 7);
+    this.list.add([bar, text(s, 86, y + 52, title, 50, "#ffffff", { stroke: 10 }).setOrigin(0, 0.5)]);
+    return y + 116;
   }
 
   /** A price button that buys with gems or money and then refreshes the shop. */
@@ -384,8 +606,10 @@ export class ShopScreen extends Screen {
     const top = y - h / 2;
     const bot = y + h / 2;
     const size = Math.min(iconSize, h - 240);
-    const glow = s.add.image(x, 0, "glow").setTint(0xffffff).setScale((size / 256) * 2.4).setAlpha(0.5);
-    s.tweens.add({ targets: glow, alpha: 0.85, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const tint = CARD_HEX[bg] ?? 0xffffff;
+    // a shine spins slowly behind every item
+    const glow = s.add.image(x, 0, "rays").setTint(tint).setScale((size / 640) * 2.6).setAlpha(0.55);
+    s.tweens.add({ targets: glow, angle: 360, duration: 8000, repeat: -1 });
     const icons = s.add.container(x, 0);
     for (let i = 0; i < count; i++) {
       const k = count === 1 ? 0 : i / (count - 1) - 0.5;
@@ -395,7 +619,7 @@ export class ShopScreen extends Screen {
     }
     // the last ones in the pile sit on top, so put the middle one there
     if (count > 1) icons.bringToTop(icons.list[Math.floor(count / 2)]);
-    const d = label(s, x, bot - 104, desc(), 24, "#4a2f1d", w - 70).setOrigin(0.5, 1);
+    const d = label(s, x, bot - 104, desc(), 24, NAVY, w - 70).setOrigin(0.5, 1);
     const place = () => {
       const iy = (top + 66 + bot - 104 - d.height) / 2;
       icons.y = iy;
@@ -408,10 +632,9 @@ export class ShopScreen extends Screen {
     });
     btn.setPosition(x, bot - 52);
     this.list.add([
-      s.add.image(x, y, btnTexture(s, bg, w, h)),
-      s.add.image(x, y + 4, panelTexture(s, "cream", w - 34, h - 112)).setAlpha(0.92),
+      s.add.image(x + 2, y + 4, psCard(s, tint, w, h)),
       glow, icons,
-      fitText(text(s, x, top + 32, title, 34), w - 40),
+      fitText(text(s, x, top + 30, title, 34, "#ffffff", { stroke: 8 }), w - 40),
       d, btn,
     ]);
   }
@@ -422,212 +645,398 @@ export class ShopScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     let y = this.top + 20;
-    y = this.buildEventShop(y);
-
-    // ── Deal of the Day
-    const deal = DEALS[day() % DEALS.length];
-    const dh = 380;
-    const cy = y + dh / 2;
-    const rays = s.add.image(200, cy, "rays").setScale(0.75).setTint(0xffe066).setAlpha(0.5);
-    s.tweens.add({ targets: rays, angle: 360, duration: 12000, repeat: -1 });
-    const pile = deal.icons.map((ic, i) => {
-      const img = s.add.image(150 + i * 60, cy + 30 - (i === 1 ? 40 : 0), ic);
-      img.setScale((i === 1 ? 140 : 110) / Math.max(img.width, img.height)).setAngle((i - 1) * 14);
-      s.tweens.add({ targets: img, y: img.y - 10, duration: 900 + i * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      return img;
-    });
-    const sticker = s.add.container(W - 110, y + 46, [
-      s.add.star(0, 0, 12, 50, 62, 0xff4a5a).setStrokeStyle(5, INK_N),
-      text(s, 0, -2, `-${Math.round((1 - deal.gems / deal.was) * 100)}%`, 34),
-    ]).setAngle(12);
-    s.tweens.add({ targets: sticker, scale: 1.1, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    const timer = text(s, 660, cy + 60, "", 28, "#fff3dc");
-    this.ticking.push(() => timer.setText(save.dealDay === day() ? "Bought! New deal tomorrow" : `Ends in ${clock((day() + 1) * DAY_MS - Date.now())}`));
-    const was = text(s, 520, cy + 132, `${deal.was}`, 34, "#ffd0d0");
-    const strike = s.add.rectangle(520, cy + 132, 70, 5, 0xff4a5a);
-    const dealBtn = this.priceButton(730, cy + 130, 300, 110, () => {
-      const bought = save.dealDay === day();
-      const ok = !bought && save.gems >= deal.gems;
-      return { label: bought ? "SOLD OUT" : `${deal.gems}`, icon: bought ? undefined : "icon_gem", color: ok ? "gold" : "grey", ok };
-    }, () => {
-      if (!this.spendGems(deal.gems)) return false;
-      save.dealDay = day();
-      const r = deal.rewards();
-      r.forEach((x) => x.give());
-      this.rewardShow(deal.title, null, r);
-      return true;
-    });
-    this.list.add([
-      s.add.image(W / 2, cy, btnTexture(s, "purple", 1000, dh)), rays, ...pile,
-      text(s, W / 2, y + 38, "DEAL OF THE DAY", 34, "#fff3dc"),
-      text(s, 660, cy - 70, deal.title, 56, "#ffe066"),
-      fitText(text(s, 660, cy, deal.desc, 30), 560),
-      timer, was, strike, dealBtn, sticker,
-    ]);
-    y += dh + 40;
-
-    // ── free stuff
-    y = this.header(y, "FREE", "green");
-    const fh = 360;
-    const giftBtn = this.priceButton(0, 0, 260, 88, () => {
-      const left = save.freeGiftAt - Date.now();
-      return { label: left > 0 ? clock(left) : "OPEN", color: left > 0 ? "grey" : "green", ok: left <= 0 };
-    }, () => {
-      const gems = 2 + Math.floor(Math.random() * 4);
-      const r = [gemReward(gems), diceReward("A", 3), cashReward(income(5))];
-      r.forEach((x) => x.give());
-      save.freeGiftAt = Date.now() + FREE_GIFT_MS;
-      this.rewardShow("FREE GIFT", null, r);
-      return true;
-    });
-    this.tile(W / 2 - 255, y + fh / 2, 490, fh, "green", "icon_gift", 120, "Free Gift", () => "Gems, dice and money every 10 minutes", giftBtn);
-    const dailyBtn = this.priceButton(0, 0, 260, 88, () => {
-      const ready = dailyDay() >= 0;
-      return { label: ready ? "CLAIM" : "TOMORROW", color: ready ? "gold" : "grey", ok: true };
-    }, () => {
-      this.host.showDaily();
-      return false;
-    });
-    this.tile(W / 2 + 255, y + fh / 2, 490, fh, "gold", "icon_star", 120, "Daily Reward", () => (dailyDay() >= 0 ? `Day ${dailyDay() + 1} of 7 is waiting for you!` : `Day ${(save.dailyStreak - 1) % 7 + 1} of 7 claimed. Come back tomorrow!`), dailyBtn);
-    y += fh + 40;
-
-    // ── lucky wheel
-    y = this.header(y, "LUCKY WHEEL", "pink");
-    const wh = 560;
-    const wy = y + wh / 2;
-    this.list.add(s.add.image(W / 2, wy, btnTexture(s, "pink", 1000, wh)));
-    this.wheel = s.add.container(330, wy + 10);
-    this.wheel.add(s.add.image(0, 0, wheelTexture(s)));
-    WHEEL.forEach((seg, i) => {
-      const a = -Math.PI / 2 + (i + 0.5) * (Math.PI / 4);
-      const img = s.add.image(Math.cos(a) * 140, Math.sin(a) * 140, seg.icon);
-      img.setScale(64 / Math.max(img.width, img.height)).setRotation(a + Math.PI / 2);
-      const t = text(s, Math.cos(a) * 86, Math.sin(a) * 86, seg.label, seg.label.length > 3 ? 22 : 28).setRotation(a + Math.PI / 2);
-      this.wheel.add([img, t]);
-    });
-    const pointer = s.add.triangle(330, wy - 222, 0, 0, 56, 0, 28, 50, 0xff4a5a).setStrokeStyle(5, INK_N);
-    const wheelBtn = this.priceButton(800, wy + 130, 300, 120, () => {
-      const free = Date.now() >= save.wheelAt;
-      const ok = !this.spinning && (free || save.gems >= WHEEL_GEMS);
-      return { label: free ? "FREE SPIN" : `${WHEEL_GEMS}`, icon: free ? undefined : "icon_gem", color: ok ? (free ? "green" : "purple") : "grey", ok };
-    }, () => {
-      if (Date.now() >= save.wheelAt) save.wheelAt = Date.now() + WHEEL_MS;
-      else if (!this.spendGems(WHEEL_GEMS)) return false;
-      this.spin();
-      return true;
-    });
-    const wheelInfo = label(s, 800, wy - 60, "", 28, "#4a2f1d", 340);
-    this.ticking.push(() => wheelInfo.setText(Date.now() >= save.wheelAt ? "A free spin is ready!" : `Free spin in ${clock(save.wheelAt - Date.now())}`));
-    this.list.add([
-      this.wheel, pointer,
-      text(s, 800, wy - 170, "Spin to win!", 46, "#ffffff"),
-      label(s, 800, wy - 110, "Dice, gems, money, potions... or the MEGA JACKPOT", 26, "#4a2f1d", 340),
-      wheelInfo, wheelBtn,
-    ]);
-    y += wh + 40;
-
-    // ── treasure chests
-    y = this.header(y, "TREASURE CHESTS", "orange");
-    const ch = 440;
-    CHESTS.forEach((c, i) => {
-      const x = W / 2 + (i - 1) * 345;
-      const btn = this.priceButton(0, 0, 280, 88, c.gems ? this.gemsPrice(c.gems, c.color) : this.cashPrice(() => income(c.minutes), c.color), () => {
-        if (c.gems) {
-          if (!this.spendGems(c.gems)) return false;
-        } else {
-          save.cash -= income(c.minutes);
-        }
-        const r = c.rewards();
-        r.forEach((x2) => x2.give());
-        this.rewardShow(c.name.toUpperCase(), c.tex, r);
+    // PS99-style: one tab of the shop at a time
+    const tab = this.tab;
+    if (tab === "featured") {
+      y = this.buildEventShop(y);
+      // ── Deal of the Day
+      const deal = DEALS[day() % DEALS.length];
+      const dh = 380;
+      const cy = y + dh / 2;
+      const rays = s.add.image(200, cy, "rays").setScale(0.75).setTint(0xffe066).setAlpha(0.5);
+      s.tweens.add({ targets: rays, angle: 360, duration: 12000, repeat: -1 });
+      const pile = deal.icons.map((ic, i) => {
+        const img = s.add.image(150 + i * 60, cy + 30 - (i === 1 ? 40 : 0), ic);
+        img.setScale((i === 1 ? 140 : 110) / Math.max(img.width, img.height)).setAngle((i - 1) * 14);
+        s.tweens.add({ targets: img, y: img.y - 10, duration: 900 + i * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        return img;
+      });
+      const sticker = s.add.container(W - 110, y + 46, [
+        s.add.star(0, 0, 12, 50, 62, 0xff4a5a).setStrokeStyle(5, INK_N),
+        text(s, 0, -2, `-${Math.round((1 - deal.gems / deal.was) * 100)}%`, 34),
+      ]).setAngle(12);
+      s.tweens.add({ targets: sticker, scale: 1.1, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const timer = text(s, 660, cy + 60, "", 28, "#fff3dc");
+      this.ticking.push(() => timer.setText(save.dealDay === day() ? "Bought! New deal tomorrow" : `Ends in ${clock((day() + 1) * DAY_MS - Date.now())}`));
+      const was = text(s, 520, cy + 132, `${deal.was}`, 34, "#ffd0d0");
+      const strike = s.add.rectangle(520, cy + 132, 70, 5, 0xff4a5a);
+      const dealBtn = this.priceButton(730, cy + 130, 300, 110, () => {
+        const bought = save.dealDay === day();
+        const ok = !bought && save.gems >= deal.gems;
+        return { label: bought ? "SOLD OUT" : `${deal.gems}`, icon: bought ? undefined : "icon_gem", color: ok ? "gold" : "grey", ok };
+      }, () => {
+        if (!this.spendGems(deal.gems)) return false;
+        save.dealDay = day();
+        const r = deal.rewards();
+        r.forEach((x) => x.give());
+        this.rewardShow(deal.title, null, r);
         return true;
       });
-      this.tile(x, y + ch / 2, 325, ch, c.color, c.tex, 190, c.name, () => c.hint, btn);
-    });
-    y += ch + 40;
+      this.list.add([
+        s.add.image(W / 2, cy, btnTexture(s, "purple", 1000, dh)), rays, ...pile,
+        text(s, W / 2, y + 38, "DEAL OF THE DAY", 34, "#fff3dc"),
+        text(s, 660, cy - 70, deal.title, 56, "#ffe066"),
+        fitText(text(s, 660, cy, deal.desc, 30), 560),
+        timer, was, strike, dealBtn, sticker,
+      ]);
+      y += dh + 40;
 
-    // ── battle boosts (bought with money)
-    y = this.header(y, "BATTLE BOOSTS", "blue");
-    const bh = 390;
-    BOOSTS.forEach((b, i) => {
-      const x = W / 2 + (i % 2 ? 255 : -255);
-      const by = y + Math.floor(i / 2) * (bh + 30) + bh / 2;
-      const btn = this.priceButton(0, 0, 280, 88, this.cashPrice(() => income(b.minutes), "blue"), () => {
-        save.cash -= income(b.minutes);
-        save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1;
-        this.host.toast(`${b.name} ready for your next fight!`, "#9ae6ff");
+      // ── lucky wheel
+      y = this.header(y, "LUCKY WHEEL", "pink");
+      const wh = 560;
+      const wy = y + wh / 2;
+      this.list.add(s.add.image(W / 2, wy, btnTexture(s, "pink", 1000, wh)));
+      this.wheel = s.add.container(330, wy + 10);
+      this.wheel.add(s.add.image(0, 0, wheelTexture(s)));
+      WHEEL.forEach((seg, i) => {
+        const a = -Math.PI / 2 + (i + 0.5) * (Math.PI / 4);
+        const img = s.add.image(Math.cos(a) * 140, Math.sin(a) * 140, seg.icon);
+        img.setScale(64 / Math.max(img.width, img.height)).setRotation(a + Math.PI / 2);
+        const t = text(s, Math.cos(a) * 86, Math.sin(a) * 86, seg.label, seg.label.length > 3 ? 22 : 28).setRotation(a + Math.PI / 2);
+        this.wheel.add([img, t]);
+      });
+      const pointer = s.add.triangle(330, wy - 222, 0, 0, 56, 0, 28, 50, 0xff4a5a).setStrokeStyle(5, INK_N);
+      const wheelBtn = this.priceButton(800, wy + 130, 300, 120, () => {
+        const free = Date.now() >= save.wheelAt;
+        const ok = !this.spinning && (free || save.gems >= WHEEL_GEMS);
+        return { label: free ? "FREE SPIN" : `${WHEEL_GEMS}`, icon: free ? undefined : "icon_gem", color: ok ? (free ? "green" : "purple") : "grey", ok };
+      }, () => {
+        if (Date.now() >= save.wheelAt) save.wheelAt = Date.now() + WHEEL_MS;
+        else if (!this.spendGems(WHEEL_GEMS)) return false;
+        this.spin();
         return true;
       });
-      this.tile(x, by, 490, bh, "blue", b.icon, 130, b.name, () => `${b.desc}${save.boosts[b.id] ? `  (you have ${save.boosts[b.id]})` : ""}`, btn);
-    });
-    y += 2 * (bh + 30) + 10;
+      const wheelInfo = label(s, 800, wy - 60, "", 28, "#4a2f1d", 340);
+      this.ticking.push(() => wheelInfo.setText(Date.now() >= save.wheelAt ? "A free spin is ready!" : `Free spin in ${clock(save.wheelAt - Date.now())}`));
+      this.list.add([
+        this.wheel, pointer,
+        text(s, 800, wy - 170, "Spin to win!", 46, "#ffffff"),
+        label(s, 800, wy - 110, "Dice, gems, money, potions... or the MEGA JACKPOT", 26, "#4a2f1d", 340),
+        wheelInfo, wheelBtn,
+      ]);
+      y += wh + 40;
 
-    // ── dice
-    y = this.header(y, "DICE", "purple");
-    const dh2 = 370;
-    const dice: [Tier, number, number, number][] = [["A", 10, 0, 10], ["A", 50, 20, 0], ["B", 10, 25, 0], ["C", 5, 60, 0], ["D", 2, 120, 0], ["E", 1, 300, 0]];
-    dice.forEach(([tier, n, gems, minutes], i) => {
-      const x = W / 2 + ((i % 3) - 1) * 345;
-      const ty = y + Math.floor(i / 3) * (dh2 + 30) + dh2 / 2;
-      const price = gems ? this.gemsPrice(gems, "purple") : this.cashPrice(() => income(minutes), "purple");
-      const btn = this.priceButton(0, 0, 270, 88, price, () => {
-        if (gems) {
+    }
+    if (tab === "merchant") y = this.buildMerchant(y);
+    if (tab === "gifts") {
+      y = this.buildPlaytime(y);
+      // ── free stuff
+      y = this.header(y, "FREE", "green");
+      const fh = 360;
+      const giftBtn = this.priceButton(0, 0, 260, 88, () => {
+        const left = save.freeGiftAt - Date.now();
+        return { label: left > 0 ? clock(left) : "OPEN", color: left > 0 ? "grey" : "green", ok: left <= 0 };
+      }, () => {
+        const gems = 2 + Math.floor(Math.random() * 4);
+        const r = [gemReward(gems), diceReward("A", 3), cashReward(income(5))];
+        r.forEach((x) => x.give());
+        save.freeGiftAt = Date.now() + FREE_GIFT_MS;
+        this.rewardShow("FREE GIFT", null, r);
+        return true;
+      });
+      this.tile(W / 2 - 255, y + fh / 2, 490, fh, "green", "icon_gift", 120, "Free Gift", () => "Gems, dice and money every 10 minutes", giftBtn);
+      const dailyBtn = this.priceButton(0, 0, 260, 88, () => {
+        const ready = dailyDay() >= 0;
+        return { label: ready ? "CLAIM" : "TOMORROW", color: ready ? "gold" : "grey", ok: true };
+      }, () => {
+        this.host.showDaily();
+        return false;
+      });
+      this.tile(W / 2 + 255, y + fh / 2, 490, fh, "gold", "icon_star", 120, "Daily Reward", () => (dailyDay() >= 0 ? `Day ${dailyDay() + 1} of 7 is waiting for you!` : `Day ${(save.dailyStreak - 1) % 7 + 1} of 7 claimed. Come back tomorrow!`), dailyBtn);
+      y += fh + 40;
+
+    }
+    if (tab === "items") {
+      // ── treasure chests
+      y = this.header(y, "TREASURE CHESTS", "orange");
+      const ch = 440;
+      CHESTS.forEach((c, i) => {
+        const x = W / 2 + (i - 1) * 345;
+        const btn = this.priceButton(0, 0, 280, 88, c.gems ? this.gemsPrice(c.gems, c.color) : this.cashPrice(() => income(c.minutes), c.color), () => {
+          if (c.gems) {
+            if (!this.spendGems(c.gems)) return false;
+          } else {
+            save.cash -= income(c.minutes);
+          }
+          const r = c.rewards();
+          r.forEach((x2) => x2.give());
+          this.rewardShow(c.name.toUpperCase(), c.tex, r);
+          return true;
+        });
+        this.tile(x, y + ch / 2, 325, ch, c.color, c.tex, 190, c.name, () => c.hint, btn);
+      });
+      y += ch + 40;
+
+      // ── battle boosts (bought with money)
+      y = this.header(y, "BATTLE BOOSTS", "blue");
+      const bh = 390;
+      BOOSTS.forEach((b, i) => {
+        const x = W / 2 + (i % 2 ? 255 : -255);
+        const by = y + Math.floor(i / 2) * (bh + 30) + bh / 2;
+        const btn = this.priceButton(0, 0, 280, 88, this.cashPrice(() => income(b.minutes), "blue"), () => {
+          save.cash -= income(b.minutes);
+          save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1;
+          this.host.toast(`${b.name} ready for your next fight!`, "#9ae6ff");
+          return true;
+        });
+        this.tile(x, by, 490, bh, "blue", b.icon, 130, b.name, () => `${b.desc}${save.boosts[b.id] ? `  (you have ${save.boosts[b.id]})` : ""}`, btn);
+      });
+      y += 2 * (bh + 30) + 10;
+
+      // ── dice
+      y = this.header(y, "DICE", "purple");
+      const dh2 = 370;
+      const dice: [Tier, number, number, number][] = [["A", 10, 0, 10], ["A", 50, 20, 0], ["B", 10, 25, 0], ["C", 5, 60, 0], ["D", 2, 120, 0], ["E", 1, 300, 0]];
+      dice.forEach(([tier, n, gems, minutes], i) => {
+        const x = W / 2 + ((i % 3) - 1) * 345;
+        const ty = y + Math.floor(i / 3) * (dh2 + 30) + dh2 / 2;
+        const price = gems ? this.gemsPrice(gems, "purple") : this.cashPrice(() => income(minutes), "purple");
+        const btn = this.priceButton(0, 0, 270, 88, price, () => {
+          if (gems) {
+            if (!this.spendGems(gems)) return false;
+          } else {
+            save.cash -= income(minutes);
+          }
+          save.dice[tier] += n;
+          this.host.afterPurchase();
+          this.host.toast(`+${n} ${tier} dice!`, TIER_INFO[tier].css);
+          return true;
+        });
+        this.tile(x, ty, 325, dh2, "purple", `die_${tier}`, 120, `${n} ${tier} Dice`, () => `x${fmt(DICE_LUCK[tier])} luck per roll\nYou have ${fmt(save.dice[tier])}`, btn);
+      });
+      y += 2 * (dh2 + 30) + 10;
+
+      // ── potions and lucky rolls
+      y = this.header(y, "POTIONS", "mint");
+      const ph = 370;
+      const potions: [string, string, () => string, number, () => void][] = [
+        ["icon_potion", "Luck Potion", () => `x${potionMult()} luck for ${potionMinutes()} min`, POTION_GEMS, () => (save.potionUntil = Math.max(Date.now(), save.potionUntil) + potionMinutes() * 60000)],
+        ["icon_clock", "Speed Potion", () => "Roll twice as fast for 10 min", 12, () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 10 * 60000)],
+        ["icon_clover", "10 Lucky Rolls", () => `Your next 10 rolls are Lucky (${save.luckyBoost} left)`, 15, () => (save.luckyBoost += 10)],
+      ];
+      potions.forEach(([icon, name, desc, gems, give], i) => {
+        const x = W / 2 + (i - 1) * 345;
+        const btn = this.priceButton(0, 0, 270, 88, this.gemsPrice(gems, "mint"), () => {
           if (!this.spendGems(gems)) return false;
-        } else {
-          save.cash -= income(minutes);
+          give();
+          return true;
+        });
+        this.tile(x, y + ph / 2, 325, ph, "mint", icon, 120, name, desc, btn);
+      });
+      y += ph + 40;
+
+      // ── money
+      y = this.header(y, "MONEY", "green");
+      const mh = 360;
+      ([["Bag of Money", 15, 5], ["Chest of Money", 120, 30], ["Vault of Money", 720, 150]] as [string, number, number][]).forEach(([name, minutes, gems], i) => {
+        const x = W / 2 + (i - 1) * 345;
+        const btn = this.priceButton(0, 0, 270, 88, this.gemsPrice(gems, "green"), () => {
+          if (!this.spendGems(gems)) return false;
+          save.cash += income(minutes);
+          this.host.coinShower(x, this.list.y + y + mh / 2, 12);
+          return true;
+        });
+        this.tile(x, y + mh / 2, 325, mh, "green", "icon_cash", 110, name, () => `+${fmt(income(minutes))} money`, btn, 1 + i * 2);
+      });
+      y += mh + 40;
+
+      // ── gems (real money in the finished game)
+      y = this.header(y, "GEMS", "blue");
+      ([["Handful", 80, "$0.99"], ["Bag", 500, "$4.99"], ["Chest", 1200, "$9.99"]] as [string, number, string][]).forEach(([name, n, price], i) => {
+        const x = W / 2 + (i - 1) * 345;
+        const btn = this.priceButton(0, 0, 270, 88, () => ({ label: price, color: "grey", ok: false }), () => false);
+        this.tile(x, y + mh / 2, 325, mh, "blue", "icon_gem", 110, `${name} of Gems`, () => `${n} gems\n(coming soon)`, btn, 1 + i * 2);
+      });
+      y += mh + 60;
+    }
+    this.max = Math.max(0, y * this.k + this.baseY - this.bottom + 20);
+  }
+
+  // ───────────────────────── tabs ─────────────────────────
+
+  /** The category rail: big square buttons down the left side, the open one lit up. */
+  private buildTabs(top: number): void {
+    const s = this.scene;
+    SHOP_TABS.forEach((t, i) => {
+      const y = top + 90 + i * 170;
+      const bg = s.add.image(0, 0, btnTexture(s, t.id === this.tab ? t.color : "blue", 148, 150));
+      const icon = s.add.image(0, -18, t.icon);
+      icon.setScale(70 / Math.max(icon.width, icon.height));
+      const c = s.add.container(RAIL / 2, y, [bg, icon, text(s, 0, 46, t.label, t.label.length > 7 ? 20 : 24, "#ffffff", { stroke: 6 })]).setSize(148, 150).setInteractive({ useHandCursor: true });
+      c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.9, duration: 60 }));
+      c.on("pointerout", () => c.setScale(1));
+      c.on("pointerup", () => {
+        c.setScale(1);
+        this.setShopTab(t.id);
+      });
+      const dot = s.add.circle(RAIL / 2 + 60, y - 62, 15, 0xf03e3e).setStrokeStyle(4, INK_N).setVisible(false);
+      s.tweens.add({ targets: dot, scale: 1.2, duration: 420, yoyo: true, repeat: -1 });
+      this.root.add([c, dot]);
+      this.tabBtns.push({ id: t.id, bg, dot });
+    });
+  }
+
+  private setShopTab(t: ShopTab): void {
+    if (this.overlay || this.spinning) return;
+    sfx.click();
+    this.tab = t;
+    for (const b of this.tabBtns) b.bg.setTexture(btnTexture(this.scene, b.id === t ? SHOP_TABS.find((x) => x.id === b.id)!.color : "blue", 148, 150));
+    this.rebuild(true);
+  }
+
+  /** Builds the list again (new tab, new offers); `top` scrolls back up. */
+  private rebuild(top = false): void {
+    const y = this.list.y;
+    this.list.removeAll(true);
+    this.refreshers = [];
+    this.ticking = [];
+    this.build();
+    this.list.y = top ? this.baseY : Phaser.Math.Clamp(y, this.baseY - this.max, this.baseY);
+  }
+
+  // ───────────────────────── the Traveling Merchant ─────────────────────────
+
+  /** A striped market awning with the merchant's name, the restock timer and a reroll. */
+  private buildMerchant(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    this.builtCycle = cycleNow();
+    let y = y0;
+    const aw = s.add.graphics();
+    for (let i = 0; i < 10; i++) {
+      aw.fillStyle(i % 2 ? 0xfff3dc : 0xe8434f, 1).fillRect(40 + i * 100, y, 100, 70);
+      aw.fillStyle(i % 2 ? 0xfff3dc : 0xe8434f, 1).fillCircle(90 + i * 100, y + 70, 50);
+    }
+    aw.lineStyle(6, INK_N, 1).strokeRect(40, y, 1000, 70);
+    const sign = s.add.container(W / 2, y + 150, [
+      s.add.image(0, 0, btnTexture(s, "brown", 760, 120)),
+      text(s, 0, -14, "TRAVELING MERCHANT", 46, "#ffe066"),
+    ]);
+    const timer = text(s, 0, 34, "", 24, "#fff3dc");
+    sign.add(timer);
+    this.ticking.push(() => timer.setText(`New wares in ${clock((cycleNow() + 1) * MERCHANT_MS - Date.now())}`));
+    this.list.add([aw, sign]);
+    y += 240;
+    // the odds, like a real shop sign
+    const odds = RARITY_NAMES.map((n, i) => `${n} ${RARITY_ODDS[i]}%`).join("   ");
+    this.list.add(fitText(text(s, W / 2, y, odds, 22, "#4a2f1d", { stroke: false }), 980));
+    y += 40;
+    const slots = merchantNow();
+    const th = 420;
+    slots.forEach((sl, i) => {
+      const x = W / 2 + ((i % 3) - 1) * 345;
+      const ty = y + Math.floor(i / 3) * (th + 26) + th / 2;
+      const left = () => sl.stock - (save.merchant.bought[i] ?? 0);
+      const w = sl.ware;
+      const price = () => {
+        const out = left() <= 0;
+        const cost = w.gems ?? income(w.minutes ?? 0);
+        const have = w.gems ? save.gems : save.cash;
+        const ok = !out && have >= cost;
+        return { label: out ? "SOLD OUT" : fmt(cost), icon: out ? undefined : w.gems ? "icon_gem" : "icon_cash", color: (ok ? RARITY_BG[sl.rarity] : "grey") as BtnColor, ok };
+      };
+      const btn = this.priceButton(0, 0, 270, 88, price, () => {
+        if (w.gems) {
+          if (!this.spendGems(w.gems)) return false;
+        } else save.cash -= income(w.minutes ?? 0);
+        save.merchant.bought[i] = (save.merchant.bought[i] ?? 0) + 1;
+        const r = w.rewards(s);
+        r.forEach((x2) => x2.give());
+        this.rewardShow(w.name.toUpperCase(), null, r);
+        return true;
+      });
+      this.tile(x, ty, 325, th, RARITY_BG[sl.rarity], w.icon, 130, w.name, () => `${RARITY_NAMES[sl.rarity]}\n${left() > 0 ? `${left()} left` : "Sold out"}`, btn);
+      if (sl.rarity >= 3) {
+        const star = s.add.star(x + 130, ty - th / 2 + 30, 6, 16, 30, sl.rarity === 4 ? 0xffe066 : 0xff9a3a).setStrokeStyle(4, INK_N);
+        s.tweens.add({ targets: star, angle: 360, duration: 3000, repeat: -1 });
+        this.list.add(star);
+      }
+    });
+    y += 2 * (th + 26) + 10;
+    const reroll = this.priceButton(W / 2, y + 60, 520, 110, () => ({ label: `REROLL  ${REROLL_GEMS}`, icon: "icon_gem", color: save.gems >= REROLL_GEMS ? "purple" : "grey", ok: save.gems >= REROLL_GEMS }), () => {
+      if (!this.spendGems(REROLL_GEMS)) return false;
+      save.merchant.shift++;
+      save.merchant.bought = [];
+      this.host.toast("New wares!", "#ffe066");
+      this.scene.time.delayedCall(50, () => this.rebuild());
+      return true;
+    });
+    this.list.add([reroll, label(s, W / 2, y + 140, "Don't like the wares? Reroll them now", 24, "#7a5236")]);
+    return y + 200;
+  }
+
+  // ───────────────────────── Playtime Gifts ─────────────────────────
+
+  /** 12 gifts that open as you play today; the last one is big. */
+  private buildPlaytime(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    let y = this.header(y0, "PLAYTIME GIFTS", "pink");
+    const played = text(s, W / 2, y + 10, "", 30, "#4a2f1d", { stroke: false });
+    this.ticking.push(() => played.setText(`Played today: ${clock(playState().secs * 1000)}  •  new gifts tomorrow`));
+    this.list.add(played);
+    y += 50;
+    const gw = 240;
+    const gh = 260;
+    PLAY_GIFTS.forEach((mins, i) => {
+      const x = W / 2 + ((i % 4) - 1.5) * (gw + 12);
+      const gy = y + Math.floor(i / 4) * (gh + 14) + gh / 2;
+      const color = GIFT_COLORS[i % GIFT_COLORS.length];
+      const big = i === PLAY_GIFTS.length - 1;
+      const bg = s.add.image(x + 2, gy + 4, psCard(s, big ? 0xffc93a : color, gw, gh));
+      const glow = s.add.image(x, gy - 30, "glow").setTint(color).setScale(0.9).setAlpha(0);
+      s.tweens.add({ targets: glow, alpha: { from: 0.4, to: 0.9 }, duration: 500, yoyo: true, repeat: -1 });
+      const box = s.add.image(x, gy - 30, big ? "chest_gold" : "icon_gift").setTint(big ? 0xffffff : color);
+      box.setScale((big ? 120 : 100) / Math.max(box.width, box.height));
+      const line = text(s, x, gy + 86, "", 28);
+      const btnArea = s.add.zone(x, gy, gw, gh).setInteractive({ useHandCursor: true });
+      const state = () => {
+        const p = playState();
+        if (p.claimed.includes(i)) return "done";
+        return p.secs >= mins * 60 ? "ready" : "wait";
+      };
+      let bounce: Phaser.Tweens.Tween | null = null;
+      const refresh = () => {
+        const st = state();
+        const p = playState();
+        line.setText(st === "done" ? "CLAIMED" : st === "ready" ? "CLAIM!" : clock((mins * 60 - p.secs) * 1000)).setColor(st === "ready" ? "#ffe066" : st === "done" ? "#8af06a" : "#ffffff");
+        glow.setVisible(st === "ready");
+        box.setAlpha(st === "done" ? 0.35 : 1);
+        if (st === "ready" && !bounce) bounce = s.tweens.add({ targets: box, angle: { from: -10, to: 10 }, duration: 160, yoyo: true, repeat: -1 });
+        if (st !== "ready" && bounce) {
+          bounce.stop();
+          bounce = null;
+          box.setAngle(0);
         }
-        save.dice[tier] += n;
-        this.host.afterPurchase();
-        this.host.toast(`+${n} ${tier} dice!`, TIER_INFO[tier].css);
-        return true;
+      };
+      refresh();
+      this.ticking.push(refresh);
+      btnArea.on("pointerup", () => {
+        if (this.scrolled || this.overlay) return;
+        if (state() !== "ready") {
+          sfx.error();
+          return;
+        }
+        playState().claimed.push(i);
+        const r = playGiftRewards(i);
+        r.forEach((x2) => x2.give());
+        persist();
+        this.rewardShow(big ? "BIG PLAYTIME GIFT!" : "PLAYTIME GIFT", big ? "chest_gold" : null, r);
+        refresh();
       });
-      this.tile(x, ty, 325, dh2, "purple", `die_${tier}`, 120, `${n} ${tier} Dice`, () => `x${fmt(DICE_LUCK[tier])} luck per roll\nYou have ${fmt(save.dice[tier])}`, btn);
+      this.list.add([bg, glow, box, text(s, x, gy - gh / 2 + 30, `${mins} MIN`, 28, "#ffffff", { stroke: 7 }), line, btnArea]);
     });
-    y += 2 * (dh2 + 30) + 10;
-
-    // ── potions and lucky rolls
-    y = this.header(y, "POTIONS", "mint");
-    const ph = 370;
-    const potions: [string, string, () => string, number, () => void][] = [
-      ["icon_potion", "Luck Potion", () => `x${potionMult()} luck for ${potionMinutes()} min`, POTION_GEMS, () => (save.potionUntil = Math.max(Date.now(), save.potionUntil) + potionMinutes() * 60000)],
-      ["icon_clock", "Speed Potion", () => "Roll twice as fast for 10 min", 12, () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 10 * 60000)],
-      ["icon_clover", "10 Lucky Rolls", () => `Your next 10 rolls are Lucky (${save.luckyBoost} left)`, 15, () => (save.luckyBoost += 10)],
-    ];
-    potions.forEach(([icon, name, desc, gems, give], i) => {
-      const x = W / 2 + (i - 1) * 345;
-      const btn = this.priceButton(0, 0, 270, 88, this.gemsPrice(gems, "mint"), () => {
-        if (!this.spendGems(gems)) return false;
-        give();
-        return true;
-      });
-      this.tile(x, y + ph / 2, 325, ph, "mint", icon, 120, name, desc, btn);
-    });
-    y += ph + 40;
-
-    // ── money
-    y = this.header(y, "MONEY", "green");
-    const mh = 360;
-    ([["Bag of Money", 15, 5], ["Chest of Money", 120, 30], ["Vault of Money", 720, 150]] as [string, number, number][]).forEach(([name, minutes, gems], i) => {
-      const x = W / 2 + (i - 1) * 345;
-      const btn = this.priceButton(0, 0, 270, 88, this.gemsPrice(gems, "green"), () => {
-        if (!this.spendGems(gems)) return false;
-        save.cash += income(minutes);
-        this.host.coinShower(x, this.list.y + y + mh / 2, 12);
-        return true;
-      });
-      this.tile(x, y + mh / 2, 325, mh, "green", "icon_cash", 110, name, () => `+${fmt(income(minutes))} money`, btn, 1 + i * 2);
-    });
-    y += mh + 40;
-
-    // ── gems (real money in the finished game)
-    y = this.header(y, "GEMS", "blue");
-    ([["Handful", 80, "$0.99"], ["Bag", 500, "$4.99"], ["Chest", 1200, "$9.99"]] as [string, number, string][]).forEach(([name, n, price], i) => {
-      const x = W / 2 + (i - 1) * 345;
-      const btn = this.priceButton(0, 0, 270, 88, () => ({ label: price, color: "grey", ok: false }), () => false);
-      this.tile(x, y + mh / 2, 325, mh, "blue", "icon_gem", 110, `${name} of Gems`, () => `${n} gems\n(coming soon)`, btn, 1 + i * 2);
-    });
-    y += mh + 60;
-    this.max = Math.max(0, y - this.bottom);
+    return y + 3 * (gh + 14) + 40;
   }
 
   // ───────────────────────── the Event Shop ─────────────────────────
@@ -666,10 +1075,7 @@ export class ShopScreen extends Screen {
     const state = shopState();
     let y = y0;
     // the header: sparkling gold, with your tickets
-    const head = s.add.image(W / 2, y + 50, ribbonTexture(s, "gold", 700, 116));
-    const title = text(s, W / 2, y + 36, "EVENT SHOP", 52, "#fff6c8");
-    this.list.add([head, title]);
-    y += 124;
+    y = this.header(y, "EVENT SHOP", "gold");
     const tickets = text(s, 0, 0, "", 40, "#ffe066").setOrigin(0, 0.5);
     const pill = s.add.container(W / 2, y + 20, [s.add.image(0, 0, panelTexture(s, "glass", 560, 84)), s.add.image(-200, 0, "icon_ticket").setScale(0.62), tickets]);
     this.refreshers.push(() => {
@@ -841,13 +1247,13 @@ export class ShopScreen extends Screen {
     if (!this.visible || time < this.nextTick) return;
     this.nextTick = time + 250;
     // new Event Shop offers: build the shop again (keeping where you scrolled to)
-    if (slotNow() !== this.builtSlot && !this.overlay && !this.spinning) {
-      const y = this.list.y;
-      this.list.removeAll(true);
-      this.refreshers = [];
-      this.ticking = [];
-      this.build();
-      this.list.y = Phaser.Math.Clamp(y, -this.max, 0);
+    const stale = (this.tab === "featured" && slotNow() !== this.builtSlot) || (this.tab === "merchant" && cycleNow() !== this.builtCycle);
+    if (stale && !this.overlay && !this.spinning) this.rebuild();
+    // red dots: gifts waiting, a free spin, the free gift
+    for (const b of this.tabBtns) {
+      b.dot.setVisible(
+        (b.id === "gifts" && (playGiftReady() || freeGiftReady() || dailyDay() >= 0)) || (b.id === "featured" && Date.now() >= save.wheelAt),
+      );
     }
     this.ticking.forEach((f) => f());
     // countdown buttons (gift, wheel) tick too
