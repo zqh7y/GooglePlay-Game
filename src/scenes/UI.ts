@@ -44,6 +44,7 @@ import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/sh
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
+import { MODE_INFO, modeForStage } from "../data/modes";
 import { arrowButton, cardButton, itemSplash } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
@@ -340,7 +341,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.lobbyTitle.setText(`Stage ${save.stage}`);
     this.lobbyLand.setText(regionForStage(save.stage).name);
     this.lobbyBest.setText(save.stage < save.bestStage ? `Replaying  •  best: stage ${save.bestStage} / ${MAX_STAGE}` : `Best: stage ${save.bestStage} / ${MAX_STAGE}`);
-    this.battleSub.setText(save.stage < save.bestStage ? `Replay stage ${save.stage}` : `Stage ${save.stage}  •  survive 5:00`);
+    const mode = MODE_INFO[modeForStage(save.stage)];
+    this.battleSub.setText(`${save.stage < save.bestStage ? "Replay " : ""}Stage ${save.stage}  •  ${mode.name}`).setColor(mode.css);
     this.stagePrev.setPosition(this.lobbyTitle.x + this.lobbyTitle.width + 56, 178).setVisible(save.stage > 1);
     this.stageNext.setPosition(this.stagePrev.x + 84, 178).setVisible(save.stage < Math.min(MAX_STAGE, save.bestStage));
     this.rushFace.setTexture(bossForStage(save.stage).tex);
@@ -880,16 +882,21 @@ export class UIScene extends Phaser.Scene implements Host {
     fitText(this.stageText, 480);
     // the crystal, and whether its shield is up
     const c = battle.crystal;
-    drawBar(g, 274, 236, 366, 26, battle.bossFight ? 0 : c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
+    const goal = battle.rush ? null : battle.goal;
+    if (goal) drawBar(g, 274, 236, 366, 26, goal.frac, goal.alarm && time % 500 < 250 ? 0xffffff : goal.color);
+    else drawBar(g, 274, 236, 366, 26, battle.bossFight ? 0 : c, battle.shielded ? 0x9ae6ff : c > 0.4 ? 0x67c3ff : 0xf26464);
+    this.crystalIcon.setTexture(goal ? goal.icon : crystalKey(regionForStage(save.stage).id));
     const left = Math.ceil(battle.shieldLeft / 1000);
-    if (battle.rush) this.shieldText.setText(`Beat it in ${RUSH_MS / 1000}s or it gets away!`).setColor("#e6d4ff");
+    if (goal && !(battle.bossFight && battle.sealsTotal)) this.shieldText.setText(goal.text).setColor(goal.alarm ? "#ffd0d0" : "#ffffff");
+    else if (battle.rush) this.shieldText.setText(`Beat it in ${RUSH_MS / 1000}s or it gets away!`).setColor("#e6d4ff");
     else if (battle.bossFight && battle.sealsTotal) {
       const all = battle.seals >= battle.sealsTotal;
       this.shieldText.setText(all ? "All seals closed: no more healing!" : `SEALS ${battle.seals}/${battle.sealsTotal}  •  stand on them 3s`).setColor(all ? "#ffe066" : "#e6d4ff");
     } else if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
     else this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
     fitText(this.shieldText, 340);
-    this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
+    if (goal) this.crystalIcon.setScale(goal.alarm && time % 500 < 250 ? 0.6 : 0.5);
+    else this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
     this.progressText.setColor(c < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
     // your gadgets
     this.gadgetSlots.forEach((slot, i) => {
@@ -1271,7 +1278,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: edge, alpha: 1, duration: 300, yoyo: true, repeat: 4, onComplete: () => edge.destroy() });
     const band = this.add.rectangle(W / 2, H * 0.36, W, 220, 0x1a0808, 0.75).setDepth(5310);
     const warn = text(this, W / 2, H * 0.36 - 30, "WARNING!", 110, "#ff4a4a").setDepth(5320);
-    const sub = text(this, W / 2, H * 0.36 + 60, "Something is coming for the crystal...", 38, "#ffe0e0").setDepth(5320);
+    const sub = text(this, W / 2, H * 0.36 + 60, battle.stageMode === "crystal" ? "Something is coming for the crystal..." : battle.stageMode === "boss" ? "A HUGE boss and its 3 kids!" : "The boss is coming...", 38, "#ffe0e0").setDepth(5320);
     this.tweens.add({ targets: warn, alpha: 0.3, duration: 250, yoyo: true, repeat: 5 });
     this.time.delayedCall(2600, () => this.tweens.add({ targets: [band, warn, sub], alpha: 0, duration: 400, onComplete: () => [band, warn, sub].forEach((o) => o.destroy()) }));
     [0, 700, 1400].forEach((t) => this.time.delayedCall(t, () => sfx.alarm()));
@@ -1353,10 +1360,10 @@ export class UIScene extends Phaser.Scene implements Host {
     if (kind === "battle") {
       const muts = mutationsAt(save.stage);
       return {
-        title: "BATTLE", sub: `Stage ${save.stage}  •  ${regionForStage(save.stage).name}`, tex: def.tex, color: "orange", css: "#ffe066",
+        title: "BATTLE", sub: `Stage ${save.stage}  •  ${MODE_INFO[modeForStage(save.stage)].name}`, tex: def.tex, color: "orange", css: "#ffe066",
         lines: [
-          "Survive 5:00, then beat the boss",
-          `Boss: ${def.name}. It heals: close its ${SEALS} seals!`,
+          MODE_INFO[modeForStage(save.stage)].goal,
+          modeForStage(save.stage) === "boss" ? `Boss: ${def.name} (HUGE) + 3 boss kids` : `Boss at 5:00: ${def.name}. It heals: close its ${SEALS} seals!`,
           muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet",
           `Best: stage ${save.bestStage}/${MAX_STAGE}  •  boss pays +${gemsPerBoss()} gems`,
         ],

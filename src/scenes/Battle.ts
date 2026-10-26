@@ -4,6 +4,10 @@ import { INK_N, canvasTexture, lighten, rgba } from "../art/draw";
 import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGadgetTextures } from "../art/gadgets";
 import { makeComicTextures } from "../art/comic";
+import { makeModeTextures } from "../art/modes";
+import {
+  AIR_EVERY, AIR_PREVIEW, AIR_SECS, BIG_BOSS_HP, BOSS_KIDS, FEEDS, FEED_EVERY, FEED_FIRST, FRIEND_BOSS_HP, HUNGER_MS, KID_HP, MODE_INFO, StageMode, modeForStage,
+} from "../data/modes";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
@@ -15,16 +19,16 @@ import { BOOSTS, BoostDef } from "../data/boosts";
 import {
   GADGETS, GADGET_KINDS, GADGET_SLOTS, GadgetBase, GadgetKind, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetKey, gadgetName, gadgetStats,
 } from "../data/gadgets";
-import { ITEMS, ItemDef, levelMult } from "../data/items";
+import { ITEMS, ItemDef, PET_LIST, levelMult } from "../data/items";
 import { REGIONS, Region, regionForStage } from "../data/regions";
-import { SKILL_BY_ID, SkillId, skillChoices } from "../data/skills";
+import { CRYSTAL_SKILLS, SKILLS, SKILL_BY_ID, SKILL_SLOTS, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
 import { makePlaceTextures } from "../art/places";
 import { BOSS_EVERY, BOSS_MOVES, BossMoveId, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, clampX, clampY, getArena } from "../game/arena";
+import { ARENA, Arena, EDGE, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
 import { hasPass, persist, save } from "../systems/save";
@@ -45,6 +49,8 @@ const HERO_SPEED = 390;
 const PET_LEASH = 1000;
 const PET_SPEED = 520;
 const HERO_R = 40;
+/** the Air Zone covers 10% of the map */
+const AIR_ZONE = Math.round(ARENA * Math.sqrt(0.1));
 const PICK_R = 210;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;
@@ -123,6 +129,9 @@ export const battle = {
   /** boss seals closed / placed this fight */
   seals: 0,
   sealsTotal: 0,
+  /** this stage's mode, and what the HUD shows instead of the crystal in the other modes */
+  stageMode: "crystal" as StageMode,
+  goal: null as { frac: number; text: string; color: number; icon: string; alarm: boolean } | null,
 };
 
 /** How a Boss Rush ended. */
@@ -361,6 +370,15 @@ export class BattleScene extends Phaser.Scene {
   private trail!: Phaser.GameObjects.Particles.ParticleEmitter;
   private trailTick = 0;
   private crystal!: Phaser.GameObjects.Image;
+  /** this stage's mode (see data/modes.ts) */
+  private stageMode: StageMode = "crystal";
+  private air!: { zone: Phaser.GameObjects.Graphics | null; next: Phaser.GameObjects.Graphics | null; x: number; y: number; nx: number; ny: number; t: number; oxygen: number; choke: number };
+  private beast!: {
+    img: Phaser.GameObjects.Image; cage: Phaser.GameObjects.Image; bar: Phaser.GameObjects.Graphics; tex: string;
+    hunger: number; fed: number; foodAt: number; food: Phaser.GameObjects.Image | null; carried: boolean;
+    friend: boolean; escaped: boolean; stompT: number;
+  } | null;
+  private rain!: { t: number; dodged: number };
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
   private walkTimer = 0;
@@ -477,6 +495,12 @@ export class BattleScene extends Phaser.Scene {
     makeBossTextures(this);
     makePlaceTextures(this);
     this.rush = !!data?.rush;
+    makeModeTextures(this);
+    this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
+    battle.goal = null;
+    this.air = { zone: null, next: null, x: 0, y: 0, nx: 0, ny: 0, t: AIR_EVERY, oxygen: 1, choke: 0 };
+    this.beast = null;
+    this.rain = { t: 2500, dodged: 0 };
     this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
     Object.assign(this, {
@@ -736,11 +760,13 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
-    this.banner(`STAGE ${save.stage}`, "peach", 900);
+    this.banner(`STAGE ${save.stage}  •  ${MODE_INFO[this.stageMode].name}`, "peach", 900);
     const boosts = this.useBoosts();
+    this.modeStart();
     this.time.delayedCall(1500, () => {
-      this.banner("SURVIVE 5:00!", "red", 900);
+      this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
+      if (this.stageMode === "boss") this.time.delayedCall(900, () => this.state === "fight" && this.bossCutscene());
       music.play("battle");
       this.game.events.emit("stage-start");
       if (boosts.length) this.toast(`Boosts on: ${boosts.map((b) => b.name).join(", ")}`, "#9ae6ff");
@@ -1253,7 +1279,7 @@ export class BattleScene extends Phaser.Scene {
       this.heal(0.2);
     }
     if (this.pendingSkills > 0) {
-      const choices = skillChoices(this.skills);
+      const choices = skillChoices(this.skills, 3, this.stageMode !== "crystal");
       if (!choices.length) {
         this.pendingSkills = 0;
         this.heal(0.2);
@@ -2046,7 +2072,7 @@ export class BattleScene extends Phaser.Scene {
     this.elapsed += delta;
     battle.time = this.elapsed;
     battle.shieldLeft = SHIELD_MS - (this.elapsed % SHIELD_MS);
-    if (this.state === "fight") this.setShield(Math.floor(this.elapsed / SHIELD_MS) % 2 === 1);
+    if (this.state === "fight" && this.stageMode === "crystal") this.setShield(Math.floor(this.elapsed / SHIELD_MS) % 2 === 1);
     const minute = Math.min(MINUTES, Math.floor(this.elapsed / 60000));
     if (minute > this.minute) {
       this.minute = minute;
@@ -2059,7 +2085,7 @@ export class BattleScene extends Phaser.Scene {
         this.swarm(30 + minute * 12);
       }
     }
-    if (this.state === "fight" && this.elapsed >= this.crystalDieAt) {
+    if (this.state === "fight" && this.stageMode === "crystal" && this.elapsed >= this.crystalDieAt) {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
@@ -2084,7 +2110,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawn(delta: number): void {
-    if (this.state !== "fight") return;
+    if (this.state !== "fight" || this.stageMode === "boss") return;
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0) {
       // the first stages go a little easier on new players
@@ -2093,7 +2119,7 @@ export class BattleScene extends Phaser.Scene {
       for (let i = 0; i < group && this.enemies.length < MAX_MONSTERS; i++) {
         // while the crystal is open many monsters march on it from far away
         // (the ones that appear around you come for you)
-        const atCrystal = !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
+        const atCrystal = this.stageMode === "crystal" && !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
         const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.offScreen();
         const e = this.addEnemy(this.pickType(), x, y);
         e.huntHero = !atCrystal;
@@ -2208,6 +2234,348 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  // ───────────────────────── stage modes ─────────────────────────
+
+  /** Sets up this stage's mode when the run starts. */
+  private modeStart(): void {
+    const m = this.stageMode;
+    if (m === "crystal") return;
+    // only the crystal stage has a crystal to guard
+    this.crystal.setVisible(false);
+    this.crystalGlow.setAlpha(0);
+    this.crystalSparkle.stop();
+    if (m === "air") this.airMove(true);
+    if (m === "feed") this.beastSpawn();
+    if (m === "boss") this.fullPower();
+  }
+
+  private modeTick(delta: number): void {
+    const fighting = this.fighting;
+    const m = this.stageMode;
+    if (m === "air" && fighting) this.airTick(delta);
+    if (m === "feed") this.beastTick(delta, fighting);
+    if (m === "dice" && fighting) this.rainTick(delta);
+    battle.goal = this.modeGoal();
+  }
+
+  /** What the HUD shows for this mode instead of the crystal. */
+  private modeGoal(): typeof battle.goal {
+    const m = this.stageMode;
+    if (m === "air") {
+      const o = this.air.oxygen;
+      const inside = this.inAir();
+      const text = inside ? `AIR ${Math.round(o * 100)}%  •  moves in ${Math.max(0, Math.ceil(this.air.t / 1000))}s` : `NO AIR HERE!  ${Math.round(o * 100)}% left`;
+      return { frac: o, text, color: o > 0.35 ? 0x4fd8ff : 0xf26464, icon: "mode_air", alarm: !inside };
+    }
+    const b = this.beast;
+    if (m === "feed" && b) {
+      if (b.friend) return { frac: 1, text: "The beast is your friend!", color: 0x7ad651, icon: "mode_feed", alarm: false };
+      if (b.escaped) return { frac: 0, text: "THE BEAST ESCAPED! Run!", color: 0xf26464, icon: "mode_feed", alarm: true };
+      const what = b.carried ? "bring it to the cage!" : b.food ? "grab the snack!" : "hunger";
+      return { frac: b.hunger, text: `FED ${b.fed}/${FEEDS}  •  ${what}`, color: b.hunger > 0.35 ? 0xffa040 : 0xf26464, icon: "mode_feed", alarm: b.hunger < 0.3 };
+    }
+    if (m === "dice") return { frac: 1, text: `DICE DODGED: ${this.rain.dodged}`, color: 0xffe066, icon: "mode_dice", alarm: false };
+    if (m === "boss") {
+      const left = this.enemies.filter((e) => e.type.boss).length;
+      return { frac: Math.max(0, battle.bossFrac), text: left ? `BOSSES LEFT: ${left}` : "Get ready...", color: 0xf26464, icon: "mode_boss", alarm: false };
+    }
+    return null;
+  }
+
+  // ── 1. Air Zone
+
+  private inAir(): boolean {
+    const a = this.air;
+    return !!a.zone && this.hero.x >= a.x && this.hero.x <= a.x + AIR_ZONE && this.hero.y >= a.y && this.hero.y <= a.y + AIR_ZONE;
+  }
+
+  /** The zone on the ground: green now, a blinking yellow one for where it goes next. */
+  private zoneGfx(x: number, y: number, next: boolean): Phaser.GameObjects.Graphics {
+    const g = this.add.graphics().setDepth(3);
+    const c = next ? 0xffe066 : 0x5aff8a;
+    g.fillStyle(c, next ? 0.08 : 0.14).fillRect(x, y, AIR_ZONE, AIR_ZONE);
+    g.lineStyle(26, 0x111111, 0.45).strokeRect(x, y, AIR_ZONE, AIR_ZONE);
+    g.lineStyle(14, c, 0.95).strokeRect(x, y, AIR_ZONE, AIR_ZONE);
+    g.fillStyle(0xffffff, next ? 0.25 : 0.4);
+    for (let i = 0; i < 26; i++) g.fillCircle(x + 60 + ((i * 397) % (AIR_ZONE - 120)), y + 60 + ((i * 631) % (AIR_ZONE - 120)), 10 + (i % 4) * 6);
+    if (next) this.tweens.add({ targets: g, alpha: 0.35, duration: 300, yoyo: true, repeat: -1 });
+    return g;
+  }
+
+  /** Somewhere else on the map, far enough that you have to run. */
+  private zoneSpot(): [number, number] {
+    const lo = EDGE;
+    const hi = ARENA - EDGE - AIR_ZONE;
+    let x = lo;
+    let y = lo;
+    for (let k = 0; k < 20; k++) {
+      x = lo + Math.random() * (hi - lo);
+      y = lo + Math.random() * (hi - lo);
+      if (Math.hypot(x - this.air.x, y - this.air.y) > AIR_ZONE * 0.8) break;
+    }
+    return [x, y];
+  }
+
+  private airMove(first = false): void {
+    const a = this.air;
+    if (first) {
+      a.x = Phaser.Math.Clamp(this.hero.x - AIR_ZONE / 2, EDGE, ARENA - EDGE - AIR_ZONE);
+      a.y = Phaser.Math.Clamp(this.hero.y - AIR_ZONE / 2, EDGE, ARENA - EDGE - AIR_ZONE);
+    } else {
+      a.x = a.nx;
+      a.y = a.ny;
+      this.banner("THE AIR MOVED!", "blue", 800);
+      sfx.shield(true);
+    }
+    a.zone?.destroy();
+    a.next?.destroy();
+    a.next = null;
+    a.zone = this.zoneGfx(a.x, a.y, false);
+    a.t = AIR_EVERY;
+  }
+
+  private airTick(delta: number): void {
+    const a = this.air;
+    a.t -= delta;
+    if (a.t <= AIR_PREVIEW && !a.next) {
+      [a.nx, a.ny] = this.zoneSpot();
+      a.next = this.zoneGfx(a.nx, a.ny, true);
+      this.toast("The air is moving: run to the yellow zone!", "#ffe066");
+      sfx.alarm();
+    }
+    if (a.t <= 0) this.airMove();
+    const inside = this.inAir();
+    a.oxygen = Phaser.Math.Clamp(a.oxygen + (inside ? 0.5 : -1 / AIR_SECS) * (delta / 1000), 0, 1);
+    // no air left: you choke, a bite of health every half second
+    if (a.oxygen <= 0) {
+      a.choke -= delta;
+      if (a.choke <= 0) {
+        a.choke = 500;
+        this.hurt(this.heroMax * 0.07);
+      }
+    } else a.choke = 0;
+  }
+
+  // ── 3. Feed the Beast
+
+  private beastSpawn(): void {
+    const [cx, cy] = this.arena.center;
+    const def = PET_LIST[(save.stage * 7) % PET_LIST.length];
+    const tex = petTexture(this, def.id);
+    const img = this.add.image(cx, cy + 40, tex).setOrigin(0.5, 0.9).setDepth(cy + 40);
+    img.setScale(420 / img.height);
+    this.tweens.add({ targets: img, scaleY: img.scaleY * 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const cage = this.add.image(cx, cy - 170, "beast_cage").setDepth(cy + 41);
+    const bar = this.add.graphics().setDepth(cy + 42);
+    this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0 };
+  }
+
+  private beastTick(delta: number, fighting: boolean): void {
+    const b = this.beast;
+    if (!b || b.escaped) return;
+    if (b.friend) {
+      if (fighting) this.friendTick(delta);
+      return;
+    }
+    const [cx, cy] = this.arena.center;
+    if (this.state === "fight") {
+      b.hunger -= delta / HUNGER_MS;
+      if (b.hunger <= 0) {
+        this.beastEscape();
+        return;
+      }
+      if (!b.food && b.fed < FEEDS && this.elapsed >= b.foodAt) {
+        b.foodAt += FEED_EVERY;
+        const [x, y] = this.randomSpot(1200, 2200, [cx, cy]);
+        b.food = this.add.image(x, y, "mode_feed").setScale(0).setDepth(y);
+        this.tweens.add({ targets: b.food, scale: 1.6, duration: 400, ease: "Back.out" });
+        this.tweens.add({ targets: b.food, angle: { from: -10, to: 10 }, duration: 400, yoyo: true, repeat: -1 });
+        this.toast("A snack appeared! Bring it to the beast", "#ffd29a");
+        sfx.gift();
+      }
+    }
+    if (b.food) {
+      if (!b.carried && Math.hypot(this.hero.x - b.food.x, this.hero.y - b.food.y) < 130) {
+        b.carried = true;
+        this.tweens.killTweensOf(b.food);
+        b.food.setScale(1.3).setAngle(0);
+        sfx.coin();
+      }
+      if (b.carried) {
+        b.food.setPosition(this.hero.x, this.hero.y - 250).setDepth(this.hero.y + 5);
+        if (Math.hypot(this.hero.x - cx, this.hero.y - cy) < 380) this.feedBeast();
+      }
+    }
+    // the hunger bar over the cage; a starving beast rattles the bars
+    b.bar.clear();
+    drawBar(b.bar, cx - 200, b.cage.y - 300, 400, 30, b.hunger, b.hunger > 0.35 ? 0xffa040 : 0xf26464);
+    b.cage.x = b.hunger < 0.3 && this.time.now % 300 < 150 ? cx + Phaser.Math.Between(-10, 10) : cx;
+  }
+
+  private feedBeast(): void {
+    const b = this.beast!;
+    const food = b.food!;
+    b.food = null;
+    b.carried = false;
+    this.tweens.add({ targets: food, x: b.img.x, y: b.img.y - 220, scale: 0.3, duration: 300, onComplete: () => food.destroy() });
+    b.hunger = 1;
+    b.fed++;
+    this.tweens.add({ targets: b.img, scaleX: b.img.scaleX * 1.15, duration: 120, yoyo: true, repeat: 2 });
+    this.sparks.setParticleTint(0xff7ab8);
+    this.sparks.explode(30, b.img.x, b.img.y - 250);
+    sfx.levelUp();
+    this.addDie(rollDiceTier(save.stage + 5), b.img.x + 260, b.img.y + 160, 30000);
+    if (b.fed >= FEEDS) this.beastFriend();
+    else this.callout(`YUM! ${b.fed}/${FEEDS}`, "#ffd29a");
+  }
+
+  /** Fed all 6 times: the cage flies off and the beast fights on your side. */
+  private beastFriend(): void {
+    const b = this.beast!;
+    b.friend = true;
+    b.bar.clear();
+    const cage = b.cage;
+    this.tweens.add({ targets: cage, y: cage.y - 900, alpha: 0, angle: 25, duration: 900, ease: "Back.in", onComplete: () => cage.destroy() });
+    this.tweens.killTweensOf(b.img);
+    this.tweens.add({ targets: b.img, scale: (300 / b.img.height), duration: 500, ease: "Back.out" });
+    this.banner("BEST FRIENDS!", "green", 1000);
+    this.toast("The beast will fight the boss with you!", "#b6ff8a");
+    this.sparks.setParticleTint(0xff7ab8);
+    this.sparks.explode(60, b.img.x, b.img.y - 200);
+    sfx.superRoll();
+  }
+
+  /** Your beast walks with you and stomps monsters (and the boss). */
+  private friendTick(delta: number): void {
+    const b = this.beast!;
+    const img = b.img;
+    const target = this.enemies.find((e) => e.type.boss) ?? this.nearestEnemies(img.x, img.y, 900, 1)[0];
+    const tx = target ? target.img.x : this.hero.x - 200;
+    const ty = target ? target.img.y + 30 : this.hero.y + 60;
+    const d = Math.hypot(tx - img.x, ty - img.y);
+    if (d > 120) {
+      const step = Math.min(d - 100, (360 * delta) / 1000);
+      img.x += ((tx - img.x) / d) * step;
+      img.y += ((ty - img.y) / d) * step;
+      img.setFlipX(tx < img.x).setDepth(img.y);
+    }
+    b.stompT -= delta;
+    if (target && d < 330 && b.stompT <= 0) {
+      b.stompT = 1200;
+      this.tweens.add({ targets: img, y: img.y - 60, duration: 140, yoyo: true, ease: "Quad.out" });
+      this.cameras.main.shake(100, 0.004);
+      this.blast(img.x, img.y - 40, 300, this.heroDamage() * 4, null, 0xffa040);
+    }
+  }
+
+  /** Too hungry: it breaks out of the cage and hunts you. */
+  private beastEscape(): void {
+    const b = this.beast!;
+    b.escaped = true;
+    b.bar.clear();
+    b.food?.destroy();
+    b.food = null;
+    b.carried = false;
+    const cage = b.cage;
+    this.tweens.add({ targets: cage, alpha: 0, scale: 1.4, duration: 400, onComplete: () => cage.destroy() });
+    this.puff.setParticleTint(0x9aa4b8);
+    this.puff.explode(40, cage.x, cage.y);
+    this.cameras.main.shake(500, 0.015);
+    sfx.alarm();
+    buzz(200);
+    this.banner("THE BEAST ESCAPED!", "red", 1200);
+    const [x, y] = [b.img.x, b.img.y];
+    b.img.destroy();
+    const e = this.addEnemy({ tex: b.tex, stats: { ...BOSS, hp: BOSS.hp * 0.5, speed: 230, dmg: BOSS.dmg * 1.6, xp: 40, cash: 80 }, fx: 0xffa040 }, x, y, true, false, 1.9);
+    e.huntHero = true;
+  }
+
+  // ── 4. Dice Rain
+
+  private rainTick(delta: number): void {
+    const r = this.rain;
+    r.t -= delta;
+    if (r.t > 0) return;
+    r.t = (this.state === "boss" ? 1700 : Math.max(700, 2000 - this.minute * 300)) * (0.75 + Math.random() * 0.5);
+    const n = 1 + (this.minute >= 2 && Math.random() < 0.5 ? 1 : 0) + (this.minute >= 4 && Math.random() < 0.4 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      // most land near you, some a bit further away
+      const a = Math.random() * Math.PI * 2;
+      const d = i === 0 && Math.random() < 0.6 ? Math.random() * 160 : 250 + Math.random() * 650;
+      this.dropBigDie(clampX(this.hero.x + Math.cos(a) * d), clampY(this.hero.y + Math.sin(a) * d));
+    }
+  }
+
+  /** A giant die: its shadow and a red ring grow, then it slams down. */
+  private dropBigDie(x: number, y: number): void {
+    const R = 170;
+    const fall = 1300;
+    const shadow = this.add.ellipse(x, y, R * 2, R, 0x000000, 0.35).setScale(0.15).setDepth(4);
+    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(8, 0xff3a3a, 0.9).setDepth(4);
+    this.tweens.add({ targets: ring, alpha: 0.3, duration: 180, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: shadow, scale: 1, duration: fall, ease: "Quad.in" });
+    const die = this.add.image(x, y - 1500, Math.random() < 0.5 ? "big_die" : "big_die3").setScale(1.4).setDepth(y + 2000);
+    this.tweens.add({ targets: die, angle: Phaser.Math.Between(-400, 400), duration: fall });
+    this.tweens.add({
+      targets: die, y: y - 110, duration: fall, ease: "Quad.in",
+      onComplete: () => {
+        ring.destroy();
+        shadow.destroy();
+        if (!this.fighting) {
+          this.tweens.add({ targets: die, alpha: 0, duration: 300, onComplete: () => die.destroy() });
+          return;
+        }
+        this.cameras.main.shake(160, 0.008);
+        sfx.boom();
+        buzz(30);
+        this.puff.setParticleTint(0xd8c8a8);
+        this.puff.explode(24, x, y);
+        if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
+          this.hurt(this.heroMax * 0.22);
+          this.callout("SQUASHED!", "#ff8a8a");
+        } else this.rain.dodged++;
+        // monsters under it get squashed too
+        for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * 0.6 + this.heroDamage() * 3);
+        if (Math.random() < 0.12) this.addDie(rollDiceTier(save.stage), x, y, 30000);
+        die.setDepth(y + 10);
+        this.tweens.add({ targets: die, y: y - 170, duration: 200, yoyo: true, ease: "Quad.out" });
+        this.tweens.add({ targets: die, alpha: 0, delay: 700, duration: 400, onComplete: () => die.destroy() });
+      },
+    });
+  }
+
+  // ── 5. Boss Battle
+
+  /** Hardcore: you start with your best gadgets maxed out and a full set of skills. */
+  private fullPower(): void {
+    const tier = GADGET_TIERS[gadgetTierCap()];
+    this.gadgets = [];
+    for (const k of shuffle([...GADGET_KINDS]).slice(0, GADGET_SLOTS)) this.addGadget(k, tier, MAX_GADGET_LEVEL);
+    for (const sk of shuffle(SKILLS.filter((k) => !CRYSTAL_SKILLS.includes(k.id))).slice(0, SKILL_SLOTS)) this.skills[sk.id] = 3;
+    battle.skills = this.skills;
+    if (this.skills.tough) {
+      this.heroMax = heroHpAt(save.stage) * villageHpMult() * (1 + 0.25 * this.skills.tough);
+      this.heroHp = this.heroMax;
+    }
+    this.game.events.emit("skills-changed");
+    this.time.delayedCall(700, () => this.callout("FULL POWER!", "#ffe066"));
+  }
+
+  /** The big boss grows HUGE and three smaller bosses join it. */
+  private bossKids(boss: Enemy, x: number, y: number): void {
+    boss.hp = boss.maxHp = Math.round(boss.maxHp * BIG_BOSS_HP);
+    boss.r *= 1.4;
+    this.tweens.add({ targets: boss.img, scale: 1.3 * 1.6, duration: 500, delay: 400, ease: "Back.out" });
+    for (let i = 0; i < BOSS_KIDS; i++) {
+      const kid = bossForStage(((save.stage - 1 + (i + 1) * BOSS_EVERY) % MAX_STAGE) + 1);
+      const a = (i / BOSS_KIDS) * Math.PI * 2;
+      const e = this.addEnemy({ tex: kid.tex, stats: BOSS, fx: kid.color, boss: true, moves: kid.moves }, clampX(x + Math.cos(a) * 420), clampY(y + Math.sin(a) * 300), false, false, 0.7);
+      e.hp = e.maxHp = Math.round(boss.maxHp * KID_HP);
+      e.huntHero = true;
+      e.phaseT = 3500 + i * 900;
+    }
+  }
+
   private bossCutscene(): void {
     this.state = "cutscene";
     battle.bossFight = true;
@@ -2224,6 +2592,16 @@ export class BattleScene extends Phaser.Scene {
     buzz(200);
     this.game.events.emit("boss-warning");
     const cam = this.cameras.main;
+    if (this.stageMode !== "crystal") {
+      // no crystal to take: a quick storm and the boss drops in
+      this.tweens.add({ targets: this.gloom, fillAlpha: 0.3, duration: 800 });
+      for (const t of [500, 1300]) this.time.delayedCall(t, () => {
+        cam.flash(120, 255, 255, 255);
+        sfx.thunder();
+      });
+      this.time.delayedCall(2400, () => this.dropBoss());
+      return;
+    }
     const [cx, cy] = this.crystalHome;
     cam.stopFollow();
     cam.pan(cx, cy - 300, 900, "Sine.easeInOut");
@@ -2313,9 +2691,14 @@ export class BattleScene extends Phaser.Scene {
         boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP);
         boss.huntHero = true;
         boss.phaseT = 2500;
-        this.placeSeals();
+        if (this.beast?.friend) {
+          boss.hp = boss.maxHp = Math.round(boss.maxHp * FRIEND_BOSS_HP);
+          this.toast("Your beast is with you, so the boss is extra strong!", "#ffd29a");
+        }
+        if (this.stageMode === "boss") this.bossKids(boss, x, y);
+        else this.placeSeals();
         music.play("boss");
-        this.game.events.emit("boss-intro", { name: def.name, tex: def.tex, moves: def.moves.map((m) => BOSS_MOVES[m]) });
+        this.game.events.emit("boss-intro", { name: this.stageMode === "boss" ? `${def.name} & ${BOSS_KIDS} kids` : def.name, tex: def.tex, moves: def.moves.map((m) => BOSS_MOVES[m]) });
         this.time.delayedCall(1800, () => {
           if (this.state !== "cutscene") return;
           this.state = "boss";
@@ -2351,9 +2734,9 @@ export class BattleScene extends Phaser.Scene {
     this.rocks.forEach((r) => r.img.destroy());
     this.rocks = [];
     this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1500 });
-    this.crystal.setVisible(true).setScale(1).setAlpha(1).clearTint().setPosition(hx, hy - 1600).setDepth(hy);
+    if (this.stageMode === "crystal") this.crystal.setVisible(true).setScale(1).setAlpha(1).clearTint().setPosition(hx, hy - 1600).setDepth(hy);
     this.tweens.add({ targets: this.crystal, y: hy, duration: 1600, delay: 600, ease: "Bounce.out" });
-    this.time.delayedCall(2300, () => {
+    if (this.stageMode === "crystal") this.time.delayedCall(2300, () => {
       this.crystalSparkle.start();
       this.tweens.add({ targets: this.crystalGlow, alpha: 0.8, duration: 500 });
       this.sparks.setParticleTint(this.land.crystal);
@@ -2464,8 +2847,9 @@ export class BattleScene extends Phaser.Scene {
     }
     battle.hp = this.heroHp / this.heroMax;
     battle.crystal = this.crystalHp / this.crystalMax;
-    const boss = this.enemies.find((e) => e.type.boss);
-    battle.bossFrac = boss ? boss.hp / boss.maxHp : -1;
+    const bosses = this.enemies.filter((e) => e.type.boss);
+    battle.bossFrac = bosses.length ? bosses.reduce((t, e) => t + Math.max(0, e.hp), 0) / bosses.reduce((t, e) => t + e.maxHp, 0) : -1;
+    if (!this.rush && this.state !== "lobby") this.modeTick(delta);
 
     if (this.streakTimer > 0) {
       this.streakTimer -= delta;
@@ -2478,7 +2862,7 @@ export class BattleScene extends Phaser.Scene {
     this.streakText.setPosition(this.hero.x, this.hero.y - 260);
 
     this.moveEnemies(time, delta);
-    if (this.state === "boss" && !this.rush) this.sealsTick(delta);
+    if (this.state === "boss" && !this.rush && this.stageMode !== "boss") this.sealsTick(delta);
     if (this.state === "lobby" && !this.rush) this.roamTick(delta);
     if (fighting) {
       this.ghostSkills(delta);
@@ -2536,7 +2920,7 @@ export class BattleScene extends Phaser.Scene {
       const heroD = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
       // raiders go back to the crystal as soon as the shield drops; everyone else hunts you once you come close
       if (e.raider && !e.type.boss) e.huntHero = this.shielded || heroD <= RAIDER_AGGRO;
-      else if (this.shielded || e.type.boss || heroD <= AGGRO) e.huntHero = true;
+      else if (this.shielded || e.type.boss || heroD <= AGGRO || this.stageMode !== "crystal") e.huntHero = true;
       e.toCrystal = !e.huntHero;
       if (!e.toCrystal) e.attacking = false;
       const tx = e.toCrystal ? cx : this.hero.x;
@@ -3330,7 +3714,10 @@ export class BattleScene extends Phaser.Scene {
       this.cameras.main.flash(200, 255, 240, 200);
       buzz(200);
       if (this.rush) this.rushBossDown();
-      else this.stageWon();
+      else if (this.enemies.some((o) => o.type.boss)) {
+        const left = this.enemies.filter((o) => o.type.boss).length;
+        this.banner(`BOSS DOWN!  ${left} LEFT`, "gold", 900);
+      } else this.stageWon();
     }
   }
 
@@ -3426,8 +3813,16 @@ export class BattleScene extends Phaser.Scene {
     const s = size / ARENA;
     g.lineStyle(6, INK_N, 1).strokeRoundedRect(mx - 3, my - 3, size + 6, size + 6, 12);
     const [hx, hy] = this.arena.center;
-    g.fillStyle(this.shielded ? 0x9ae6ff : this.land.crystal, 1).fillCircle(mx + hx * s, my + hy * s, 7);
-    g.lineStyle(2, 0xffffff, 1).strokeCircle(mx + hx * s, my + hy * s, this.shielded ? 11 : 7);
+    if (this.stageMode === "crystal" || battle.mode !== "run") {
+      g.fillStyle(this.shielded ? 0x9ae6ff : this.land.crystal, 1).fillCircle(mx + hx * s, my + hy * s, 7);
+      g.lineStyle(2, 0xffffff, 1).strokeCircle(mx + hx * s, my + hy * s, this.shielded ? 11 : 7);
+    }
+    if (this.stageMode === "air" && this.air.zone) {
+      g.lineStyle(3, 0x5aff8a, 1).strokeRect(mx + this.air.x * s, my + this.air.y * s, AIR_ZONE * s, AIR_ZONE * s);
+      if (this.air.next) g.lineStyle(2, 0xffe066, 1).strokeRect(mx + this.air.nx * s, my + this.air.ny * s, AIR_ZONE * s, AIR_ZONE * s);
+    }
+    if (this.beast?.food) g.fillStyle(0xffa040, 1).fillCircle(mx + this.beast.food.x * s, my + this.beast.food.y * s, 6);
+    if (this.beast && !this.beast.escaped) g.fillStyle(this.beast.friend ? 0x7ad651 : 0xffa040, 1).fillCircle(mx + this.beast.img.x * s, my + this.beast.img.y * s, 8);
     for (const p of this.pickups) {
       const color = p.kind === "dice" ? TIER_INFO[p.tier!].color : p.kind === "orb" ? 0xff9a2a : p.kind === "airdrop" ? 0xffffff : p.kind === "chest" ? 0xffe066 : 0xd8d8d8;
       const r = p.kind === "airdrop" || p.kind === "chest" || p.kind === "orb" ? 5 : 3.5;
@@ -3465,6 +3860,17 @@ export class BattleScene extends Phaser.Scene {
       if (p.kind === "dice" && tierIndex(p.tier!) >= 3) arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
     }
     for (const e of this.enemies) if (e.type.boss) arrow(e.img.x, e.img.y, 0xf26464);
+    // the mode's goal: the air zone, the snack, the beast's cage
+    if (this.stageMode === "air" && this.air.zone) {
+      const z = AIR_ZONE / 2;
+      if (!this.inAir()) arrow(this.air.x + z, this.air.y + z, 0x5aff8a);
+      if (this.air.next) arrow(this.air.nx + z, this.air.ny + z, 0xffe066);
+    }
+    const b = this.beast;
+    if (b && !b.friend && !b.escaped) {
+      if (b.food && !b.carried) arrow(b.food.x, b.food.y, 0xffa040);
+      if (b.carried) arrow(b.cage.x, b.cage.y + 150, 0xffa040);
+    }
     if (this.state === "boss") for (const sl of this.seals) if (!sl.done) arrow(sl.x, sl.y, 0xd8b8ff);
   }
 

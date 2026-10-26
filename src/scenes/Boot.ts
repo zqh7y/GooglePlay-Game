@@ -3,6 +3,7 @@ import { makePetalTexture } from "../art/world";
 import { makeCharacterTextures } from "../art/characters";
 import { makeCardTextures, makeIconTextures } from "../art/ui";
 import { makePsTextures } from "../art/ps";
+import { makeModeTextures } from "../art/modes";
 
 /**
  * Draws the shared game art with code (canvas), so the game needs no image files.
@@ -19,6 +20,7 @@ export class BootScene extends Phaser.Scene {
     makeCardTextures(this);
     makePetalTexture(this);
     makePsTextures(this);
+    makeModeTextures(this);
     this.scene.start("Battle");
     this.scene.launch("UI");
   }

@@ -43,9 +43,13 @@ export const SKILLS: SkillDef[] = [
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<SkillId, SkillDef>;
 
 /** Three different skills to offer: ones not maxed yet, and new ones only while a slot is free. */
-export function skillChoices(levels: Partial<Record<SkillId, number>>, n = 3): SkillId[] {
+/** Skills that only help the crystal: not offered in stages without one. */
+export const CRYSTAL_SKILLS: SkillId[] = ["mend", "shards", "fort"];
+
+export function skillChoices(levels: Partial<Record<SkillId, number>>, n = 3, noCrystal = false): SkillId[] {
   const owned = Object.keys(levels).length;
   const open = SKILLS.filter((s) => {
+    if (noCrystal && CRYSTAL_SKILLS.includes(s.id)) return false;
     const lv = levels[s.id] ?? 0;
     return lv < MAX_SKILL && (lv > 0 || owned < SKILL_SLOTS);
   }).map((s) => s.id);

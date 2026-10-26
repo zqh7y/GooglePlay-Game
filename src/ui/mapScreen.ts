@@ -6,6 +6,7 @@ import { MAX_STAGE } from "../data/balance";
 import { BOSS_EVERY, bossForStage } from "../data/bosses";
 import { REGIONS, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
 import { itemSplash, vividCard } from "../art/ps";
+import { MODE_INFO, modeForStage } from "../data/modes";
 import { save } from "../systems/save";
 import { Host, Screen } from "./screens";
 import { button, drawBar, fitText, iconButton, label, text } from "./widgets";
@@ -251,6 +252,8 @@ export class MapScreen extends Screen {
       text(s, -280, -50, boss ? `BOSS ${st}` : `STAGE ${st}`, 60, "#ffffff", { stroke: 12 }).setOrigin(0, 0.5),
       fitText(text(s, -280, 14, boss ? bossForStage(st).name : land.name, 32, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5), 400),
       text(s, -280, 66, st === save.stage ? "You are here" : cleared ? "Cleared!  Play it again" : "Your next stage!", 28, cleared ? "#b6ff8a" : "#ffe066", { stroke: 7 }).setOrigin(0, 0.5),
+      s.add.image(34, -50, MODE_INFO[modeForStage(st)].icon).setScale(0.45),
+      fitText(text(s, 66, -50, MODE_INFO[modeForStage(st)].name, 26, MODE_INFO[modeForStage(st)].css, { stroke: 7 }).setOrigin(0, 0.5), 130),
       button(s, 330, 0, 250, 130, "green", "PLAY", () => this.host.pickStage(st, true), { size: 52 }),
     ]);
     if (cleared) c.add(s.add.star(-438, -70, 5, 14, 30, 0xffe066).setStrokeStyle(5, 0x111111));

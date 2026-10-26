@@ -209,6 +209,20 @@ hour of fishing brings.
   zoomed out (1.66x) so you see more of the field. Survive **5:00** against hordes of monsters that come
   faster and tougher every minute (a ring of them closes in at each minute mark). If you fall or the crystal
   breaks, the run is over: revive once for gems, try again, or go back to the lobby.
+- **Stage modes** (`src/data/modes.ts`): stages cycle through 5 modes, 1-2-3-4-5-1-2-3... up to 100. The
+  lobby button, the START popup and the map card show which one is next.
+  1. **Air Zone**: a green zone covering 10% of the map is the only place with air. Every 30 s it moves
+     (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke.
+  2. **Crystal**: the classic mode below (guard the crystal for 5:00).
+  3. **Feed the Beast**: a giant pet sits in a cage in the middle and gets hungry over 60 s. A snack shows
+     up 6 times (from 0:20, every 45 s): grab it and carry it to the cage (each feed also drops a die).
+     Feed all 6 and the cage flies off: the beast follows you and stomps monsters and the boss, but the
+     boss gets 1.8x health. If it ever starves, it breaks out, huge and angry, and hunts you.
+  4. **Dice Rain**: giant dice fall from the sky all game, more and more often. A shadow and a red ring
+     show where; getting hit costs 22% health, monsters under them get squashed, and some leave a real die.
+  5. **Boss Battle** (hardcore): no 5:00. You start fully powered up (3 gadgets at your best tier and max
+     level, 4 skills at level 3) against a HUGE boss (1.5x health) and 3 smaller boss kids. Beat all four.
+  Only the Crystal mode has a crystal (and the crystal skills); the other modes show their goal in its place.
 - **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and the clouds shine a
   beam of light down on the crystal, which melts into sparkles and disappears. The last 5 seconds before
   5:00 (and the last 5 seconds of each Boss Rush boss) count down in huge numbers. The boss drops down next to you with a title card (its name and its three moves)
