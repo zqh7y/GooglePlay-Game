@@ -223,6 +223,14 @@ hour of fishing brings.
   5. **Boss Battle** (hardcore): no 5:00. You start fully powered up (3 gadgets at your best tier and max
      level, 4 skills at level 3) against a HUGE boss (1.5x health) and 3 smaller boss kids. Beat all four.
   Only the Crystal mode has a crystal (and the crystal skills); the other modes show their goal in its place.
+  Free roam has no crystal: a wooden signboard stands in the middle showing the next stage and its mode,
+  and the crystal only drops out of the sky when a Crystal stage starts. Every mode has its own signs and
+  effects: the Air Zone is a glowing wall of light with light pillars on its corners and bubbles inside,
+  while the rest of the map is under purple poison fog. Outside it you get dizzy: the hero sways and
+  staggers, stars spin round their head, the screen wobbles and darkens. The beast's cage stands on a
+  stone platform with front and back bars, snacks float with a beam of light, hearts pop when you feed
+  it and the bars fly off if it breaks out. Giant dice are 3D cubes that grow as they fall, squash on
+  landing with a shockwave and leave cracks. The boss kids come out of portals and the big boss glows red.
 - **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and the clouds shine a
   beam of light down on the crystal, which melts into sparkles and disappears. The last 5 seconds before
   5:00 (and the last 5 seconds of each Boss Rush boss) count down in huge numbers. The boss drops down next to you with a title card (its name and its three moves)

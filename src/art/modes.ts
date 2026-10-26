@@ -5,6 +5,68 @@ const INK = "#111111";
 
 /** Icons for the five stage modes, the beast's cage, its snack and the giant falling die. */
 export function makeModeTextures(scene: Phaser.Scene): void {
+  /** A 3D die: front, top and side faces with shading and pips. */
+  const cube = (key: string, pips: number) =>
+    canvasTexture(scene, key, 260, 260, (c) => {
+      const f = 150;
+      const d = 60;
+      const x0 = 30;
+      const y0 = 30 + d;
+      const pip = (x: number, y: number, r: number) => {
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fillStyle = "#e8434f";
+        c.fill();
+        c.fillStyle = "rgba(255,255,255,0.5)";
+        c.beginPath();
+        c.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2);
+        c.fill();
+      };
+      c.lineJoin = "round";
+      c.lineWidth = 7;
+      c.strokeStyle = INK;
+      // top face
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(x0 + d, y0 - d);
+      c.lineTo(x0 + d + f, y0 - d);
+      c.lineTo(x0 + f, y0);
+      c.closePath();
+      c.fillStyle = "#ffffff";
+      c.fill();
+      c.stroke();
+      // side face
+      c.beginPath();
+      c.moveTo(x0 + f, y0);
+      c.lineTo(x0 + f + d, y0 - d);
+      c.lineTo(x0 + f + d, y0 - d + f);
+      c.lineTo(x0 + f, y0 + f);
+      c.closePath();
+      c.fillStyle = "#b8bfd4";
+      c.fill();
+      c.stroke();
+      // front face
+      c.beginPath();
+      c.rect(x0, y0, f, f);
+      const g = c.createLinearGradient(x0, y0, x0 + f, y0 + f);
+      g.addColorStop(0, "#f4f6ff");
+      g.addColorStop(1, "#d6dbea");
+      c.fillStyle = g;
+      c.fill();
+      c.stroke();
+      const at: Record<number, [number, number][]> = {
+        3: [[0.25, 0.25], [0.5, 0.5], [0.75, 0.75]],
+        6: [[0.27, 0.22], [0.73, 0.22], [0.27, 0.5], [0.73, 0.5], [0.27, 0.78], [0.73, 0.78]],
+      };
+      for (const [u, v] of at[pips]) pip(x0 + u * f, y0 + v * f, 14);
+      // two pips on the top, squashed by the angle
+      c.save();
+      c.translate(x0 + d / 2 + f / 2, y0 - d / 2);
+      c.scale(1, 0.45);
+      pip(-32, 0, 13);
+      pip(32, 0, 13);
+      c.restore();
+    });
   canvasTexture(scene, "mode_air", 120, 120, (c) => {
     c.beginPath();
     c.arc(60, 60, 50, 0, Math.PI * 2);
@@ -110,8 +172,8 @@ export function makeModeTextures(scene: Phaser.Scene): void {
       }
     });
   die("mode_dice", 120, 5);
-  die("big_die", 240, 6);
-  die("big_die3", 240, 3);
+  cube("big_die", 6);
+  cube("big_die3", 3);
   canvasTexture(scene, "mode_boss", 120, 120, (c) => {
     // a horned skull
     c.lineWidth = 7;
@@ -178,5 +240,144 @@ export function makeModeTextures(scene: Phaser.Scene): void {
     c.roundRect(240, 250, 80, 66, 12);
     c.fill();
     c.stroke();
+  });
+
+  // a chunky wooden signboard on two posts (text goes on top in the game)
+  canvasTexture(scene, "sign_board", 360, 260, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 7;
+    c.strokeStyle = INK;
+    for (const x of [90, 250]) {
+      c.fillStyle = "#7a4a26";
+      c.fillRect(x, 120, 26, 130);
+      c.strokeRect(x, 120, 26, 130);
+      c.fillStyle = "#5a3418";
+      c.fillRect(x + 17, 124, 6, 122);
+    }
+    // the board's thickness, then its face
+    c.fillStyle = "#6a3c1c";
+    c.beginPath();
+    c.roundRect(22, 30, 324, 150, 18);
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.roundRect(14, 14, 320, 150, 18);
+    const g = c.createLinearGradient(0, 14, 0, 164);
+    g.addColorStop(0, "#e2a868");
+    g.addColorStop(1, "#b8743a");
+    c.fillStyle = g;
+    c.fill();
+    c.stroke();
+    c.strokeStyle = "rgba(90,52,24,0.45)";
+    c.lineWidth = 4;
+    for (const y of [64, 114]) {
+      c.beginPath();
+      c.moveTo(24, y);
+      c.lineTo(324, y);
+      c.stroke();
+    }
+    c.fillStyle = "#3a2010";
+    for (const [x, y] of [[34, 32], [314, 32], [34, 146], [314, 146]]) {
+      c.beginPath();
+      c.arc(x, y, 6, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "rgba(255,255,255,0.25)";
+    c.fillRect(30, 20, 290, 10);
+  });
+  // a yellow warning sign on a post
+  canvasTexture(scene, "sign_warn", 180, 240, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 7;
+    c.strokeStyle = INK;
+    c.fillStyle = "#9aa4b8";
+    c.fillRect(80, 120, 20, 116);
+    c.strokeRect(80, 120, 20, 116);
+    c.beginPath();
+    c.moveTo(90, 14);
+    c.lineTo(170, 150);
+    c.lineTo(10, 150);
+    c.closePath();
+    c.fillStyle = "#c08a10";
+    c.save();
+    c.translate(6, 8);
+    c.fill();
+    c.restore();
+    c.fillStyle = "#ffd23f";
+    c.fill();
+    c.stroke();
+    c.fillStyle = INK;
+    c.fillRect(84, 58, 12, 50);
+    c.beginPath();
+    c.arc(90, 124, 8, 0, Math.PI * 2);
+    c.fill();
+  });
+  // a soft pillar of light for the air zone's corners
+  canvasTexture(scene, "zone_pillar", 64, 512, (c) => {
+    const g = c.createLinearGradient(0, 0, 64, 0);
+    g.addColorStop(0, "rgba(120,255,170,0)");
+    g.addColorStop(0.5, "rgba(200,255,220,0.9)");
+    g.addColorStop(1, "rgba(120,255,170,0)");
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 512);
+    const v = c.createLinearGradient(0, 0, 0, 512);
+    v.addColorStop(0, "rgba(0,0,0,1)");
+    v.addColorStop(0.6, "rgba(0,0,0,0)");
+    c.globalCompositeOperation = "destination-out";
+    c.fillStyle = v;
+    c.fillRect(0, 0, 64, 512);
+  });
+  // cracks left in the ground by a giant die
+  canvasTexture(scene, "dice_crack", 300, 150, (c) => {
+    c.strokeStyle = "rgba(40,24,10,0.75)";
+    c.lineCap = "round";
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + 0.3;
+      c.lineWidth = 7 - (i % 3) * 2;
+      c.beginPath();
+      c.moveTo(150, 75);
+      let x = 150;
+      let y = 75;
+      for (let k = 1; k <= 3; k++) {
+        x += Math.cos(a + (k % 2 ? 0.3 : -0.3)) * 40;
+        y += Math.sin(a + (k % 2 ? 0.3 : -0.3)) * 20;
+        c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+    c.fillStyle = "rgba(40,24,10,0.35)";
+    c.beginPath();
+    c.ellipse(150, 75, 60, 28, 0, 0, Math.PI * 2);
+    c.fill();
+  });
+  // the stone platform under the beast's cage (top and its thick side)
+  canvasTexture(scene, "cage_base", 640, 220, (c) => {
+    c.lineWidth = 8;
+    c.strokeStyle = INK;
+    c.fillStyle = "#6c7488";
+    c.beginPath();
+    c.ellipse(320, 120, 300, 90, 0, 0, Math.PI);
+    c.lineTo(20, 80);
+    c.ellipse(320, 80, 300, 90, 0, Math.PI, 0, true);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.ellipse(320, 80, 300, 90, 0, 0, Math.PI * 2);
+    const g = c.createRadialGradient(300, 60, 20, 320, 80, 300);
+    g.addColorStop(0, "#d8deea");
+    g.addColorStop(1, "#9aa4b8");
+    c.fillStyle = g;
+    c.fill();
+    c.stroke();
+    c.strokeStyle = "rgba(60,66,84,0.5)";
+    c.lineWidth = 4;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      c.beginPath();
+      c.moveTo(320 + Math.cos(a) * 110, 80 + Math.sin(a) * 33);
+      c.lineTo(320 + Math.cos(a) * 290, 80 + Math.sin(a) * 87);
+      c.stroke();
+    }
   });
 }
