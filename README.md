@@ -237,6 +237,10 @@ hour of fishing brings.
   for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
   the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
 - **Boss Rush** is slower: your hero and the bosses move 1.5x slower than in a stage.
+- **Performance**: nothing visual was removed. Monsters, XP food and pickups far off screen are not drawn
+  (they still move and fight), mode decorations (dice graveyard, torches, bowls) are culled with the
+  scenery, text objects only redraw when their words, colour, size or outline really change, and the game
+  asks the phone for its fast GPU.
 - **Developer mode**: tap the top panel of the map 5 times. Every stage can then be played from the map.
 - **Roll reveal**: the class letters on each card spin like a slot machine and slow down (about 1.2 s),
   land on your class with a pop in its colours (1 s, better classes shake and flash), then the card flips

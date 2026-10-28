@@ -497,7 +497,7 @@ export class BattleScene extends Phaser.Scene {
   private stars!: Phaser.GameObjects.Particles.ParticleEmitter;
   private cashTexts: Phaser.GameObjects.Container[] = [];
 
-  private buckets = new Map<number, Phaser.GameObjects.Image[]>();
+  private buckets = new Map<number, (Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible)[]>();
   private shown = new Set<number>();
   private cullTimer = 0;
   private grid = new Map<number, Enemy[]>();
@@ -948,11 +948,12 @@ export class BattleScene extends Phaser.Scene {
   // ───────────────────────── arena ─────────────────────────
 
   /** Scenery far from the camera is hidden, so the big field stays fast. */
-  private addStatic(obj: Phaser.GameObjects.Image, x: number, y: number): void {
+  private addStatic(obj: Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible, x: number, y: number): void {
     const k = Math.floor(x / BUCKET) * 1000 + Math.floor(y / BUCKET);
     if (!this.buckets.has(k)) this.buckets.set(k, []);
     this.buckets.get(k)!.push(obj);
-    obj.setVisible(false);
+    // added while its patch of ground is already on screen: keep it shown
+    obj.setVisible(this.shown.has(k));
   }
 
   private cull(force = false): void {
@@ -964,6 +965,24 @@ export class BattleScene extends Phaser.Scene {
     for (const k of this.shown) if (!want.has(k)) this.buckets.get(k)?.forEach((o) => o.setVisible(false));
     for (const k of want) if (force || !this.shown.has(k)) this.buckets.get(k)?.forEach((o) => o.setVisible(true));
     this.shown = want;
+    // moving things far off screen are not drawn (they still move and fight); a wide margin so
+    // nothing pops in at the edge of the screen, even tall bosses
+    const [x0, x1, y0, y1] = [v.x - 400, v.right + 400, v.y - 400, v.bottom + 700];
+    const near = (x: number, y: number) => x > x0 && x < x1 && y > y0 && y < y1;
+    for (const e of this.enemies) {
+      const on = e.type.boss || near(e.img.x, e.img.y);
+      if (e.img.visible !== on) {
+        e.img.setVisible(on);
+        e.aura?.setVisible(on);
+        e.badge?.setVisible(on);
+      }
+    }
+    for (const f of this.food) f.img.setVisible(near(f.img.x, f.img.y));
+    for (const p of this.pickups) {
+      const on = near(p.x, p.y);
+      p.img.setVisible(on);
+      p.glow.setVisible(on);
+    }
   }
 
   private drawArena(): void {
@@ -2360,7 +2379,8 @@ export class BattleScene extends Phaser.Scene {
       for (let i = 0; i < 26; i++) {
         const [x, y] = this.randomSpot(500, 2600);
         const d = this.add.image(x, y, i % 2 ? "big_die" : "big_die3").setOrigin(0.5, 0.8).setScale(0.55 + (i % 3) * 0.15).setAngle(Phaser.Math.Between(-25, 25)).setTint(0xd8d0c0).setDepth(y);
-        this.add.ellipse(x, y, d.displayWidth * 0.9, 40, 0x3a2a1a, 0.35).setDepth(y - 1);
+        this.addStatic(d, x, y);
+        this.addStatic(this.add.ellipse(x, y, d.displayWidth * 0.9, 40, 0x3a2a1a, 0.35).setDepth(y - 1), x, y);
       }
       for (const [dx, dy] of [[-420, 380], [420, 380], [-300, -260], [300, -260]]) this.warnSign(cx + dx, cy + dy);
     }
@@ -2369,12 +2389,12 @@ export class BattleScene extends Phaser.Scene {
       // burning torches scattered around the field (no walls: the whole map is yours)
       for (let i = 0; i < 18; i++) {
         const [tx, ty] = this.randomSpot(500, 2600);
-        this.add.image(tx, ty, "torch").setOrigin(0.5, 1).setDepth(ty);
-        this.add.particles(tx, ty - 170, "spark", {
+        this.addStatic(this.add.image(tx, ty, "torch").setOrigin(0.5, 1).setDepth(ty), tx, ty);
+        this.addStatic(this.add.particles(tx, ty - 170, "spark", {
           x: { min: -14, max: 14 }, lifespan: 600, speedY: { min: -160, max: -80 }, scale: { start: 1.1, end: 0 },
           tint: [0xffe066, 0xff8a2a, 0xff3a3a], blendMode: Phaser.BlendModes.ADD, frequency: 40,
-        }).setDepth(ty + 1);
-        this.add.image(tx, ty - 170, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(ty);
+        }).setDepth(ty + 1), tx, ty);
+        this.addStatic(this.add.image(tx, ty - 170, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(ty), tx, ty);
       }
     }
     // only the crystal stage has a crystal to guard
@@ -2676,7 +2696,7 @@ export class BattleScene extends Phaser.Scene {
     cage.once("destroy", () => back.destroy());
     const bar = this.add.graphics().setDepth(cy + 42);
     this.feedSign = this.sign(cx + 470, cy + 260, "FEED ME!", `0/${FEEDS} snacks`, "#ffd29a");
-    for (const [dx, dy] of [[-380, 190], [-300, 260], [360, 120]]) this.add.image(cx + dx, cy + dy, "food_bowl").setDepth(cy + dy);
+    for (const [dx, dy] of [[-380, 190], [-300, 260], [360, 120]]) this.addStatic(this.add.image(cx + dx, cy + dy, "food_bowl").setDepth(cy + dy), cx + dx, cy + dy);
     // a thought bubble: what the beast wants
     const tg = this.add.graphics();
     tg.fillStyle(0xffffff, 1).fillEllipse(0, 0, 170, 130).fillCircle(-60, 90, 18).fillCircle(-84, 124, 10);
@@ -3017,7 +3037,12 @@ export class BattleScene extends Phaser.Scene {
       this.hpLabels.push(t);
     }
     this.hpUsed++;
-    t.setVisible(true).setPosition(x, y).setFontSize(size).setText(`${fmt(Math.max(0, Math.ceil(hp)))} / ${fmt(Math.ceil(max))}`);
+    // changing a text's size or words redraws its texture, so only do it when they change
+    if (t.getData("size") !== size) {
+      t.setData("size", size);
+      t.setFontSize(size);
+    }
+    t.setVisible(true).setPosition(x, y).setText(`${fmt(Math.max(0, Math.ceil(hp)))} / ${fmt(Math.ceil(max))}`);
   }
 
   private bossCutscene(): void {

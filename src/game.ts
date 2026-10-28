@@ -20,9 +20,33 @@ const heightFor = () => Math.round(Phaser.Math.Clamp((GAME_W * window.innerHeigh
  * Starts the game. `progress` hears how far it got (0.6 booted, 0.8 the world is built, 1 the
  * screens are ready); the promise resolves once the screens are ready.
  */
+/**
+ * Speed: Phaser redraws a text's whole texture on setColor / setFontSize / setStroke even when
+ * nothing changed, and the HUD calls them every frame. Skip the redraw when the value is the same.
+ */
+function cheapTextUpdates(): void {
+  const T = Phaser.GameObjects.Text.prototype;
+  const setColor = T.setColor;
+  T.setColor = function (this: Phaser.GameObjects.Text, color: string | CanvasGradient | CanvasPattern) {
+    return typeof color === "string" && this.style.color === color ? this : setColor.call(this, color);
+  };
+  const setFontSize = T.setFontSize;
+  T.setFontSize = function (this: Phaser.GameObjects.Text, size: number | string) {
+    const css = typeof size === "number" ? `${size}px` : size;
+    return this.style.fontSize === css ? this : setFontSize.call(this, size);
+  };
+  const setStroke = T.setStroke;
+  T.setStroke = function (this: Phaser.GameObjects.Text, color: string | CanvasGradient | CanvasPattern, thickness: number) {
+    return typeof color === "string" && this.style.stroke === color && this.style.strokeThickness === thickness ? this : setStroke.call(this, color, thickness);
+  };
+}
+
 export function startGame(progress: (f: number) => void = () => {}): { game: Phaser.Game; ready: Promise<void> } {
+  cheapTextUpdates();
   const game = new Phaser.Game({
     type: Phaser.AUTO,
+    // ask for the fast GPU and draw more sprites per batch (fewer draw calls)
+    render: { powerPreference: "high-performance" },
     parent: "game",
     backgroundColor: "#4a2f1d",
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_W, height: heightFor() },
