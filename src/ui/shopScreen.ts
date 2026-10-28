@@ -1065,10 +1065,11 @@ export class ShopScreen extends Screen {
     const W = this.scene.scale.width;
     for (const o of strip.list as unknown as (Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.Components.Visible & { x: number })[]) {
       const sx = o.x + strip.x;
-      // the card runs from 40 to W-40 and a step is ~170 wide: fade them out before the border
-      const edge = Math.min(sx - 130, W - 130 - sx);
-      o.setVisible(edge > -50);
-      o.setAlpha(Phaser.Math.Clamp((edge + 50) / 60, 0, 1));
+      // the card's inside runs from 50 to W-50 and a step is ~170 wide: a step is fully gone
+      // before any part of it reaches the border
+      const edge = Math.min(sx - 140, W - 140 - sx);
+      o.setVisible(edge > 0);
+      o.setAlpha(Phaser.Math.Clamp(edge / 70, 0, 1));
     }
   }
 

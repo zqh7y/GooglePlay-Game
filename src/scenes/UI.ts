@@ -1451,7 +1451,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private confirmStart(kind: FightKind): void {
     if (battle.mode !== "lobby" || this.openModal) return;
     const info = this.eventInfo(kind);
-    const h = 920;
+    const h = 1010;
     let go = false;
     const m = this.showModal(modal(this, 900, h, `START ${info.title}?`, info.color, () => {
       this.openModal = null;
@@ -1463,12 +1463,16 @@ export class UIScene extends Phaser.Scene implements Host {
     face.setScale(220 / Math.max(face.width, face.height));
     b.add([this.add.image(0, top + 250, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(1.2).setAlpha(0.6), face]);
     this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    b.add(text(this, 0, top + 400, info.sub, 44, "#c9663a"));
+    b.add(fitText(text(this, 0, top + 400, info.sub, 52, info.css, { stroke: 11 }), 800));
+    // each line on its own dark pill: an icon and big white outlined words
     info.lines.forEach(([icon, l], i) => {
-      const y = top + 480 + i * 66;
-      const ic = this.add.image(-330, y, icon);
-      ic.setScale(54 / Math.max(ic.width, ic.height));
-      b.add([ic, fitText(text(this, -286, y, l, 34, "#7a5236").setOrigin(0, 0.5), 640)]);
+      const y = top + 490 + i * 88;
+      const pill = this.add.graphics();
+      pill.fillStyle(0x5a3a22, 0.92).fillRoundedRect(-390, y - 36, 780, 72, 36);
+      pill.lineStyle(5, 0x2a1a10, 1).strokeRoundedRect(-390, y - 36, 780, 72, 36);
+      const ic = this.add.image(-342, y, icon);
+      ic.setScale(62 / Math.max(ic.width, ic.height));
+      b.add([pill, ic, fitText(text(this, -296, y, l, 40, "#ffffff", { stroke: 9 }).setOrigin(0, 0.5), 670)]);
     });
     b.add(this.startBtn = button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
       go = true;

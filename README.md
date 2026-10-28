@@ -237,8 +237,9 @@ hour of fishing brings.
   for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
   the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
 - **Developer mode**: tap the top panel of the map 5 times. Every stage can then be played from the map.
-- **Roll reveal**: each card first shows only its class (the big letter, like SSS) for 2 s, shaking more
-  for better classes, then flips over to the pet for another 2 s. A pull that was **1 in 1,000 or rarer
+- **Roll reveal**: the class letters on each card spin like a slot machine and slow down (about 1.2 s),
+  land on your class with a pop in its colours (1 s, better classes shake and flash), then the card flips
+  over to the pet for another 2 s. A pull that was **1 in 1,000 or rarer
   for you** (with your luck at that moment) gets a MIRACLE show: rainbow shockwaves, lightning, a
   spinning rainbow halo, a golden confetti storm and your odds in big letters.
 - **Tier dice** are little 3D cubes in their tier colour (S and better with a gold rim and sparkles,

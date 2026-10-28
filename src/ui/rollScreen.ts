@@ -711,7 +711,7 @@ export class RollScreen extends Screen {
     const fast = this.host.isFast();
     const quick = Phaser.Math.Clamp(rollTime() / 2000, 0.12, 1) * (fast ? 0.5 : 1);
     // first only the class card shows (the big letter), about 2 s, then it flips over
-    const classMs = fast ? 600 : 2000 + (info.superRoll ? 400 : 0);
+    const classMs = fast ? 600 : 2200;
     // the pet stays up about 2 s after its flip (quicker in FAST mode)
     const hold = fast ? Math.max(150, 700 * quick) + bestRank * 60 : 2000 + bestRank * 60;
     const fly = Math.max(140, 360 * quick);
@@ -782,16 +782,16 @@ export class RollScreen extends Screen {
       const splat = s.add.image(0, -12, "paint_splash").setScale(1.15).setAngle(Phaser.Math.Between(0, 359)).setAlpha(0.9);
       // the back of the card: the class colour, sunburst and the big class letter
       const cls = res.item.cls;
-      const letter = classText(s, 0, -20, cls, cls.length > 2 ? 96 : 140, cls);
+      const letter = classText(s, 0, -20, "?", 140, cls);
+      const backImg = s.add.image(0, 0, vividCard(s, 0x8a8aa8, CARD_W, CARD_H));
       const back = s.add.container(0, 0, [
-        s.add.image(0, 0, vividCard(s, TIER_INFO[cls].color, CARD_W, CARD_H)),
+        backImg,
         letter,
         text(s, 0, CARD_H / 2 - 50, "CLASS", 30, "#ffffff", { stroke: 7 }),
       ]);
       const front = [frame, rar, splat, pet, odds, name, badge];
       front.forEach((o) => o.setVisible(false));
       const card = s.add.container(x, y + 200, [frame, rar, splat, pet, odds, name, badge, back]).setScale(0);
-      s.tweens.add({ targets: letter, scale: 1.12, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       layer.add([rays, glow, card]);
       cards.push(card);
       extras.push(glow, rays);
@@ -811,27 +811,64 @@ export class RollScreen extends Screen {
       };
       const stagger = n > 3 ? 30 : 60;
       s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * stagger, ease: "Back.out" });
+      // 1. the class letters spin like a slot machine and slow down, 2. the class you got pops
+      // in its colours for a second, 3. the card flips over to the pet
       const classPhase = () => {
         const crank = tierIndex(cls);
-        glow.setTint(TIER_INFO[cls].color).setAlpha(0.6);
-        if (loud) sfx.charge(Math.min(6, 1 + crank));
-        // the better the class, the more it shakes before the flip
-        if (crank >= 3) s.tweens.add({ targets: card, angle: { from: -3, to: 3 }, duration: 70, yoyo: true, repeat: Math.floor(classMs / 140) - 2, delay: classMs * 0.4 });
-        s.tweens.add({ targets: glow, scale: scale * (2 + crank * 0.15), duration: classMs, ease: "Quad.in" });
-        s.time.delayedCall(classMs, () => {
-          // flip: squeeze to nothing, swap faces, open again on the pet
+        const spinMs = fast ? 300 : 1200;
+        const popMs = fast ? 300 : 1000;
+        const pool = DICE_TIERS.slice(0, Math.min(DICE_TIERS.length, Math.max(4, crank + 3)));
+        const face = (tt: Tier) => {
+          letter.setText(tt).setFontSize(tt.length > 2 ? 92 : 140);
+          setClassTint(letter, tt);
+          backImg.setTexture(vividCard(s, TIER_INFO[tt].color, CARD_W, CARD_H));
+        };
+        let t = 0;
+        let k = 0;
+        const spinTick = () => {
+          face(pool[(k + i) % pool.length]);
+          if (i === 0) sfx.tick(k);
+          k++;
+          s.tweens.add({ targets: card, y: y - 12, duration: 35, yoyo: true });
+          const p = t / spinMs;
+          const delay = 45 + 140 * p * p;
+          t += delay;
+          s.time.delayedCall(delay, t < spinMs ? spinTick : stop);
+        };
+        const stop = () => {
+          face(cls);
+          const color = TIER_INFO[cls].color;
+          s.tweens.add({ targets: letter, scale: { from: 1.9, to: 1 }, duration: 320, ease: "Back.out" });
+          s.tweens.add({ targets: card, scaleX: scale * 1.15, scaleY: scale * 1.15, duration: 120, yoyo: true });
+          glow.setTint(color).setAlpha(0.9);
+          s.tweens.add({ targets: glow, scale: scale * (2.1 + crank * 0.15), duration: 300, ease: "Back.out" });
+          burst.setParticleTint(color);
+          burst.explode(8 + crank * 6, x, y);
+          if (loud) sfx.reveal(Math.min(6, crank));
+          // better classes shake and flash before they flip
+          if (crank >= 3) s.tweens.add({ targets: card, angle: { from: -4, to: 4 }, duration: 60, yoyo: true, repeat: Math.max(1, Math.floor(popMs / 120) - 1), delay: 320 });
+          if (crank >= 5 && loud) {
+            s.cameras.main.flash(160, (color >> 16) & 255, (color >> 8) & 255, color & 255);
+            s.cameras.main.shake(200, 0.005);
+          }
+          s.time.delayedCall(popMs, flip);
+        };
+        // flip: squeeze to nothing, swap faces, open again on the pet
+        const flip = () => {
+          s.tweens.killTweensOf(card);
           s.tweens.add({
-            targets: card, scaleX: 0, duration: 130, ease: "Quad.in",
+            targets: card, scaleX: 0, scaleY: scale, angle: 0, duration: 130, ease: "Quad.in",
             onComplete: () => {
               s.tweens.killTweensOf(letter);
               back.setVisible(false);
               front.forEach((o) => o.setVisible(true));
-              card.setAngle(0);
-              s.tweens.add({ targets: card, scaleX: scale, duration: 150, ease: "Back.out" });
+              card.setAngle(0).setScale(0, scale).setY(y);
+              s.tweens.add({ targets: card, scaleX: scale, duration: 160, ease: "Back.out" });
               land();
             },
           });
-        });
+        };
+        spinTick();
       };
       const land = () => {
         show(res.item, true);
@@ -846,7 +883,7 @@ export class RollScreen extends Screen {
           if (loud) s.cameras.main.flash(180, (color >> 16) & 255, (color >> 8) & 255, color & 255);
           if (res === best) this.confetti([color, 0xffffff, 0xffe066, 0xff7ab8, 0x5ac8ff], 30 + rank * 12);
         }
-        s.tweens.add({ targets: card, scaleX: scale * 1.22, scaleY: scale * 0.84, duration: 80, yoyo: true, ease: "Quad.out" });
+        s.tweens.add({ targets: card, scaleY: scale * 0.84, duration: 80, yoyo: true, ease: "Quad.out", delay: 160 });
         s.tweens.add({ targets: glow, scale: scale * (2.2 + rank * 0.25), alpha: 0.6, duration: 260 });
         if (rank >= 1) {
           burst.setParticleTint(color);
