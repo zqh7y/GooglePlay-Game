@@ -1,7 +1,7 @@
 import Phaser from "phaser";
-import { INK_N, darken, rgba } from "../art/draw";
+import { INK_N, canvasTexture, darken, lighten, rgba } from "../art/draw";
 import { petTexture } from "../art/pets";
-import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
+import { btnTexture, panelTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS, recommendedDps } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -29,8 +29,9 @@ import { makeOnlineTextures } from "../art/online";
 import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
 import { askName, showLeaderboard } from "../ui/leaderboard";
 import { Tutorial } from "../ui/tutorial";
-import { lastSeenAtLoad, persist, resetSave, save, totalDice, stageCap } from "../systems/save";
+import { lastSeenAtLoad, persist, resetSave, save, totalDice, stageCap, diceEventLeft } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
+import { applySettings } from "../systems/settings";
 import {
   autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, gemsPerBoss, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
 } from "../systems/stats";
@@ -47,7 +48,7 @@ import { BtnColor } from "../art/ui";
 import { MODE_INFO, StageMode, modeForStage } from "../data/modes";
 import type { DailyReward } from "../systems/goals";
 import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
-import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
+import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
 import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
 
@@ -93,6 +94,14 @@ interface NavTab {
  * Everything drawn over the world: the bottom tab bar (Shop, Pets, Battle, Roll, Upgrades),
  * the top bar, the battle overlay, rolling, celebrations and popups.
  */
+/** "13d 4h", "5h 12m" or "9m" */
+const dhm = (ms: number) => {
+  const m = Math.floor(ms / 60000);
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m % 60}m`;
+};
+
 export class UIScene extends Phaser.Scene implements Host {
   private W = GAME_W;
   private H = 0;
@@ -162,6 +171,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private lastCount = 0;
   /** the fishing event's card in the lobby */
   private eventCard!: Phaser.GameObjects.Container;
+  private diceEventCard!: Phaser.GameObjects.Container;
+  private diceEventTime!: Phaser.GameObjects.Text;
   private eventBar!: Phaser.GameObjects.Graphics;
   private eventText!: Phaser.GameObjects.Text;
   private eventGlow!: Phaser.GameObjects.Image;
@@ -196,6 +207,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   create(): void {
+    applySettings(this.game);
     this.H = this.scale.height;
     this.L = layoutFor(this.H);
     Object.assign(this, { openModal: null, celebrating: false, picker: null, badges: [], tab: "battle", mapOpen: false, nav: {}, mode: "" });
@@ -672,14 +684,19 @@ export class UIScene extends Phaser.Scene implements Host {
     tracker.on("pointerout", () => tracker.setScale(1));
     this.lobby.add(tracker);
     // small round shortcuts down the left side
+    // big icons with a shadow and a label under them, in two columns (no round backgrounds)
     const side = (i: number, icon: string, str: string, fn: () => void, badge?: () => boolean) => {
-      const x = 64;
-      const y = this.L.hudBottom + 70 + i * 122;
+      const x = 74 + (i % 2) * 136;
+      const y = this.L.hudBottom + 92 + Math.floor(i / 2) * 150;
+      const k = 92 / Math.max(this.textures.getFrame(icon).width, this.textures.getFrame(icon).height);
+      const pic = this.add.image(0, -8, icon).setScale(k);
+      this.tweens.add({ targets: pic, y: -14, duration: 900 + i * 110, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const b = this.add.container(x, y, [
-        this.add.circle(0, 0, 42, 0x3a2516, 0.7).setStrokeStyle(4, 0xffe6b8, 0.85),
-        this.add.image(0, -2, icon).setScale(54 / Math.max(this.textures.getFrame(icon).width, this.textures.getFrame(icon).height)),
-        text(this, 0, 52, str, 22, "#fff3dc"),
-      ]).setSize(96, 120).setInteractive({ useHandCursor: true });
+        this.add.circle(0, -8, 52, 0x2f6f3a, 0).setStrokeStyle(5, 0x8af06a, 0),
+        this.add.image(5, -2, icon).setScale(k).setTintFill(0x000000).setAlpha(0.3),
+        pic,
+        text(this, 0, 54, str, 27, "#ffffff", { stroke: 7 }),
+      ]).setSize(124, 140).setInteractive({ useHandCursor: true });
       b.on("pointerdown", () => this.tweens.add({ targets: b, scale: 0.88, duration: 60 }));
       b.on("pointerout", () => b.setScale(1));
       b.on("pointerup", () => {
@@ -688,7 +705,7 @@ export class UIScene extends Phaser.Scene implements Host {
         fn();
       });
       this.lobby.add(b);
-      if (badge) this.addBadge(x + 32, y - 32, badge);
+      if (badge) this.addBadge(x - 40, y - 52, badge);
       return b;
     };
     side(0, "icon_map", "Map", () => this.openMap());
@@ -703,8 +720,9 @@ export class UIScene extends Phaser.Scene implements Host {
     });
     side(5, "icon_trophy", "Ranks", () => showLeaderboard(this, this, () => (this.openModal = null)));
     this.buildEventCard();
+    this.buildDiceEventCard();
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
-    this.afkLabel = afk.list[2] as Phaser.GameObjects.Text;
+    this.afkLabel = afk.list[3] as Phaser.GameObjects.Text;
     this.refreshAfk();
 
     // ── the fight: clock, level, crystal, gun, pause and stats
@@ -807,7 +825,38 @@ export class UIScene extends Phaser.Scene implements Host {
     this.refreshEventCard();
   }
 
+  /** The beginners' Dice Rain event card (first 14 days): a bouncing die, the time left. */
+  private buildDiceEventCard(): void {
+    const x = this.W - 136;
+    const y = this.L.hudBottom + 820;
+    const glow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(1.5, 1.6).setAlpha(0.5);
+    this.tweens.add({ targets: glow, alpha: 0.9, duration: 600, yoyo: true, repeat: -1 });
+    const shadow = this.add.ellipse(0, 50, 90, 22, 0x000000, 0.3);
+    const die = this.add.image(0, -10, "die_S").setScale(1.25);
+    this.tweens.add({ targets: die, y: -40, angle: 20, duration: 450, yoyo: true, repeat: -1, ease: "Quad.out" });
+    this.tweens.add({ targets: shadow, scaleX: 0.7, duration: 450, yoyo: true, repeat: -1, ease: "Quad.out" });
+    const ribbon = this.add.image(0, -126, "event_ribbon").setScale(0.84).setTint(0xffd0ff);
+    this.diceEventTime = text(this, 0, 104, "", 24, "#ffffff", { stroke: 6 });
+    const c = this.add.container(x, y, [
+      glow, this.add.image(0, 0, vividCard(this, 0xffa040, 230, 250)), shadow, die, ribbon,
+      text(this, 0, -132, "NEW!", 32, "#fff3c8"), text(this, 0, 70, "DICE RAIN", 34, "#ffffff", { stroke: 8 }), this.diceEventTime,
+    ]).setSize(240, 270).setInteractive({ useHandCursor: true });
+    c.on("pointerdown", () => this.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
+    c.on("pointerout", () => c.setScale(1));
+    c.on("pointerup", () => {
+      c.setScale(1);
+      unlockAudio();
+      sfx.click();
+      this.confirmStart("event");
+    });
+    this.diceEventCard = c;
+    this.lobby.add(c);
+  }
+
   private refreshEventCard(): void {
+    const left = diceEventLeft();
+    this.diceEventCard?.setVisible(left > 0);
+    if (left > 0) this.diceEventTime?.setText(dhm(left));
     const e = save.fishing.event;
     const ready = eventReady();
     const n = eventNext();
@@ -848,7 +897,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   private addBadge(x: number, y: number, show: () => boolean): void {
-    const obj = this.add.container(x, y, [this.add.circle(0, 0, 15, 0xf03e3e).setStrokeStyle(4, INK_N), text(this, 0, -1, "!", 24)]).setVisible(false);
+    const obj = this.add.container(x, y, [this.add.circle(0, 0, 19, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(this, 0, -1, "!", 28, "#ffffff", { stroke: 5 })]).setVisible(false);
     this.tweens.add({ targets: obj, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(obj);
     this.badges.push({ obj, show });
@@ -1418,8 +1467,9 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   private refreshAfk(): void {
-    this.afkLabel.setText(save.afk ? "AFK ON" : "AFK").setColor(save.afk ? "#8af06a" : "#fff3dc");
-    this.afkRing.setFillStyle(save.afk ? 0x2f6f3a : 0x3a2516, 0.7).setStrokeStyle(4, save.afk ? 0x8af06a : 0xffe6b8, 0.85);
+    this.afkLabel.setText(save.afk ? "AFK ON" : "AFK").setColor(save.afk ? "#8af06a" : "#ffffff");
+    // a green ring behind the icon while AFK is on
+    this.afkRing.setFillStyle(0x2f6f3a, save.afk ? 0.55 : 0).setStrokeStyle(5, 0x8af06a, save.afk ? 1 : 0);
   }
 
   /** Play a stage you already reached: the lobby (and its land) switches to it. */
@@ -1446,27 +1496,28 @@ export class UIScene extends Phaser.Scene implements Host {
     if (this.openModal && !this.openModal.root.active) this.openModal = null;
     if (battle.mode !== "lobby" || this.openModal) return;
     const rush = kind === "rush";
+    const ev = kind === "event";
     const def = bossForStage(save.stage);
-    const mode = MODE_INFO[modeForStage(save.stage)];
+    const mode = MODE_INFO[ev ? "dice" : modeForStage(save.stage)];
     const w = 960;
     const h = 1280;
     let go = false;
     const m = this.showModal(modal(this, w, h, "", rush ? "purple" : "orange", () => {
       this.openModal = null;
-      if (go) this.game.events.emit(rush ? "rush-start" : "battle-start");
+      if (go) this.game.events.emit(rush ? "rush-start" : ev ? "event-start" : "battle-start");
     }, undefined, true));
     const b = m.body;
     const top = -h / 2;
     const color = rush ? 0xb36aff : mode.color;
     b.addAt(this.add.image(4, 10, vividCard(this, color, w - 20, h - 40)), 1);
     // the title and the mode
-    b.add(fitText(text(this, 0, top + 110, rush ? "BOSS RUSH" : `STAGE ${save.stage}`, 104, "#ffffff", { stroke: 18 }), w - 160));
+    b.add(fitText(text(this, 0, top + 110, rush ? "BOSS RUSH" : ev ? "DICE RAIN" : `STAGE ${save.stage}`, 104, "#ffffff", { stroke: 18 }), w - 160));
     const chipW = 520;
     const tag = this.add.graphics();
     tag.fillStyle(0x14213d, 0.55).fillRoundedRect(-chipW / 2, top + 180, chipW, 76, 38);
     b.add([tag,
       this.add.image(-chipW / 2 + 48, top + 218, rush ? "icon_clock" : mode.icon).setScale(rush ? 0.5 : 0.52),
-      fitText(text(this, 30, top + 218, rush ? `${RUSH_MS / 1000}s PER BOSS` : mode.name, 40, rush ? "#ffe066" : mode.css, { stroke: 9 }), chipW - 130),
+      fitText(text(this, 30, top + 218, rush ? `${RUSH_MS / 1000}s PER BOSS` : ev ? `EVENT  •  ${dhm(diceEventLeft())}` : mode.name, 40, rush ? "#ffe066" : mode.css, { stroke: 9 }), chipW - 130),
     ]);
     // the boss on a spinning sunburst
     const by = top + 500;
@@ -1487,7 +1538,7 @@ export class UIScene extends Phaser.Scene implements Host {
       : [
         [modeForStage(save.stage) === "boss" ? "mode_boss" : "icon_clock", modeForStage(save.stage) === "boss" ? "x4" : "5:00", "#ffffff"],
         ["icon_sword", `${fmt(dps)}/${fmt(rec)}`, dps >= rec ? "#b6ff8a" : "#ffb0a0"],
-        ["icon_gem", `+${gemsPerBoss()}`, "#9ae6ff"],
+        ["icon_gem", ev ? "+20" : `+${gemsPerBoss()}`, "#9ae6ff"],
       ];
     const cy = top + 900;
     chips.forEach(([icon, val, css], i) => {
@@ -1585,7 +1636,7 @@ export class UIScene extends Phaser.Scene implements Host {
     } else {
       if (anyNew) this.time.delayedCall(2400, () => this.indexMilestone());
       this.miniReveal(results);
-      this.afterReveal(results, 5, record);
+      this.sideReveal(results, record);
       for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice, +${g.gems} gems!`, "#ffe066");
     }
   }
@@ -1616,11 +1667,39 @@ export class UIScene extends Phaser.Scene implements Host {
     }
   }
 
-  /** Big pulls (new, far beyond your luck, or a new record) get the full-screen moment. */
-  private afterReveal(results: RollResult[], minRank: number, record: boolean): void {
+  /**
+   * Away from the Roll screen a great pull does not take over the screen: its card slides in from
+   * the side with a glow, rays and sparkles, and slides out again.
+   */
+  private sideReveal(results: RollResult[], record: boolean): void {
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const rank = rarityRank(best.item.rarity);
-    if (rank >= minRank && (best.isNew || record || best.item.oneIn >= luck() * 500)) this.celebrate(best, record);
+    if (!(rank >= 3 && (best.isNew || record || best.item.oneIn >= luck() * 100))) return;
+    const { W, H } = this;
+    const info = RARITY_INFO[best.item.rarity];
+    const cls = best.item.cls;
+    const y = H * 0.44;
+    const rays = this.add.image(-130, 0, "rays").setTint(info.color).setScale(0.55).setAlpha(0.7);
+    this.tweens.add({ targets: rays, angle: 360, duration: 5000, repeat: -1 });
+    const pet = this.add.image(-130, 6, petTexture(this, best.item.id)).setScale(0.75);
+    this.tweens.add({ targets: pet, y: -6, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const card = this.add.container(W + 300, y, [
+      this.add.image(4, 6, vividCard(this, info.color, 540, 260)),
+      rays, this.add.image(-130, 0, "paint_splash").setScale(1.1).setTint(lighten(info.color, 0.5)), pet,
+      fitText(text(this, 60, -70, record ? "NEW RECORD!" : best.isNew ? "NEW PET!" : `${info.label.toUpperCase()}!`, 40, "#ffe066", { stroke: 9 }).setOrigin(0, 0.5), 230),
+      fitText(classText(this, 60, -10, best.item.name, 38, cls).setOrigin(0, 0.5), 230),
+      fitText(text(this, 60, 50, `${oneIn(best.item.oneIn)}  •  ${cls}`, 30, "#ffffff", { stroke: 7 }).setOrigin(0, 0.5), 230),
+    ]).setDepth(5600).setAngle(-4);
+    this.tweens.add({ targets: card, x: W - 290, duration: 420, ease: "Back.out" });
+    this.tweens.add({ targets: card, angle: 4, duration: 700, yoyo: true, repeat: 2, ease: "Sine.inOut" });
+    const sparks = this.add.particles(0, 0, "spark", {
+      speed: { min: 120, max: 380 }, lifespan: 700, scale: { start: 0.8, end: 0 }, tint: [info.color, 0xffffff, 0xffe066], emitting: false,
+    }).setDepth(5601);
+    this.time.delayedCall(380, () => sparks.explode(30 + rank * 8, W - 420, y));
+    sfx.reveal(Math.min(6, rank));
+    if (record) sfx.record();
+    buzz(60);
+    this.tweens.add({ targets: card, x: W + 320, duration: 380, delay: 3400, ease: "Back.in", onComplete: () => (card.destroy(), sparks.destroy()) });
   }
 
   /** While you are on another screen, rolled pets pop up quietly above the Roll tab. */
@@ -1643,54 +1722,6 @@ export class UIScene extends Phaser.Scene implements Host {
     if (rank >= 3) sfx.reveal(rank);
   }
 
-  /** Full-screen moment for great pulls. */
-  private celebrate(res: RollResult, record = false): void {
-    this.celebrating = true;
-    const { W, H } = this;
-    const info = RARITY_INFO[res.item.rarity];
-    const cy = H * 0.42;
-    const dim = this.add.rectangle(0, 0, W, H, 0x2a1a10, 0.82).setOrigin(0).setInteractive();
-    const rays = this.add.image(W / 2, cy, "rays").setScale(2.3).setTint(info.color).setAlpha(0.5);
-    const glow = this.add.image(W / 2, cy, "glow").setScale(3.2).setTint(info.color).setAlpha(0.85);
-    const title = text(this, W / 2, cy - 470, `${info.label.toUpperCase()}!`, 116, info.css);
-    const card = petCard(this, W / 2, cy, res.item.id, { isNew: res.isNew }).setScale(0);
-    const odds = classText(this, W / 2 + 70, cy + 345, oneIn(res.item.oneIn), 66, res.item.cls);
-    const badge = classBadge(this, odds.x - odds.width / 2 - 80, cy + 345, res.item.cls, 84);
-    const tap = text(this, W / 2, cy + 470, "TAP TO CONTINUE", 40);
-    const root = this.add.container(0, 0, [dim, rays, glow, card, title, odds, badge, tap]).setDepth(6000);
-    if (record) {
-      const rec = this.add.container(W / 2, cy - 360, [
-        this.add.image(0, 0, ribbonTexture(this, "gold", 560, 104)), text(this, 0, -12, "NEW RECORD!", 48),
-      ]).setScale(0);
-      root.add(rec);
-      this.tweens.add({ targets: rec, scale: 1, duration: 400, delay: 600, ease: "Back.out", onStart: () => sfx.record() });
-    }
-    // confetti in the pet's colours
-    const confetti = this.add.particles(0, -30, "petal", {
-      x: { min: 0, max: W }, speedY: { min: 250, max: 650 }, speedX: { min: -220, max: 220 }, rotate: { start: 0, end: 720 },
-      lifespan: 3200, gravityY: 300, scale: { min: 0.9, max: 1.7 }, tint: [info.color, 0xffffff, 0xffe066, 0xff7ab8, 0x5ac8ff], frequency: 40, quantity: 2,
-    });
-    root.add(confetti);
-    this.time.delayedCall(1600, () => confetti.stop());
-    this.cameras.main.flash(300, 255, 250, 230);
-    sfx.fanfare();
-    buzz(200);
-    this.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
-    this.tweens.add({ targets: card, scale: 1.75, duration: 500, ease: "Back.out" });
-    this.tweens.add({ targets: card, y: cy - 14, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 500 });
-    title.setScale(0);
-    this.tweens.add({ targets: title, scale: 1, duration: 450, delay: 150, ease: "Back.out" });
-    this.tweens.add({ targets: tap, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      this.tweens.add({ targets: root, alpha: 0, duration: 220, onComplete: () => (root.destroy(), (this.celebrating = false)) });
-    };
-    this.time.delayedCall(700, () => dim.once("pointerup", finish));
-    if (save.autoRoll) this.time.delayedCall(3000, finish);
-  }
-
   private indexMilestone(): void {
     if (!checkIndexMilestones()) return;
     sfx.levelUp();
@@ -1700,7 +1731,7 @@ export class UIScene extends Phaser.Scene implements Host {
   // ───────────────────────── stage and land moments ─────────────────────────
 
   /** "STAGE 7 CLEAR!" with stars popping in and the money counting up. */
-  private stageClear(info: { stage: number; earned: number; gems: number; dice: Record<Tier, number>; final: boolean }): void {
+  private stageClear(info: { event?: boolean; stage: number; earned: number; gems: number; dice: Record<Tier, number>; final: boolean }): void {
     syncSoon();
     const dice = DICE_TIERS.reduce((s, t) => s + info.dice[t], 0);
     const { W } = this;
@@ -1709,7 +1740,7 @@ export class UIScene extends Phaser.Scene implements Host {
     band.fillStyle(0x1a0e08, 0.75).fillRect(0, -170, W, 340);
     band.fillStyle(0xffd23f, 1).fillRect(0, -170, W, 8).fillRect(0, 162, W, 8);
     const rays = this.add.image(W / 2, -40, "rays").setTint(0xffd23f).setAlpha(0.45).setScale(1.1);
-    const title = fitText(text(this, W / 2, -70, info.final ? "YOU CONQUERED EVERY LAND!" : `STAGE ${info.stage} CLEAR!`, info.final ? 62 : 90, "#ffe066"), W - 60);
+    const title = fitText(text(this, W / 2, -70, info.final && !info.event ? "YOU CONQUERED EVERY LAND!" : info.event ? "DICE RAIN CLEAR!" : `STAGE ${info.stage} CLEAR!`, info.final ? 62 : 90, "#ffe066"), W - 60);
     const stars = [0, 1, 2].map((i) => this.add.image(W / 2 + (i - 1) * 120, 30, "icon_star").setScale(0));
     const earned = text(this, W / 2 - 280, 110, "+0", 52, "#8af06a").setOrigin(0, 0.5);
     const root = this.add.container(0, cy, [
@@ -2003,74 +2034,185 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(label(this, 0, h / 2 - 70, `Rarest roll: ${oneIn(save.bestRoll)}   •   Rolls: ${fmt(save.totalRolls)}`, 28, "#9a7a5a"));
   }
 
-  private showSettings(): void {
-    const dev = !onlineEnabled() || new URLSearchParams(location.search).has("dev");
-    const h = dev ? 1320 : 1080;
-    const m = this.showModal(modal(this, 860, h, "SETTINGS", "peach", () => (this.openModal = null)));
-    m.body.add(label(this, 0, -h / 2 + 150,
-      `Best stage: ${save.bestStage}/${MAX_STAGE}\nMonsters defeated: ${fmt(save.totalKills)}\nRolls: ${fmt(save.totalRolls)}\nRarest roll: ${oneIn(save.bestRoll)}\nPets found: ${save.discovered.length}/${PET_LIST.length}`, 34, "#7a5236"));
-    let y = -h / 2 + 330;
-    const snd: Button = button(this, -190, y, 360, 96, isMuted() ? "grey" : "green", isMuted() ? "Sound: OFF" : "Sound: ON", () => {
-      setMuted(!isMuted());
-      snd.setLabel(isMuted() ? "Sound: OFF" : "Sound: ON").setColor(isMuted() ? "grey" : "green");
-    }, { size: 32 });
-    const mus: Button = button(this, 190, y, 360, 96, music.isOn() ? "green" : "grey", music.isOn() ? "Music: ON" : "Music: OFF", () => {
-      music.setOn(!music.isOn());
-      mus.setLabel(music.isOn() ? "Music: ON" : "Music: OFF").setColor(music.isOn() ? "green" : "grey");
-    }, { size: 32 });
-    m.body.add([snd, mus]);
-    // your online account
-    y += 120;
-    const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
+  /** Settings: a cyan header, coloured tabs on the left and switch rows on the right. */
+  private showSettings(tab = 0): void {
+    const W = 1000;
+    const H = 1080;
+    const m = this.showModal(modal(this, W, H, "", "blue", () => (this.openModal = null), undefined, true));
+    const g = this.add.graphics();
+    m.body.add(g);
+    const box = (x: number, y: number, w: number, h: number, fill: number, r: number, edge = darken(fill, 0.3)) => {
+      g.fillStyle(0x000000, 0.25).fillRoundedRect(x - w / 2, y - h / 2 + 8, w, h, r);
+      g.fillStyle(edge, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+      g.fillStyle(fill, 1).fillRoundedRect(x - w / 2 + 5, y - h / 2 + 5, w - 10, h - 14, r - 4);
+      g.fillStyle(0xffffff, 0.22).fillRoundedRect(x - w / 2 + 12, y - h / 2 + 9, w - 24, (h - 14) * 0.38, r - 8);
+    };
+    // header
+    const top = -H / 2 + 75;
+    box(0, top, W - 20, 140, 0x34c8f0, 30);
     m.body.add([
-      this.add.image(-330, y, "icon_globe").setScale(0.5),
-      fitText(label(this, -290, y, `${playerName()}  •  ${who}`, 32, "#4a2f1d").setOrigin(0, 0.5), 620),
+      this.add.image(-270, top - 4, "icon_gear").setScale(0.95),
+      text(this, 30, top - 6, "SETTINGS", 72, "#ffffff", { stroke: 12 }),
     ]);
-    y += 100;
-    const play = onlineEnabled() && canUsePlayGames() && online.provider !== "playgames";
-    // in a browser: the button shows what the Android app has
-    const playLater = !canUsePlayGames();
-    m.body.add(button(this, play || playLater ? -190 : 0, y, 360, 96, "blue", "CHANGE NAME", () => {
-      askName(this);
-      m.close();
-      this.time.delayedCall(150, () => this.showSettings());
-    }, { size: 30 }));
-    if (play) {
-      // optional: nobody has to sign in; this keeps your entry if you change phones
-      m.body.add(button(this, 190, y, 360, 96, "green", "GOOGLE PLAY", () => {
+    // the light panel under it
+    box(0, top + 80 + (H - 170) / 2, W - 20, H - 170, 0xe9f2fb, 34, 0x9ab4d0);
+    const close = m.body.list.find((o) => o instanceof Phaser.GameObjects.Image && o.texture.key === "icon_close");
+    if (close) m.body.bringToTop(close);
+
+    const TABS: { name: string; icon: string; color: number }[] = [
+      { name: "Audio", icon: this.glyph("note"), color: 0xc64ae8 },
+      { name: "Graphics", icon: "icon_star", color: 0xff9a2a },
+      { name: "Interface", icon: this.glyph("screen"), color: 0x3a8af0 },
+      { name: "Account", icon: "icon_globe", color: 0x3ac06a },
+    ];
+    const tabX = -W / 2 + 160;
+    TABS.forEach((t, i) => {
+      const y = top + 180 + i * 170;
+      const on = i === tab;
+      box(tabX + (on ? 10 : 0), y, on ? 250 : 230, 150, on ? t.color : darken(t.color, 0.25), 26);
+      if (on) g.fillStyle(t.color, 1).fillTriangle(tabX + 132, y - 26, tabX + 132, y + 26, tabX + 162, y);
+      const c = this.add.container(tabX + (on ? 10 : 0), y, [
+        this.fit(this.add.image(0, -16, t.icon), on ? 82 : 70).setAlpha(on ? 1 : 0.8),
+        fitText(text(this, 0, 44, t.name, on ? 30 : 26, on ? "#ffffff" : "#e8e0f0", { stroke: 6 }), 210),
+      ]).setSize(230, 150).setInteractive({ useHandCursor: true });
+      if (!on) c.on("pointerup", () => {
+        sfx.click();
+        m.root.destroy();
+        this.openModal = null;
+        this.showSettings(i);
+      });
+      m.body.add(c);
+    });
+
+    // the rows
+    const RX = 135;
+    const RW = 680;
+    m.body.add(text(this, RX, top + 135, TABS[tab].name, 54, "#3a5a80", { stroke: false }));
+    let y = top + 260;
+    const row = (icon: string, title: string, sub: string, ctrl?: (y: number) => Phaser.GameObjects.GameObject[]) => {
+      box(RX, y, RW, 150, 0xffffff, 26, 0xc9d8e8);
+      box(RX - RW / 2 + 82, y - 2, 118, 118, 0xff9a2a, 22);
+      m.body.add([
+        this.fit(this.add.image(RX - RW / 2 + 82, y - 6, icon), 84),
+        fitText(text(this, RX - RW / 2 + 162, y - 24, title, 36, "#2a3a55", { stroke: false }).setOrigin(0, 0.5), ctrl ? 300 : 480),
+        fitText(text(this, RX - RW / 2 + 162, y + 22, sub, 23, "#7a8aa0", { stroke: false }).setOrigin(0, 0.5), ctrl ? 300 : 480),
+        ...(ctrl?.(y) ?? []),
+      ]);
+      y += 172;
+    };
+    const toggle = (get: () => boolean, set: (on: boolean) => void) => (yy: number) => {
+      const b: Button = button(this, RX + RW / 2 - 100, yy - 4, 150, 86, get() ? "green" : "red", get() ? "ON" : "OFF", () => {
+        set(!get());
+        persist();
+        applySettings(this.game);
+        b.setLabel(get() ? "ON" : "OFF").setColor(get() ? "green" : "red");
+      }, { size: 36 });
+      return [b];
+    };
+    const action = (str: string, color: BtnColor, fn: () => void) => (yy: number) => [
+      button(this, RX + RW / 2 - 110, yy - 4, 180, 86, color, str, fn, { size: 26 }),
+    ];
+    const st = save.settings;
+    if (tab === 0) {
+      row(this.glyph("note"), "Music", "Songs in the lobby and fights", toggle(() => music.isOn(), (on) => music.setOn(on)));
+      row(this.glyph("speaker"), "Sound", "Hits, rolls and rewards", toggle(() => !isMuted(), (on) => setMuted(!on)));
+      row(this.glyph("phone"), "Vibration", "Buzz on big moments", toggle(() => st.vibrate, (on) => (st.vibrate = on)));
+    } else if (tab === 1) {
+      row("icon_bolt", "Toaster mode", "Lowest graphics, smoothest play", toggle(() => st.toaster, (on) => (st.toaster = on)));
+      row("icon_star", "Zone effects", "Fog, light beams and fire", toggle(() => st.effects, (on) => (st.effects = on)));
+      row(this.glyph("shake"), "Screen shake", "Shake on hits and bombs", toggle(() => st.shake, (on) => (st.shake = on)));
+      m.body.add(label(this, RX, y + 10, "Toaster mode and zone effects\nchange from the next fight.", 26, "#7a8aa0"));
+    } else if (tab === 2) {
+      row("icon_sword", "Damage numbers", "Numbers when you hit", toggle(() => st.dmgNumbers, (on) => (st.dmgNumbers = on)));
+      row("pk_heart", "HP numbers", "Health under the bars", toggle(() => st.hpNumbers, (on) => (st.hpNumbers = on)));
+      row("icon_book", "Story", "Watch the opening again", action("WATCH", "purple", () => {
+        m.close();
+        void this.replayStory();
+      }));
+    } else {
+      const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
+      row("icon_paw", playerName(), who, action("RENAME", "blue", () => {
+        askName(this);
+        m.close();
+      }));
+      const play = onlineEnabled() && canUsePlayGames() && online.provider !== "playgames";
+      row("icon_globe", "Google Play", play ? "Keep your ranks on a new phone" : "In the Google Play app", action(play ? "SIGN IN" : "SOON", play ? "green" : "grey", () => {
+        if (!play) return this.toast("Google Play sign-in is in the Android app (no sign-in needed to play)", "#ffe680");
         m.close();
         void signInWithPlay().then((ok) => this.toast(ok ? `Signed in with Google Play as ${playerName()}` : "Google Play sign-in didn't work, you can keep playing as you are", ok ? "#8af06a" : "#ffe680"));
-      }, { size: 30, icon: "icon_globe", iconSize: 48 }));
-      y += 70;
-      m.body.add(label(this, 190, y, "optional: keeps your ranks on a new phone", 20, "#9a7a5a"));
-    } else if (playLater) {
-      m.body.add(button(this, 190, y, 360, 96, "grey", "GOOGLE PLAY", () => this.toast("Google Play sign-in is in the Android app (no sign-in needed to play)", "#ffe680"), { size: 30, icon: "icon_globe", iconSize: 48 }));
-      y += 70;
-      m.body.add(label(this, 190, y, "in the Google Play app", 20, "#9a7a5a"));
+      }));
+      row("icon_trophy", `Best stage ${save.bestStage}/${MAX_STAGE}`, `${fmt(save.totalKills)} kills • ${fmt(save.totalRolls)} rolls • best ${oneIn(save.bestRoll)}`);
+      if (!onlineEnabled() || new URLSearchParams(location.search).has("dev")) {
+        const tool = (x: number, str: string, fn: () => void) =>
+          button(this, x, y - 20, 160, 80, "grey", str, () => {
+            fn();
+            persist();
+          }, { size: 24 });
+        m.body.add([
+          tool(RX - 255, "+1B $", () => (save.cash += 1e9)),
+          tool(RX - 85, "+100 gem", () => (save.gems += 100)),
+          tool(RX + 85, "+100 dice", () => (save.dice.A += 100)),
+          tool(RX + 255, "+10K $", () => (save.cash += 1e4)),
+        ]);
+        y += 90;
+      }
+      let sure = false;
+      const reset: Button = button(this, RX, H / 2 - 110, 420, 100, "red", "RESET SAVE", () => {
+        if (!sure) {
+          sure = true;
+          reset.setLabel("TAP AGAIN");
+          return;
+        }
+        resetSave();
+        window.location.reload();
+      }, { size: 34 });
+      m.body.add(reset);
     }
-    // the opening story, once more
-    y += play || playLater ? 90 : 120;
-    m.body.add(button(this, 0, y, 460, 96, "purple", "WATCH THE STORY", () => {
-      m.close();
-      void this.replayStory();
-    }, { size: 30 }));
-    if (dev) {
-      y += 110;
-      m.body.add(label(this, 0, y, "Testing tools (not in the online version)", 26, "#9a7a5a"));
-      const tool = (yy: number, x: number, str: string, fn: () => void) =>
-        m.body.add(button(this, x, yy, 360, 96, "grey", str, () => {
-          fn();
-          persist();
-        }, { size: 30 }));
-      tool(y + 90, -190, "+10K money", () => (save.cash += 1e4));
-      tool(y + 90, 190, "+1B money", () => (save.cash += 1e9));
-      tool(y + 210, -190, "+100 gems", () => (save.gems += 100));
-      tool(y + 210, 190, "+100 dice", () => (save.dice.A += 100));
-    }
-    m.body.add(button(this, 0, h / 2 - 100, 460, 110, "red", "RESET SAVE", () => {
-      resetSave();
-      window.location.reload();
-    }, { size: 36 }));
+  }
+
+  /** Scales a picture so its longest side is `size`. */
+  private fit(img: Phaser.GameObjects.Image, size: number): Phaser.GameObjects.Image {
+    return img.setScale(size / Math.max(img.width, img.height));
+  }
+
+  /** White icons for the settings rows that the game has no picture for. */
+  private glyph(kind: "note" | "speaker" | "phone" | "screen" | "shake"): string {
+    return canvasTexture(this, `glyph_${kind}`, 120, 120, (c) => {
+      c.fillStyle = "#ffffff";
+      c.strokeStyle = "#ffffff";
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.shadowColor = "rgba(0,0,0,0.35)";
+      c.shadowOffsetY = 5;
+      if (kind === "note") {
+        c.beginPath(); c.ellipse(36, 88, 19, 15, -0.4, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(86, 76, 19, 15, -0.4, 0, Math.PI * 2); c.fill();
+        c.fillRect(48, 22, 11, 66); c.fillRect(98, 10, 11, 66);
+        c.beginPath(); c.moveTo(48, 22); c.lineTo(109, 10); c.lineTo(109, 30); c.lineTo(48, 42); c.fill();
+      } else if (kind === "speaker") {
+        c.beginPath(); c.moveTo(14, 44); c.lineTo(38, 44); c.lineTo(66, 18); c.lineTo(66, 102); c.lineTo(38, 76); c.lineTo(14, 76); c.closePath(); c.fill();
+        c.lineWidth = 9;
+        c.beginPath(); c.arc(70, 60, 20, -0.9, 0.9); c.stroke();
+        c.beginPath(); c.arc(70, 60, 40, -0.9, 0.9); c.stroke();
+      } else if (kind === "phone") {
+        c.beginPath(); c.roundRect(36, 12, 48, 96, 10); c.fill();
+        c.fillStyle = "#ff9a2a"; c.fillRect(43, 24, 34, 64);
+        c.lineWidth = 7;
+        for (const s of [-1, 1]) {
+          c.beginPath(); c.moveTo(60 + s * 36, 36); c.lineTo(60 + s * 46, 48); c.lineTo(60 + s * 36, 60); c.lineTo(60 + s * 46, 72); c.lineTo(60 + s * 36, 84); c.stroke();
+        }
+      } else if (kind === "screen") {
+        c.beginPath(); c.roundRect(10, 18, 100, 70, 10); c.fill();
+        c.fillRect(48, 86, 24, 16); c.fillRect(32, 100, 56, 10);
+        c.fillStyle = "#3a8af0"; c.fillRect(20, 28, 80, 50);
+      } else {
+        c.beginPath(); c.roundRect(32, 30, 56, 60, 10); c.fill();
+        c.lineWidth = 8;
+        for (const s of [-1, 1]) {
+          c.beginPath(); c.moveTo(60 + s * 42, 30); c.lineTo(60 + s * 52, 60); c.lineTo(60 + s * 42, 90); c.stroke();
+        }
+      }
+    });
   }
 
   /** Plays the opening story over the game; the game waits, frozen, until it ends. */

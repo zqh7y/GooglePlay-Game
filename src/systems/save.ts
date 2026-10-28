@@ -1,6 +1,6 @@
 import { BOSS, MAX_STAGE, monsterHp } from "../data/balance";
 import { rushBossHp } from "../data/bosses";
-import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor } from "../data/items";
+import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, owned } from "../data/items";
 import { DICE_TIERS, Tier } from "../data/tiers";
 import { TREE_BY_ID, stepsOf } from "../data/tree";
 
@@ -76,6 +76,12 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** when this player first started the game (the beginners' Dice Rain event runs 14 days from it) */
+  firstPlay: number;
+  /** Dice Rain event runs won */
+  diceWins: number;
+  /** the settings screen's switches */
+  settings: { vibrate: boolean; toaster: boolean; effects: boolean; shake: boolean; dmgNumbers: boolean; hpNumbers: boolean };
   /** developer mode: every stage can be played from the map */
   dev: boolean;
   /** gamepasses bought (kept forever) */
@@ -176,6 +182,9 @@ function fresh(): SaveData {
     tickets: 0,
     passes: [],
     dev: false,
+    settings: { vibrate: true, toaster: false, effects: true, shake: true, dmgNumbers: true, hpNumbers: true },
+    firstPlay: Date.now(),
+    diceWins: 0,
     pack: { day: -1, step: 0 },
     eventShop: { slot: -1, bought: [], week: -1, special: false },
     merchant: { cycle: -1, shift: 0, bought: [] },
@@ -207,6 +216,7 @@ function load(): SaveData {
       data.discovered = data.discovered.filter((id) => ITEMS[id]);
       data.newPets = data.newPets.filter((id) => data.pets[id]);
       data.fishing = { ...freshFishing(), ...data.fishing };
+      data.settings = { ...fresh().settings, ...data.settings };
       data.online = { ...{ name: "", named: false }, ...(data.online as Partial<SaveData["online"]> | undefined) };
       // players from before the tutorial and the intro don't need them
       const raw = JSON.parse(raw0) as Partial<SaveData>;
@@ -251,6 +261,9 @@ export function persist(): void {
 }
 
 /** Add a rolled pet: the first copy unlocks it, later ones are spare copies for levelling. */
+// premium pets read your pet levels through this
+owned.level = (id: string) => save.pets[id]?.level ?? 0;
+
 export function addPet(id: string): void {
   const p = save.pets[id];
   if (p) p.copies++;
@@ -293,3 +306,6 @@ export const hasPass = (id: string) => save.passes.includes(id);
 
 /** The highest stage you may pick: the best you reached (every stage in developer mode). */
 export const stageCap = () => (save.dev ? 100 : Math.max(1, save.bestStage));
+
+/** ms left in the beginners' Dice Rain event (0 when it is over) */
+export const diceEventLeft = () => Math.max(0, save.firstPlay + 14 * 86400000 - Date.now());

@@ -9,7 +9,7 @@ import { itemSplash, vividCard } from "../art/ps";
 import { BOOSTS } from "../data/boosts";
 import { PASSES } from "../data/passes";
 import { FISH_UPGRADES, upgradeCost } from "../data/fishing";
-import { ITEMS, ItemDef, PET_LIST } from "../data/items";
+import { ITEMS, ItemDef, PET_LIST, PREMIUM, rollPremium } from "../data/items";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, rollDiceTier, tierIndex } from "../data/tiers";
 import { fishLv } from "../systems/fishing";
 import { dailyDay } from "../systems/goals";
@@ -669,6 +669,7 @@ export class ShopScreen extends Screen {
     // PS99-style: one tab of the shop at a time
     const tab = this.tab;
     if (tab === "featured") {
+      y = this.buildPremium(y);
       y = this.buildEventShop(y);
       y = this.buildPack(y);
       y = this.buildPasses(y);
@@ -1106,6 +1107,80 @@ export class ShopScreen extends Screen {
 
   /** Gamepasses: bought once, bonuses forever. */
   /**
+   * The Premium Egg, like a Pet Simulator egg card: the egg on the left, its five exclusive pets with
+   * their chances (the two rarest stay dark until you own them) and four buy buttons with discounts.
+   */
+  private buildPremium(y0: number): number {
+    const s = this.scene;
+    const W = s.scale.width;
+    const y = y0 + 10;
+    const ch = 520;
+    const cy = y + ch / 2;
+    this.list.add(s.add.image(W / 2, cy, vividCard(s, 0x8a4ae0, 1020, ch)));
+    // the egg
+    const egg = s.add.image(150, cy - 20, premiumEggTexture(s));
+    s.tweens.add({ targets: egg, angle: { from: -5, to: 5 }, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const eggGlow = s.add.image(150, cy - 20, "glow").setTint(0xb98aff).setScale(2.4).setAlpha(0.7);
+    s.tweens.add({ targets: eggGlow, alpha: 0.3, duration: 800, yoyo: true, repeat: -1 });
+    const hot = s.add.container(W - 110, y + 54, [text(s, 0, 0, "HOT!", 50, "#ff8a3a", { stroke: 11 })]).setAngle(10);
+    s.tweens.add({ targets: hot, scale: 1.12, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.list.add([eggGlow, egg, hot,
+      text(s, 330, y + 62, "PREMIUM", 64, "#ffffff", { stroke: 13 }).setOrigin(0, 0.5),
+      text(s, 640, y + 66, "Egg", 58, "#ffe066", { stroke: 12 }).setOrigin(0, 0.5),
+    ]);
+    // the five pets and their chances
+    PREMIUM.forEach((p, i) => {
+      const x = 340 + i * 150;
+      const py = cy - 50;
+      const have = !!save.pets[p.def.id];
+      const secret = i >= 3 && !have;
+      if (i >= 3) {
+        const frame = s.add.graphics();
+        frame.fillStyle(0x111111, 0.85).fillRoundedRect(x - 62, py - 70, 124, 124, 16);
+        frame.lineStyle(6, 0x111111, 1).strokeRoundedRect(x - 62, py - 70, 124, 124, 16);
+        this.list.add(frame);
+      }
+      const img = s.add.image(x, py - 8, petTexture(s, p.def.id)).setScale(0.62);
+      if (secret) img.setTintFill(0x9a9aa8);
+      s.tweens.add({ targets: img, y: py - 18, duration: 600 + i * 90, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const pct = `${+(p.chance * 100).toFixed(2)}%`;
+      const zone = s.add.zone(x, py, 130, 150).setInteractive({ useHandCursor: true });
+      zone.on("pointerup", () => !this.scrolled && this.host.toast(`${p.def.name}: Exclusive, ${Math.round(p.share * 100)}% of your best pet`, "#e6c8ff"));
+      this.list.add([img, text(s, x, py + 72, pct, 32, "#ffffff", { stroke: 8 }), zone]);
+    });
+    // four ways to buy, bigger ones cheaper per egg
+    const deals: [number, number, string][] = [[100, 4000, "-33%"], [10, 480, "-20%"], [3, 160, ""], [1, 60, ""]];
+    deals.forEach(([n, gems, off], i) => {
+      const x = W / 2 + (i - 1.5) * 245;
+      const by = cy + 170;
+      const btn = this.priceButton(x, by, 225, 100, () => ({ label: `${gems}`, icon: "icon_gem", color: "green", ok: true }), () => {
+        if (!this.spendGems(gems)) return false;
+        this.openPremium(n);
+        return true;
+      });
+      this.list.add([text(s, x, by - 74, `${n} ${n === 1 ? "egg" : "eggs"}`, 26, "#ffffff", { stroke: 6 }), btn]);
+      if (off) this.list.add(text(s, x + 82, by - 52, off, 30, "#ff5a5a", { stroke: 7 }).setAngle(12));
+    });
+    return y + ch + 40;
+  }
+
+  /** Opens n Premium Eggs: the pets join your collection and show up grouped. */
+  private openPremium(n: number): void {
+    const count: Record<string, number> = {};
+    for (let i = 0; i < n; i++) {
+      const p = rollPremium();
+      count[p.def.id] = (count[p.def.id] ?? 0) + 1;
+    }
+    const got: Reward[] = Object.entries(count)
+      .sort((a, b) => ITEMS[b[0]].index - ITEMS[a[0]].index)
+      .map(([id, k]) => ({ icon: petTexture(this.scene, id), amount: `x${k}`, give: () => { for (let i = 0; i < k; i++) addPet(id); } }));
+    got.forEach((r) => r.give());
+    persist();
+    this.host.petsChanged();
+    this.rewardShow(n > 1 ? `${n} PREMIUM EGGS!` : "PREMIUM EGG!", null, got);
+  }
+
+  /**
    * Gamepasses like Pet Simulator's: a big bright card each, the name huge on top, the art big on
    * a spinning sunburst, a few big words for what it does and a chunky green price button.
    */
@@ -1475,3 +1550,58 @@ export class ShopScreen extends Screen {
 }
 
 export const freeGiftReady = () => Date.now() >= save.freeGiftAt;
+
+/** The Premium Egg: a glossy blue egg with a glowing swirl and a wizard hat with a moon. */
+function premiumEggTexture(scene: Phaser.Scene): string {
+  return canvasTexture(scene, "premium_egg", 260, 320, (c) => {
+    c.lineJoin = "round";
+    c.beginPath();
+    c.ellipse(130, 200, 100, 118, 0, 0, Math.PI * 2);
+    const g = c.createLinearGradient(40, 90, 220, 310);
+    g.addColorStop(0, "#5ad8ff");
+    g.addColorStop(0.5, "#3a4ad8");
+    g.addColorStop(1, "#1a1a6a");
+    c.fillStyle = g;
+    c.fill();
+    c.lineWidth = 9;
+    c.strokeStyle = "#111111";
+    c.stroke();
+    // the glowing swirl
+    c.strokeStyle = "#7affd0";
+    c.lineWidth = 12;
+    c.lineCap = "round";
+    c.beginPath();
+    c.arc(130, 210, 40, Math.PI * 0.2, Math.PI * 1.7);
+    c.stroke();
+    c.beginPath();
+    c.arc(130, 210, 14, Math.PI * 1.2, Math.PI * 2.4);
+    c.stroke();
+    c.fillStyle = "rgba(255,255,255,0.45)";
+    c.beginPath();
+    c.ellipse(90, 150, 22, 36, -0.5, 0, Math.PI * 2);
+    c.fill();
+    // the wizard hat
+    c.fillStyle = "#7a3ad8";
+    c.strokeStyle = "#111111";
+    c.lineWidth = 8;
+    c.beginPath();
+    c.ellipse(130, 104, 110, 26, -0.1, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.moveTo(60, 100);
+    c.quadraticCurveTo(120, 20, 210, 8);
+    c.quadraticCurveTo(170, 50, 196, 96);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#ffd23f";
+    c.beginPath();
+    c.arc(140, 64, 20, 0.6, Math.PI * 1.6);
+    c.arc(150, 58, 15, Math.PI * 1.5, 0.7, true);
+    c.closePath();
+    c.fill();
+    c.lineWidth = 4;
+    c.stroke();
+  });
+}

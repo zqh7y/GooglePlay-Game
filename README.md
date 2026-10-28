@@ -44,7 +44,7 @@ hour of fishing brings.
   floating off into the haze over a sea of clouds, with sparkles, light beams, drifting rocks and a glow
   (bloom) pass. On top: the DICE IDLE logo (letters pop in and float), a striped loading bar and tips, then
   **TAP TO START** (the tap also turns the sound on). Without 3D support it still shows the logo and bar.
-- **The story** (once, for new players; again from **Settings → WATCH THE STORY**; SKIP at any time),
+- **The story** (once, for new players; again from **Settings → Interface → Story**; SKIP at any time),
   about 40 s with cinema bars, captions and its own music: five lands float above the clouds, each lit by a
   Crystal; the Storm comes with lightning; monsters rain down on the lands and a crowned boss rises from the
   clouds and drinks every Crystal's light; the lands go dark... until a pair of eyes lights up in an old
@@ -474,6 +474,12 @@ hour of fishing brings.
     reward is ready or an upgrade is affordable, and there are fishing quests.
 - **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
 - **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
+- **Settings**: a cyan header with coloured tabs on the left and ON/OFF rows on the right.
+  - **Audio**: Music, Sound, Vibration.
+  - **Graphics**: Toaster mode (fewer ground patches and scenery, no zone effects), Zone effects (fog,
+    light beams, torch fire, the dizzy edge) and Screen shake.
+  - **Interface**: Damage numbers, HP numbers, and the opening story.
+  - **Account**: name (RENAME), Google Play, your best stage and stats, RESET SAVE (tap twice).
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.
   **Most hexagons come in 3 steps** (three dots on top), so there is nearly always something to buy: the steps
@@ -483,7 +489,7 @@ hour of fishing brings.
   a step so you can buy the next. Prices are 2.5x what they were, because fishing now pays 10x the money.
 - **Goals**: quests, a 7-day daily reward, +25% luck for every 10 pets in the Index, gems from bosses for luck potions.
 - **Online** (when set up, see ONLINE.md):
-  - **No sign-up or sign-in needed**: the game quietly makes a guest account. **Settings → GOOGLE PLAY**
+  - **No sign-up or sign-in needed**: the game quietly makes a guest account. **Settings → Account → Google Play**
     optionally signs in with Google Play Games (the guest's entry and counted pets carry over).
   - **Leaderboards** (the trophy "Ranks" button in the lobby): best stage, rarest pet, pets found. The top
     players with medals for the top 3, your own row highlighted, and your rank if you are further down.

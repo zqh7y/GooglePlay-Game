@@ -4,7 +4,11 @@
  */
 export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss";
 
-export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "dice", "boss"];
+/** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
+export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "crystal", "boss"];
+
+/** New players get the Dice Rain event for their first two weeks. */
+export const DICE_EVENT_DAYS = 14;
 
 export const modeForStage = (stage: number): StageMode => MODE_ORDER[(Math.max(1, stage) - 1) % MODE_ORDER.length];
 

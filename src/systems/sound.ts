@@ -362,7 +362,12 @@ export const music = {
 };
 
 /** Short phone vibration for big moments (ignored where unsupported). */
+/** Settings: vibration can be switched off. */
+let vibrateOn = true;
+export const setVibrate = (on: boolean) => (vibrateOn = on);
+
 export function buzz(ms: number): void {
+  if (!vibrateOn) return;
   try {
     navigator.vibrate?.(ms);
   } catch {

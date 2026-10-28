@@ -142,6 +142,77 @@ export const PET_LIST: ItemDef[] = PET_ROWS.map(([name, species, color, accent, 
 
 export const ITEMS: Record<string, ItemDef> = Object.fromEntries(PET_LIST.map((p) => [p.id, p]));
 
+// ───────────────────────── Premium Egg exclusives ─────────────────────────
+
+/** How your pets are levelled (set by the save, so this file needs no import of it). */
+export const owned = { level: (_id: string): number => 0 };
+
+/** The best damage among the pets you own (premium pets match a share of it). */
+export function bestPetDamage(): number {
+  let best = 1;
+  for (const p of PET_LIST) {
+    const lv = owned.level(p.id);
+    if (lv && p.kind !== "buff") best = Math.max(best, p.damage * levelMult(lv));
+  }
+  return best;
+}
+
+/**
+ * Five exclusive pets that only come from the Premium Egg. They have no class: each one hits for a
+ * share of your best pet's damage, so they stay useful however far you get.
+ * [name, species, colour, accent, accessories, pattern, eyes, chance, share of best damage]
+ */
+const PREMIUM_ROWS: [string, Species, string, string, string, string, string, number, number][] = [
+  ["Magic Kitty", "cat", "#8a5ad8", "#d8b8ff", "wizard", "stars", "", 0.5505, 0.4],
+  ["Witch Bat", "bat", "#5a3a8a", "#b98aff", "wizard", "", "glow", 0.3, 0.55],
+  ["Spell Fox", "fox", "#6a4ad8", "#c8b8ff", "wizard", "galaxy", "", 0.13, 0.75],
+  ["Arcane Owl", "owl", "#3a2a7a", "#9a8aff", "wizard,halo", "galaxy", "glow", 0.019, 1],
+  ["Void Dragon", "dragon", "#1a1a3a", "#b36aff", "horns,batwings", "galaxy", "glow", 0.0005, 1.5],
+];
+
+export interface PremiumPet {
+  def: ItemDef;
+  chance: number;
+  share: number;
+}
+
+export const PREMIUM: PremiumPet[] = PREMIUM_ROWS.map(([name, species, color, accent, accs, pattern, eyes, chance, share], i) => {
+  const def: ItemDef = {
+    id: `px_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+    index: 1000 + i,
+    name,
+    oneIn: Math.max(1, Math.round(1 / chance)),
+    rarity: RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, 3 + i)],
+    cls: "S",
+    species,
+    color,
+    accent,
+    accs: accs.split(","),
+    pattern,
+    eyes,
+    kind: i >= 3 ? "zap" : "shot",
+    fx: 0xb36aff,
+    damage: 0,
+    cooldown: i >= 3 ? 1400 : 1000,
+    count: 1 + Math.floor(i / 2),
+    description: `Exclusive: ${Math.round(share * 100)}% of your best pet's damage`,
+  };
+  // its damage follows your best pet
+  Object.defineProperty(def, "damage", { get: () => Math.max(1, Math.round(bestPetDamage() * share)) });
+  ITEMS[def.id] = def;
+  return { def, chance, share };
+});
+
+/** Is this one of the Premium Egg pets? */
+export const isPremium = (id: string) => id.startsWith("px_");
+
+/** One Premium Egg: a weighted pick of the five. */
+export function rollPremium(): PremiumPet {
+  let r = Math.random();
+  for (const p of PREMIUM) if ((r -= p.chance) <= 0) return p;
+  return PREMIUM[0];
+}
+
 // ───────────────────────── pet levels ─────────────────────────
 
 /** Duplicates level a pet up (no golden/rainbow versions). */

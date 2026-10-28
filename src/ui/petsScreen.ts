@@ -3,7 +3,7 @@ import { onlineEnabled, ownersOf } from "../online/online";
 import { INK, canvasTexture, linear, radial, rr } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { CARD_H, CARD_W, panelTexture, slotTexture } from "../art/ui";
-import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../data/items";
+import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, isPremium, levelMult } from "../data/items";
 import { RARITY_INFO } from "../data/rarity";
 import { DICE_TIERS, TIER_INFO, tierIndex } from "../data/tiers";
 import { INDEX_LUCK, INDEX_STEP, indexBonus } from "../systems/goals";
@@ -285,7 +285,7 @@ export class PetsScreen extends Screen {
       img.setInteractive({ useHandCursor: true }).on("pointerup", () => this.openPet(id));
       s.tweens.add({ targets: img, scaleY: 0.9, scaleX: 1, duration: 260 + i * 30, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const name = fitText(classText(s, x + 24, by + 46, `${def.name}  Lv.${save.pets[id].level}`, 26, def.cls), 250);
-      c.add(classBadge(s, x - name.displayWidth / 2 - 6, by + 46, def.cls, 38));
+      if (!isPremium(id)) c.add(classBadge(s, x - name.displayWidth / 2 - 6, by + 46, def.cls, 38));
       c.add([glow, ped, img, name]);
       this.team.push({ img, id });
     }
@@ -412,8 +412,12 @@ export class PetsScreen extends Screen {
       const card = petCard(s, 0, -330, id, { level: true }).setScale(1.1);
       content.add([rays, glow, card]);
       s.tweens.add({ targets: card, y: -338, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      const clsLine = classText(s, 36, -150, `CLASS ${def.cls}  •  ${oneIn(def.oneIn)}`, 36, def.cls);
-      content.add([clsLine, classBadge(s, 36 - clsLine.width / 2 - 52, -150, def.cls, 50)]);
+      // Premium Egg pets have no class: they hit for a share of your best pet
+      if (isPremium(id)) content.add(classText(s, 0, -150, `EXCLUSIVE  •  ${def.description.replace("Exclusive: ", "")}`, 32, "uSSS"));
+      else {
+        const clsLine = classText(s, 36, -150, `CLASS ${def.cls}  •  ${oneIn(def.oneIn)}`, 36, def.cls);
+        content.add([clsLine, classBadge(s, 36 - clsLine.width / 2 - 52, -150, def.cls, 50)]);
+      }
       content.add(text(s, 0, -110, `${info.label}  •  ${KIND_LABEL[def.kind]}`, 26, info.css));
       content.add(label(s, 0, -76, def.description, 26, "#7a5236", 780));
 

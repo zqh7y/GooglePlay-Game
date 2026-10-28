@@ -33,6 +33,7 @@ import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
 import { hasPass, persist, save, stageCap } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
+import { applyShake, effectsOn } from "../systems/settings";
 import {
   cashMult, chestMult, critChance, critDamage, dmgMult, gadgetTierCap, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
 } from "../systems/stats";
@@ -79,7 +80,7 @@ const SEAL_SEE = 900;
 const ROAM_START = 6;
 const ROAM_DICE_MS = 15000;
 const ROAM_MAX = 15;
-export type FightKind = "battle" | "rush";
+export type FightKind = "battle" | "rush" | "event";
 
 export type BattleMode = "lobby" | "run" | "over";
 
@@ -381,6 +382,8 @@ export class BattleScene extends Phaser.Scene {
   private crystal!: Phaser.GameObjects.Image;
   /** this stage's mode (see data/modes.ts) */
   private stageMode: StageMode = "crystal";
+  /** a Dice Rain event run: does not change your stage, pays the event prize */
+  private eventRun = false;
   private air!: { zone: Phaser.GameObjects.Graphics | null; next: Phaser.GameObjects.Graphics | null; x: number; y: number; nx: number; ny: number; t: number; oxygen: number; choke: number };
   private beast!: {
     img: Phaser.GameObjects.Image; cage: Phaser.GameObjects.Image; bar: Phaser.GameObjects.Graphics; tex: string;
@@ -517,7 +520,9 @@ export class BattleScene extends Phaser.Scene {
     return this.land.id;
   }
 
-  create(data: { autostart?: boolean; rush?: boolean }): void {
+  create(data: { autostart?: boolean; rush?: boolean; event?: boolean }): void {
+    this.eventRun = !!data?.event;
+    applyShake(this);
     this.L = layoutFor(this.scale.height);
     makeWorldTextures(this, REGIONS);
     makePickupTextures(this);
@@ -617,6 +622,7 @@ export class BattleScene extends Phaser.Scene {
     const on: [string, (...a: never[]) => void][] = [
       ["pets-changed", this.buildPets],
       ["battle-start", this.begin],
+      ["event-start", this.beginEvent],
       ["skill-picked", this.onSkillPicked],
       ["gadget-picked", this.onGadgetPicked],
       ["revive", this.revive],
@@ -778,6 +784,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** The BATTLE button: the start animation, then the run starts. */
+  /** The beginners' Dice Rain event: a Dice Rain run at your stage. */
+  private beginEvent(): void {
+    if (this.state !== "lobby" || this.entering) return;
+    this.eventRun = true;
+    this.begin();
+  }
+
   private begin(skipEnter = false): void {
     if (this.state !== "lobby" || this.entering) return;
     if (skipEnter) {
@@ -800,7 +813,7 @@ export class BattleScene extends Phaser.Scene {
   private startRun(): void {
     this.state = "intro";
     // the mode comes from the stage picked right now (the lobby may have switched stages since the world was built)
-    if (!this.rush) this.stageMode = battle.stageMode = modeForStage(save.stage);
+    if (!this.rush) this.stageMode = battle.stageMode = this.eventRun ? "dice" : modeForStage(save.stage);
     // dice picked up while roaming the lobby are not part of this run's results
     this.stats = freshStats();
     battle.stats = this.stats;
@@ -930,7 +943,8 @@ export class BattleScene extends Phaser.Scene {
     const dice = this.pickups.filter((p) => p.kind === "dice");
     let tx: number;
     let ty: number;
-    let pace = 1;
+    // AFK walks at a third of your speed: collecting by hand is faster
+    let pace = 1 / 3;
     if (dice.length) {
       const dist = (p: Pickup) => Math.hypot(p.x - this.hero.x, p.y - this.hero.y);
       const p = dice.reduce((a, b) => (dist(b) < dist(a) ? b : a));
@@ -939,7 +953,7 @@ export class BattleScene extends Phaser.Scene {
     } else {
       if (!this.wander || Math.hypot(this.wander[0] - this.hero.x, this.wander[1] - this.hero.y) < 40) this.wander = this.randomSpot(200, 900);
       [tx, ty] = this.wander;
-      pace = 0.5;
+      pace = 1 / 6;
     }
     const [vx, vy] = [tx - this.hero.x, ty - this.hero.y];
     const d = Math.hypot(vx, vy);
@@ -991,20 +1005,24 @@ export class BattleScene extends Phaser.Scene {
     const keys = makeGround(this, a);
     const s = 1 / GROUND_SCALE;
     this.add.tileSprite(0, 0, ARENA * GROUND_SCALE, ARENA * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
+    // toaster mode: fewer ground patches and scenery
+    const toaster = save.settings.toaster;
     a.patches.forEach((p, i) => {
+      if (toaster && i % 3) return;
       const img = this.add.image(p.x, p.y, keys.patches[i % keys.patches.length]).setScale((s * p.r) / PATCH_R).setDepth(-900).setFlipX(i % 2 === 1);
       this.addStatic(img, p.x, p.y);
     });
     const [cx, cy] = a.center;
     this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
-    for (const o of a.objects) {
+    a.objects.forEach((o, i) => {
+      if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
       if (o.scale) img.setScale(o.scale);
       this.addStatic(img, o.x, o.y);
       if (o.tex.startsWith("tree") || o.tex === "palm") {
         this.tweens.add({ targets: img, angle: { from: -1.5, to: 1.5 }, duration: 2200 + (o.x % 900), yoyo: true, repeat: -1, ease: "Sine.inOut" });
       }
-    }
+    });
     // the crystal you protect: bobbing, glowing and sparkling
     const glow = this.add.image(cx, cy - 110, "glow").setTint(this.land.crystal).setScale(2.4).setAlpha(0.5).setDepth(cy - 1);
     this.tweens.add({ targets: glow, alpha: 0.85, scale: 2.8, duration: 1300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
@@ -2384,7 +2402,7 @@ export class BattleScene extends Phaser.Scene {
       for (let i = 0; i < 18; i++) {
         const [tx, ty] = this.randomSpot(500, 2600);
         this.addStatic(this.add.image(tx, ty, "torch").setOrigin(0.5, 1).setDepth(ty), tx, ty);
-        this.addStatic(this.add.particles(tx, ty - 170, "spark", {
+        if (effectsOn()) this.addStatic(this.add.particles(tx, ty - 170, "spark", {
           x: { min: -14, max: 14 }, lifespan: 600, speedY: { min: -160, max: -80 }, scale: { start: 1.1, end: 0 },
           tint: [0xffe066, 0xff8a2a, 0xff3a3a], blendMode: Phaser.BlendModes.ADD, frequency: 40,
         }).setDepth(ty + 1), tx, ty);
@@ -2504,16 +2522,16 @@ export class BattleScene extends Phaser.Scene {
     a.t = AIR_EVERY;
     // glowing pillars on the corners, bubbles rising inside and a sign
     const fx: Phaser.GameObjects.GameObject[] = [];
-    for (const [px, py] of [[a.x, a.y], [a.x + AIR_ZONE, a.y], [a.x, a.y + AIR_ZONE], [a.x + AIR_ZONE, a.y + AIR_ZONE]]) {
+    if (effectsOn()) for (const [px, py] of [[a.x, a.y], [a.x + AIR_ZONE, a.y], [a.x, a.y + AIR_ZONE], [a.x + AIR_ZONE, a.y + AIR_ZONE]]) {
       const pil = this.add.image(px, py, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(110, 760).setBlendMode(Phaser.BlendModes.ADD).setDepth(py + 1).setAlpha(0.8);
       this.tweens.add({ targets: pil, alpha: 0.4, displayWidth: 150, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       fx.push(pil);
     }
-    const bub = this.add.particles(0, 0, "spark", {
+    if (effectsOn()) fx.push(this.add.particles(0, 0, "spark", {
       x: { min: a.x, max: a.x + AIR_ZONE }, y: { min: a.y, max: a.y + AIR_ZONE }, lifespan: 2200, speedY: { min: -90, max: -40 },
       scale: { start: 0.9, end: 0.2 }, alpha: { start: 0.8, end: 0 }, tint: [0xffffff, 0xaef4ff, 0x7affb0], frequency: 40,
-    }).setDepth(5);
-    fx.push(bub, this.sign(a.x + 230, a.y + 300, "AIR ZONE", "stay inside!", "#7affb0"));
+    }).setDepth(5));
+    fx.push(this.sign(a.x + 230, a.y + 300, "AIR ZONE", "stay inside!", "#7affb0"));
     this.airFx = fx;
   }
 
@@ -2585,12 +2603,12 @@ export class BattleScene extends Phaser.Scene {
     const a = this.air;
     if (!this.fog) {
       this.fog = this.add.graphics().setDepth(14000);
-      this.fogPuffs = this.add.particles(0, 0, "puff", {
+      if (effectsOn()) this.fogPuffs = this.add.particles(0, 0, "puff", {
         lifespan: 3000, speedX: { min: -30, max: 30 }, speedY: { min: -20, max: 10 },
         scale: { start: 3, end: 6 }, alpha: { start: 0.16, end: 0 }, tint: [0x7a3aa8, 0x5a8a3a, 0x9a4ac8], frequency: 90, emitting: false,
         emitZone: { type: "random", source: new Phaser.Geom.Rectangle(-800, -1000, 1600, 700), quantity: 1 } as Phaser.Types.GameObjects.Particles.EmitZoneData,
       }).setDepth(14003);
-      this.fogPuffs.startFollow(this.hero);
+      this.fogPuffs?.startFollow(this.hero);
     }
     const f = this.fog.clear();
     const z = AIR_ZONE;
@@ -2644,7 +2662,7 @@ export class BattleScene extends Phaser.Scene {
       st.setVisible(true).setAlpha(Math.min(1, d * 1.5)).setPosition(this.hero.x + Math.cos(a) * 70, this.hero.y - 230 + Math.sin(a) * 20).setAngle(t * 200);
     });
     // a dark purple edge closing in (WebGL only)
-    if (!this.vignette && cam.postFX) this.vignette = cam.postFX.addVignette(0.5, 0.5, 0.9, 0);
+    if (!this.vignette && cam.postFX && effectsOn()) this.vignette = cam.postFX.addVignette(0.5, 0.5, 0.9, 0);
     if (this.vignette) {
       this.vignette.radius = 0.9 - 0.35 * d;
       this.vignette.strength = 0.25 + 0.3 * d * (0.8 + 0.2 * Math.sin(t * 6));
@@ -3025,6 +3043,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** A health number like 1.2K / 3K on a bar (labels are reused frame to frame). */
   private hpNum(x: number, y: number, hp: number, max: number, size: number): void {
+    if (!save.settings.hpNumbers) return;
     let t = this.hpLabels[this.hpUsed];
     if (!t) {
       t = text(this, 0, 0, "", size, "#ffffff", { stroke: 6 }).setDepth(9102);
@@ -3183,7 +3202,12 @@ export class BattleScene extends Phaser.Scene {
     save.gems += gems;
     for (let i = 0; i < 5; i++) this.addDice(rollDiceTier(save.stage + 15), 1);
     const cleared = save.stage;
-    if (save.stage < MAX_STAGE) save.stage++;
+    if (this.eventRun) {
+      // the event prize: good dice and gems; your stage stays where it was
+      save.diceWins++;
+      save.gems += 20;
+      this.addDice(rollDiceTier(save.stage + 12), 6);
+    } else if (save.stage < MAX_STAGE) save.stage++;
     save.bestStage = Math.max(save.bestStage, save.stage);
     persist();
     this.time.timeScale = 0.35;
@@ -3207,7 +3231,7 @@ export class BattleScene extends Phaser.Scene {
       this.sparks.explode(40, hx, hy - 120);
     });
     battle.bossFight = false;
-    this.game.events.emit("stage-clear", { stage: cleared, earned: this.stats.earned, gems, dice: this.stats.dice, final: cleared === MAX_STAGE });
+    this.game.events.emit("stage-clear", { event: this.eventRun, stage: cleared, earned: this.stats.earned, gems, dice: this.stats.dice, final: cleared === MAX_STAGE });
     this.game.events.emit("stage-up");
     this.time.delayedCall(4800, () => {
       this.cameras.main.fadeOut(600, 74, 47, 29);
@@ -3281,7 +3305,7 @@ export class BattleScene extends Phaser.Scene {
 
   private retry(start: boolean): void {
     this.cameras.main.fadeOut(400, 74, 47, 29);
-    this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ autostart: start }));
+    this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ autostart: start, event: start && this.eventRun }));
   }
 
   // ───────────────────────── loop ─────────────────────────
@@ -4094,6 +4118,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Chunky cartoon numbers: they pop, tilt and bounce up (crits are big, red and shouting). */
   private damageNumber(x: number, y: number, amount: number, crit: boolean): void {
+    if (!save.settings.dmgNumbers) return;
     const t = this.dmgTexts.find((d) => !d.visible);
     if (!t) return;
     t.setText(crit ? `${fmt(amount)}!` : fmt(amount)).setColor(crit ? "#ff4a4a" : "#fff3a0").setPosition(x + Phaser.Math.Between(-30, 30), y).setVisible(true).setAlpha(1).setScale(0.3).setAngle(Phaser.Math.Between(-14, 14));
