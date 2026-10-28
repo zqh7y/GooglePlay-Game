@@ -67,6 +67,8 @@ const RAIDER_AGGRO = 140;
 const STREAK_MS = 3000;
 const STREAK_STEP = 50;
 const REVIVE_GEMS = 5;
+/** Boss Rush plays slower: you and the bosses move this many times slower */
+const RUSH_SLOW = 1.5;
 /** Stand this close to a boss seal to close it; seals glow up when you are within SEAL_SEE. */
 /** Boss breath: a cone this long and this wide (half-angle, radians). */
 const BREATH_LEN = 700;
@@ -1993,7 +1995,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (len > 0.05) {
       this.stillFor = 0;
-      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * delta) / 1000;
+      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * (this.rush ? 1 / RUSH_SLOW : 1) * delta) / 1000;
       this.hero.setPosition(clampX(this.hero.x + vx * step), clampY(this.hero.y + vy * step)).setScale(1);
       if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
       this.walkTimer += delta;
@@ -3374,6 +3376,7 @@ export class BattleScene extends Phaser.Scene {
       const stop = e.toCrystal ? 200 : HERO_R + e.r - 10;
       let speed = e.type.stats.speed * e.speedMult;
       if (e.type.boss) speed = this.bossMove(e, delta, dx / d, dy / d) * e.speedMult;
+      if (this.rush) speed /= RUSH_SLOW;
       if (this.puddles.some((p) => Math.hypot(p.x - e.img.x, (p.y - e.img.y) * 2) < p.r)) speed *= e.type.boss ? 0.7 : 0.4;
       if (this.lv("haunt") && heroD < this.hauntR()) speed *= 0.85;
       // blinkers teleport a good way toward their target every few seconds
