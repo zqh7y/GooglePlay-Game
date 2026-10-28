@@ -11,7 +11,7 @@ const product = (effect: Effect) => TREE.reduce((p, t) => (t.effect === effect &
 export const potionActive = () => Date.now() < save.potionUntil;
 export const potionMult = () => 2 + sum("potionPower");
 export const potionMinutes = () => 5 + sum("potionTime");
-export const POTION_GEMS = 10;
+export const POTION_GEMS = 30;
 
 export function luckParts(): { tree: number; die: number; index: number; potion: number } {
   return {
@@ -62,13 +62,18 @@ export const dieSkin = () => TREE.filter((t) => t.effect === "die" && owned(t)).
 export const nodeOwned = (id: string) => id === "start" || owned(TREE_BY_ID[id]);
 export const nodeUnlocked = (node: TreeNode) => node.req.every(nodeOwned);
 /** Price of the next step of a hexagon. */
-export const nextCost = (node: TreeNode) => stepCost(node, stepsBought(node));
-export const canBuy = (node: TreeNode) => nodeUnlocked(node) && !nodeOwned(node.id) && save.cash >= nextCost(node);
+export const nextCost = (node: TreeNode) => (paysGems(node) ? gemCost(stepCost(node, stepsBought(node))) : stepCost(node, stepsBought(node)));
+/** The Gems & Potions hexagons are paid with gems (their money price, turned into gems). */
+export const paysGems = (node: TreeNode) => node.branch === "gems";
+const gemCost = (cash: number) => Math.max(15, Math.round((15 * Math.pow(cash / 300, 0.25)) / 5) * 5);
+const wallet = (node: TreeNode) => (paysGems(node) ? save.gems : save.cash);
+export const canBuy = (node: TreeNode) => nodeUnlocked(node) && !nodeOwned(node.id) && wallet(node) >= nextCost(node);
 
 export function buyNode(id: string): boolean {
   const node = TREE_BY_ID[id];
   if (!canBuy(node)) return false;
-  save.cash -= nextCost(node);
+  if (paysGems(node)) save.gems -= nextCost(node);
+  else save.cash -= nextCost(node);
   save.tree[id] = stepsBought(node) + 1;
   persist();
   return true;

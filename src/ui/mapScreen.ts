@@ -7,7 +7,7 @@ import { BOSS_EVERY, bossForStage } from "../data/bosses";
 import { REGIONS, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
 import { itemSplash, vividCard } from "../art/ps";
 import { MODE_INFO, modeForStage } from "../data/modes";
-import { save } from "../systems/save";
+import { persist, save, stageCap } from "../systems/save";
 import { Host, Screen } from "./screens";
 import { button, drawBar, fitText, iconButton, label, text } from "./widgets";
 
@@ -220,8 +220,8 @@ export class MapScreen extends Screen {
         else this.path.add(text(s, x, y - 2, `${st}`, 34, locked ? "#e8ecf2" : "#ffffff"));
       }
       if (here) this.drawHere(x, y, boss);
-      // stages you reached can be tapped (a drag is not a tap)
-      if (!locked) {
+      // stages you reached can be tapped (a drag is not a tap); in developer mode, every stage
+      if (st <= stageCap()) {
         const r = boss ? 90 : 56;
         const zone = s.add.zone(x, y, r * 2, r * 2).setInteractive({ useHandCursor: true });
         zone.on("pointerup", (p: Phaser.Input.Pointer) => {
@@ -233,6 +233,26 @@ export class MapScreen extends Screen {
     this.pickRing = s.add.circle(0, 0, 66).setStrokeStyle(10, 0x5aff8a);
     s.tweens.add({ targets: this.pickRing, scale: 1.18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.path.add(this.pickRing);
+  }
+
+  /** For the developer: tap the top panel 5 times quickly to switch developer mode (play any stage). */
+  private devPanel(img: Phaser.GameObjects.Image): Phaser.GameObjects.Image {
+    let taps = 0;
+    let first = 0;
+    img.setInteractive().on("pointerup", () => {
+      const now = this.scene.time.now;
+      if (now - first > 2000) {
+        taps = 0;
+        first = now;
+      }
+      if (++taps < 5) return;
+      taps = 0;
+      save.dev = !save.dev;
+      persist();
+      this.host.toast(save.dev ? "Developer mode ON: every stage is open" : "Developer mode OFF", save.dev ? "#ff9ad8" : "#ffffff");
+      this.onShow();
+    });
+    return img;
   }
 
   /** Tapped a stage: ring it and show its card with PLAY. */
@@ -251,7 +271,7 @@ export class MapScreen extends Screen {
       splat,
       text(s, -280, -50, boss ? `BOSS ${st}` : `STAGE ${st}`, 60, "#ffffff", { stroke: 12 }).setOrigin(0, 0.5),
       fitText(text(s, -280, 14, boss ? bossForStage(st).name : land.name, 32, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5), 400),
-      text(s, -280, 66, st === save.stage ? "You are here" : cleared ? "Cleared!  Play it again" : "Your next stage!", 28, cleared ? "#b6ff8a" : "#ffe066", { stroke: 7 }).setOrigin(0, 0.5),
+      text(s, -280, 66, st === save.stage ? "You are here" : st > save.bestStage ? "DEV: play it!" : cleared ? "Cleared!  Play it again" : "Your next stage!", 28, st > save.bestStage ? "#ff9ad8" : cleared ? "#b6ff8a" : "#ffe066", { stroke: 7 }).setOrigin(0, 0.5),
       s.add.image(34, -50, MODE_INFO[modeForStage(st)].icon).setScale(0.45),
       fitText(text(s, 66, -50, MODE_INFO[modeForStage(st)].name, 26, MODE_INFO[modeForStage(st)].css, { stroke: 7 }).setOrigin(0, 0.5), 130),
       button(s, 330, 0, 250, 130, "green", "PLAY", () => this.host.pickStage(st, true), { size: 52 }),
@@ -327,7 +347,7 @@ export class MapScreen extends Screen {
     const face = s.add.image(W - 150, y, def.tex);
     face.setScale(120 / Math.max(face.width, face.height));
     c.add([
-      s.add.image(W / 2 + 42, y + 4, vividCard(s, 0x4fa8ff, 920, 140)),
+      this.devPanel(s.add.image(W / 2 + 42, y + 4, vividCard(s, save.dev ? 0xff6ad8 : 0x4fa8ff, 920, 140))),
       text(s, 150, y - 26, `Best: stage ${save.bestStage} of ${MAX_STAGE}`, 36, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5),
       g,
       s.add.image(W - 150, y, "glow").setTint(0xff5a5a).setScale(0.6).setAlpha(0.7),

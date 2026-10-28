@@ -3,7 +3,7 @@ import { INK_N, darken, rgba } from "../art/draw";
 import { petTexture } from "../art/pets";
 import { btnTexture, panelTexture, ribbonTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
-import { MAX_STAGE, MINUTES, SEALS, STAGE_MS } from "../data/balance";
+import { MAX_STAGE, MINUTES, STAGE_MS, recommendedDps } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
 import { GADGETS, GADGET_SLOTS, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetIcon, gadgetName, gadgetStats } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
@@ -17,7 +17,7 @@ import { TREE } from "../data/tree";
 import { GAME_W, Layout, TOP_ROW, TOP_Y, layoutFor } from "../layout";
 import {
   DAILY, INDEX_STEP, checkIndexMilestones, claimDaily, claimQuest, dailyCash, dailyDay, ensureQuests, indexBonus, questDone, questEvent,
-  questGoal, questReward, questText,
+  QUEST_ICON, questGoal, questReward, questTitle,
 } from "../systems/goals";
 import { RollResult, rollMany } from "../systems/roll";
 import { classChances, topLuck } from "../data/luck";
@@ -29,7 +29,7 @@ import { makeOnlineTextures } from "../art/online";
 import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
 import { askName, showLeaderboard } from "../ui/leaderboard";
 import { Tutorial } from "../ui/tutorial";
-import { lastSeenAtLoad, persist, resetSave, save, totalDice } from "../systems/save";
+import { lastSeenAtLoad, persist, resetSave, save, totalDice, stageCap } from "../systems/save";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import {
   autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, gemsPerBoss, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
@@ -44,8 +44,8 @@ import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/sh
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
-import { MODE_INFO, modeForStage } from "../data/modes";
-import { arrowButton, cardButton, itemSplash } from "../art/ps";
+import { MODE_INFO, StageMode, modeForStage } from "../data/modes";
+import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
 import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
@@ -115,6 +115,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private lobbyBest!: Phaser.GameObjects.Text;
   /** which monster mutations this stage has */
   private lobbyMuts!: Phaser.GameObjects.Text;
+  private mutRow!: Phaser.GameObjects.Container;
   private afkRing!: Phaser.GameObjects.Arc;
   private afkLabel!: Phaser.GameObjects.Text;
   private overlay!: Phaser.GameObjects.Graphics;
@@ -149,6 +150,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private questLabel!: Phaser.GameObjects.Text;
   private questCount!: Phaser.GameObjects.Text;
   private questGlow!: Phaser.GameObjects.Image;
+  private questIcon!: Phaser.GameObjects.Image;
+  private questCard!: Phaser.GameObjects.Image;
   private badges: { obj: Phaser.GameObjects.Container; show: () => boolean }[] = [];
   /** the big 5-4-3-2-1 before the boss comes (and before a Boss Rush boss gets away) */
   private countText!: Phaser.GameObjects.Text;
@@ -170,6 +173,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private openModal: Modal | null = null;
   private tutorial!: Tutorial;
   private goBtn!: Phaser.GameObjects.Container;
+  /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
+  private rushHint!: Phaser.GameObjects.Container;
   private battleSub!: Phaser.GameObjects.Text;
   private stagePrev!: Phaser.GameObjects.Container;
   private stageNext!: Phaser.GameObjects.Container;
@@ -221,6 +226,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["cash-fly", this.onCashFly],
       ["battle-ready", this.onBattleReady],
       ["boss-warning", this.bossWarning],
+      ["mode-intro", this.modeIntro],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
     ];
@@ -311,7 +317,9 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** The fight only runs while you look at it and no popup is open. */
   private syncBattle(): void {
-    const run = this.tab === "battle" && !this.mapOpen && !this.openModal && !battle.choosing && !this.celebrating && !this.picker;
+    // with AFK on, the lobby keeps going on every screen so your hero keeps collecting dice
+    const afkLobby = battle.mode === "lobby" && save.afk && !battle.rush;
+    const run = afkLobby || (this.tab === "battle" && !this.mapOpen && !this.openModal && !battle.choosing && !this.celebrating && !this.picker);
     const paused = this.scene.isPaused("Battle");
     if (run && paused) this.scene.resume("Battle");
     else if (!run && !paused && this.scene.isActive("Battle")) this.scene.pause("Battle");
@@ -340,16 +348,19 @@ export class UIScene extends Phaser.Scene implements Host {
   private refreshLobby(): void {
     this.lobbyTitle.setText(`Stage ${save.stage}`);
     this.lobbyLand.setText(regionForStage(save.stage).name);
-    this.lobbyBest.setText(save.stage < save.bestStage ? `Replaying  •  best: stage ${save.bestStage} / ${MAX_STAGE}` : `Best: stage ${save.bestStage} / ${MAX_STAGE}`);
+    this.lobbyBest.setText(`${save.bestStage} / ${MAX_STAGE}${save.stage < save.bestStage ? "   REPLAY" : ""}`);
     const mode = MODE_INFO[modeForStage(save.stage)];
     this.battleSub.setText(`${save.stage < save.bestStage ? "Replay " : ""}Stage ${save.stage}  •  ${mode.name}`).setColor(mode.css);
     this.stagePrev.setPosition(this.lobbyTitle.x + this.lobbyTitle.width + 56, 178).setVisible(save.stage > 1);
-    this.stageNext.setPosition(this.stagePrev.x + 84, 178).setVisible(save.stage < Math.min(MAX_STAGE, save.bestStage));
+    this.stageNext.setPosition(this.stagePrev.x + 84, 178).setVisible(save.stage < Math.min(MAX_STAGE, stageCap()));
     this.rushFace.setTexture(bossForStage(save.stage).tex);
     this.rushFace.setScale(100 / Math.max(this.rushFace.width, this.rushFace.height));
     this.rushNum.setText(`Boss ${save.stage}  •  ${RUSH_MS / 1000}s each`);
     const muts = mutationsAt(save.stage);
-    fitText(this.lobbyMuts.setText(muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet"), this.W - 80);
+    this.mutRow.removeAll(true);
+    muts.forEach((m, i) => {
+      if (this.textures.exists(`mut_${m.id}`)) this.mutRow.add(this.add.image(16 + i * 46, 0, `mut_${m.id}`).setScale(0.75));
+    });
   }
 
   update(time: number, delta: number): void {
@@ -572,8 +583,11 @@ export class UIScene extends Phaser.Scene implements Host {
     this.lobby = this.add.container(0, 0);
     this.lobbyTitle = text(this, 40, 178, "", 64, "#ffe6b8").setOrigin(0, 0.5);
     this.lobbyLand = text(this, 40, 236, "", 34).setOrigin(0, 0.5);
-    this.lobbyBest = text(this, 40, 280, "", 26, "#ffe6b8").setOrigin(0, 0.5);
-    this.lobbyMuts = text(this, 40, 318, "", 24, "#e0c4ff").setOrigin(0, 0.5);
+    // best stage next to a trophy, and this stage's mutations as badges
+    this.lobbyBest = text(this, 84, 282, "", 30, "#ffe6b8").setOrigin(0, 0.5);
+    this.lobbyMuts = text(this, 40, 318, "", 24, "#e0c4ff").setOrigin(0, 0.5).setVisible(false);
+    this.mutRow = this.add.container(40, 322);
+    this.lobby.add([this.add.image(56, 282, "icon_trophy").setScale(0.42), this.mutRow]);
     const shade = this.add.graphics();
     shade.fillStyle(0x3a2516, 0.55).fillRect(0, 0, W, 344);
     this.lobby.add([shade, this.lobbyTitle, this.lobbyLand, this.lobbyBest, this.lobbyMuts]);
@@ -610,6 +624,14 @@ export class UIScene extends Phaser.Scene implements Host {
     });
     this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(rush);
+    this.rushHint = this.add.container(rush.x, rush.y - 150, [
+      this.add.image(0, 0, "comic_burst").setScale(0.95, 0.7).setTint(0xffe066),
+      text(this, 0, -4, "TRY ME!", 36, "#ffffff", { stroke: 9 }),
+      this.add.triangle(0, 64, 0, 0, 40, 0, 20, 28, 0xffe066).setStrokeStyle(5, 0x111111),
+    ]).setVisible(false);
+    this.tweens.add({ targets: this.rushHint, y: this.rushHint.y - 18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.tweens.add({ targets: this.rushHint, angle: { from: -6, to: 6 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.lobby.add(this.rushHint);
     this.tweens.add({ targets: go.list.slice(2, 3), scale: 1.08, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     // pick any stage you already reached
     this.stagePrev = arrowButton(this, 0, 178, -1, () => this.pickStage(save.stage - 1));
@@ -618,16 +640,21 @@ export class UIScene extends Phaser.Scene implements Host {
     this.boostRow = this.add.container(W / 2, bottom - 432);
     this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
     // quest tracker
+    // a vivid card: the quest's icon on a paint splat, a short name, a bar with the numbers on it
     const qw = 400;
     this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
     this.tweens.add({ targets: this.questGlow, alpha: { from: 0.25, to: 0.8 }, duration: 600, yoyo: true, repeat: -1 });
     this.questG = this.add.graphics();
-    this.questLabel = text(this, -116, -18, "", 28).setOrigin(0, 0.5);
-    this.questCount = text(this, 30, 26, "", 22);
+    this.questIcon = this.add.image(-qw / 2 + 58, 2, "icon_quest").setScale(0.62);
+    const splat = this.add.image(-qw / 2 + 58, 2, "paint_splash").setTint(0xfff3a0).setScale(0.62);
+    this.questLabel = text(this, -112, -24, "", 30, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5);
+    this.questCount = text(this, 34, 22, "", 22, "#ffffff", { stroke: 5 });
+    this.questCard = this.add.image(0, 0, vividCard(this, 0x5fc85a, qw, 112));
     const tracker = this.add.container(W - qw / 2 - 16, this.L.hudBottom + 100, [
-      this.questGlow, this.add.image(0, 0, panelTexture(this, "glass", qw, 104)), this.add.image(-qw / 2 + 54, 0, "icon_quest").setScale(0.74),
-      this.questLabel, this.questG, this.questCount,
-    ]).setSize(qw, 104).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showQuests());
+      this.questGlow, this.questCard, splat, this.questIcon, this.questLabel, this.questG, this.questCount,
+    ]).setSize(qw, 112).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showQuests());
+    tracker.on("pointerdown", () => this.tweens.add({ targets: tracker, scale: 0.94, duration: 60 }));
+    tracker.on("pointerout", () => tracker.setScale(1));
     this.lobby.add(tracker);
     // small round shortcuts down the left side
     const side = (i: number, icon: string, str: string, fn: () => void, badge?: () => boolean) => {
@@ -716,7 +743,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.eventGlow = this.add.image(0, 0, "glow").setTint(0xffd23f).setScale(1.5, 1.6).setAlpha(0);
     this.tweens.add({ targets: this.eventGlow, alpha: { from: 0.25, to: 0.75 }, duration: 600, yoyo: true, repeat: -1 });
     const card = this.add.image(0, 0, "event_card");
-    const fish = this.add.image(-60, 24, "event_fish").setScale(0.72).setAlpha(0);
+    const fish = this.add.image(-60, 24, "event_fish").setScale(0.72).setAlpha(0).setFlipX(true);
     const ripple = (rx: number) => {
       const r = this.add.image(rx, 30, "ring").setScale(0.12, 0.04).setAlpha(0.9);
       c.addAt(r, 2);
@@ -833,7 +860,13 @@ export class UIScene extends Phaser.Scene implements Host {
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(luck())}`);
-      this.dpsPill.setValue(`${fmt(teamDps().total)} DPS`);
+      // your DPS against what this stage's boss needs: green when you are ready
+      const dps = teamDps().total;
+      const rec = recommendedDps(save.stage);
+      this.dpsPill.setValue(`${fmt(dps)} / ${fmt(rec)}`);
+      this.dpsPill.value.setColor(dps >= rec ? "#b6ff8a" : "#ffb0a0");
+      // way stronger than this stage: Boss Rush is calling
+      this.rushHint.setVisible(dps >= rec * 1.5);
       const owned = BOOSTS.filter((b) => save.boosts[b.id]);
       const key = owned.map((b) => `${b.id}${save.boosts[b.id]}`).join();
       if (key !== this.boostKey) {
@@ -1266,6 +1299,38 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */
+  /** How to play this stage's mode, in pictures: three panels with an icon and a word or two. */
+  private modeIntro(mode: StageMode): void {
+    const W = this.W;
+    const H = this.H;
+    const info = MODE_INFO[mode];
+    const steps: Record<StageMode, [string, string][]> = {
+      air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
+      crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],
+      feed: [["mode_feed", "GRAB"], ["beast_cage", "FEED x6"], ["pk_heart", "FRIEND!"]],
+      dice: [["big_die", "FALLING"], ["sign_warn", "SHADOW"], ["hero", "DODGE!"]],
+      boss: [["mode_boss", "HUGE BOSS"], ["mode_boss", "+3 KIDS"], ["icon_bolt", "FULL POWER"]],
+    };
+    const card = this.add.container(W / 2, H * 0.42).setDepth(5400).setScale(0);
+    card.add([
+      this.add.image(0, 0, vividCard(this, info.color, 900, 470)),
+      this.add.image(-350, -150, info.icon).setScale(0.9),
+      text(this, 30, -150, info.name, 70, "#ffffff", { stroke: 14 }),
+    ]);
+    steps[mode].forEach(([icon, word], i) => {
+      const x = -290 + i * 290;
+      const splat = this.add.image(x, 40, "paint_splash").setTint(0xffffff).setScale(1.05).setAngle(i * 80);
+      const img = this.add.image(x, 30, icon);
+      img.setScale(130 / Math.max(img.width, img.height));
+      if (word === "+3 KIDS") img.setScale(img.scale * 0.6);
+      card.add([splat, img, text(this, x, 160, word, 38, "#ffffff", { stroke: 10 })]);
+      if (i < 2) card.add(this.add.triangle(x + 145, 40, 0, 0, 0, 44, 32, 22, 0xffe066).setStrokeStyle(6, 0x111111));
+      this.tweens.add({ targets: img, y: 18, duration: 500, yoyo: true, repeat: -1, delay: i * 160, ease: "Sine.inOut" });
+    });
+    this.tweens.add({ targets: card, scale: 1, duration: 380, ease: "Back.out" });
+    this.time.delayedCall(2900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
+  }
+
   private bossWarning(): void {
     const { W, H } = this;
     const edge = this.add.graphics().setDepth(5300);
@@ -1322,10 +1387,12 @@ export class UIScene extends Phaser.Scene implements Host {
     const q = ready ?? [...save.quests].sort((a, b) => b.progress / questGoal(b) - a.progress / questGoal(a))[0];
     if (!q) return;
     this.questGlow.setVisible(!!ready);
-    fitText(this.questLabel.setText(ready ? "Quest done! Tap to claim" : questText(q)).setColor(ready ? "#ffe066" : "#ffffff"), 280);
-    this.questCount.setText(q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)}/${fmt(q.target)}`);
+    this.questIcon.setTexture(ready ? "icon_gift" : QUEST_ICON[q.type]);
+    this.questCard.setTexture(vividCard(this, ready ? 0xffc93a : 0x5fc85a, 400, 112));
+    fitText(this.questLabel.setText(ready ? "CLAIM!" : questTitle(q)), 270);
+    this.questCount.setText(q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)} / ${fmt(q.target)}`);
     this.questG.clear();
-    drawBar(this.questG, -116, 14, 292, 24, q.progress / questGoal(q), ready ? 0xffd23f : 0x7ad651);
+    drawBar(this.questG, -112, 8, 290, 30, q.progress / questGoal(q), ready ? 0xffe066 : 0x7ad651);
   }
 
   /** Where the minimap sits: top left in a fight, top right (under the quests) while roaming the lobby. */
@@ -1341,7 +1408,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Play a stage you already reached: the lobby (and its land) switches to it. */
   pickStage(n: number, play = false): void {
     if (battle.mode !== "lobby") return;
-    const st = Phaser.Math.Clamp(n, 1, Math.min(MAX_STAGE, save.bestStage));
+    const st = Phaser.Math.Clamp(n, 1, Math.min(MAX_STAGE, stageCap()));
     const newLand = regionForStage(st).id !== regionForStage(save.stage).id;
     this.game.events.emit("stage-pick", st);
     sfx.click();
@@ -1355,27 +1422,27 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** What a fight is about, for the "Start?" popup. */
-  private eventInfo(kind: FightKind): { title: string; sub: string; tex: string; lines: string[]; color: BtnColor; css: string } {
+  private eventInfo(kind: FightKind): { title: string; sub: string; tex: string; lines: [string, string][]; color: BtnColor; css: string } {
     const def = bossForStage(save.stage);
     if (kind === "battle") {
       const muts = mutationsAt(save.stage);
       return {
         title: "BATTLE", sub: `Stage ${save.stage}  •  ${MODE_INFO[modeForStage(save.stage)].name}`, tex: def.tex, color: "orange", css: "#ffe066",
         lines: [
-          MODE_INFO[modeForStage(save.stage)].goal,
-          modeForStage(save.stage) === "boss" ? `Boss: ${def.name} (HUGE) + 3 boss kids` : `Boss at 5:00: ${def.name}. It heals: close its ${SEALS} seals!`,
-          muts.length ? `Mutations: ${muts.map((m) => m.name).join(", ")}` : "No mutated monsters yet",
-          `Best: stage ${save.bestStage}/${MAX_STAGE}  •  boss pays +${gemsPerBoss()} gems`,
+          [MODE_INFO[modeForStage(save.stage)].icon, MODE_INFO[modeForStage(save.stage)].goal],
+          modeForStage(save.stage) === "boss" ? ["mode_boss", `${def.name} + 3 kids`] : ["icon_clock", `5:00, then ${def.name}`],
+          ["icon_sword", `${fmt(teamDps().total)} / ${fmt(recommendedDps(save.stage))} DPS`],
+          ["icon_gem", `+${gemsPerBoss()}${muts.length ? `   •   ${muts.length} mutations` : ""}`],
         ],
       };
     }
     return {
       title: "BOSS RUSH", sub: `Boss ${save.stage}  •  ${def.name}`, tex: def.tex, color: "purple", css: "#e6c8ff",
       lines: [
-        `${RUSH_MS / 1000}s per boss: each one you beat clears its stage`,
-        "No monsters and no skills: just you and your pets",
-        "Every 5th boss: +3 gems and 2 dice",
-        `Best: boss ${save.bossRushBest}`,
+        ["icon_clock", `${RUSH_MS / 1000}s per boss`],
+        ["mode_boss", "Bosses only, back to back"],
+        ["icon_gem", "Every 5th: +3 gems, 2 dice"],
+        ["icon_trophy", `Best: boss ${save.bossRushBest}`],
       ],
     };
   }
@@ -1397,7 +1464,12 @@ export class UIScene extends Phaser.Scene implements Host {
     b.add([this.add.image(0, top + 250, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(1.2).setAlpha(0.6), face]);
     this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     b.add(text(this, 0, top + 400, info.sub, 44, "#c9663a"));
-    info.lines.forEach((l, i) => b.add(label(this, 0, top + 470 + i * 58, l, 29, "#7a5236", 800)));
+    info.lines.forEach(([icon, l], i) => {
+      const y = top + 480 + i * 66;
+      const ic = this.add.image(-330, y, icon);
+      ic.setScale(54 / Math.max(ic.width, ic.height));
+      b.add([ic, fitText(text(this, -286, y, l, 34, "#7a5236").setOrigin(0, 0.5), 640)]);
+    });
     b.add(this.startBtn = button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
       go = true;
       m.close();
@@ -1648,20 +1720,27 @@ export class UIScene extends Phaser.Scene implements Host {
     const draw = () => {
       content.removeAll(true);
       const r = questReward();
+      const colors = [0x4fa8ff, 0xff8a3a, 0xb36aff];
       save.quests.forEach((q, i) => {
-        const y = -h / 2 + 240 + i * 230;
+        const y = -h / 2 + 230 + i * 236;
         const done = questDone(q);
         const frac = q.progress / questGoal(q);
         const g = this.add.graphics();
-        drawBar(g, -370, y + 2, 400, 32, frac, done ? 0xffd23f : 0x7ad651);
+        drawBar(g, -230, y + 6, 330, 40, frac, done ? 0xffe066 : 0x7ad651);
+        const splat = this.add.image(-330, y, "paint_splash").setTint(0xfff3a0).setScale(0.95).setAngle(i * 70);
+        const icon = this.add.image(-330, y - 4, done ? "icon_gift" : QUEST_ICON[q.type]);
+        icon.setScale(110 / Math.max(icon.width, icon.height));
+        if (done) this.tweens.add({ targets: icon, angle: { from: -10, to: 10 }, duration: 200, yoyo: true, repeat: -1 });
         content.add([
-          this.add.image(0, y, panelTexture(this, "row", 800, 200)),
-          this.add.image(-335, y - 50, "icon_quest").setScale(0.62),
-          fitText(label(this, -285, y - 50, questText(q), 36, "#4a2f1d").setOrigin(0, 0.5), 400),
+          this.add.image(0, y, vividCard(this, done ? 0xffc93a : colors[i % colors.length], 820, 210)),
+          splat, icon,
+          fitText(text(this, -230, y - 52, questTitle(q), 40, "#ffffff", { stroke: 10 }).setOrigin(0, 0.5), 330),
           g,
-          text(this, -170, y + 17, q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)}/${fmt(q.target)}`, 24),
-          label(this, -370, y + 62, `Reward: ${r.gems} gems + ${fmt(r.cash)} money`, 26, "#7a5236").setOrigin(0, 0.5),
-          button(this, 255, y, 240, 116, done ? "green" : "grey", done ? "CLAIM" : `${Math.floor(frac * 100)}%`, () => {
+          text(this, -65, y + 26, q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)} / ${fmt(q.target)}`, 26, "#ffffff", { stroke: 6 }),
+          // the reward as icons
+          this.add.image(-210, y + 74, "icon_gem").setScale(0.36), text(this, -180, y + 74, `${r.gems}`, 28, "#ffffff", { stroke: 6 }).setOrigin(0, 0.5),
+          this.add.image(-60, y + 74, "icon_cash").setScale(0.36), text(this, -30, y + 74, fmt(r.cash), 28, "#ffffff", { stroke: 6 }).setOrigin(0, 0.5),
+          button(this, 265, y, 230, 120, done ? "green" : "grey", done ? "CLAIM" : `${Math.floor(frac * 100)}%`, () => {
             const got = claimQuest(i);
             if (!got) return;
             sfx.fanfare();
@@ -1669,10 +1748,13 @@ export class UIScene extends Phaser.Scene implements Host {
             this.coinShower(this.W / 2 + 255, this.H / 2 + y, 10);
             this.toast(`+${got.gems} gems   +${fmt(got.cash)} money`, "#8af06a");
             draw();
-          }, { size: 40 }).setEnabled(done),
+          }, { size: 42 }).setEnabled(done),
         ]);
       });
-      content.add(label(this, 0, h / 2 - 90, `Quests done: ${save.questsDone}. Every 3 quests the next ones get harder and pay more!`, 26, "#9a7a5a", 760));
+      // every 3 quests the next ones get harder: three stars
+      const k = save.questsDone % 3;
+      for (let i = 0; i < 3; i++) content.add(this.add.star(-60 + i * 60, h / 2 - 96, 5, 14, 30, i < k ? 0xffe066 : 0x8a7a6a).setStrokeStyle(5, 0x111111));
+      content.add(text(this, 140, h / 2 - 96, `= harder & richer`, 26, "#9a7a5a").setOrigin(0, 0.5));
     };
     draw();
   }

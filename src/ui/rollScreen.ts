@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { INK_N, canvasTexture, lighten, linear, starPath } from "../art/draw";
+import { vividCard } from "../art/ps";
 import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, dieTexture, panelTexture, pillTexture } from "../art/ui";
@@ -572,12 +573,6 @@ export class RollScreen extends Screen {
   }
 
   /** A pet to flash on the reel: mostly below the real result, sometimes a teasing rarer one. */
-  private fakePet(rank: number): ItemDef {
-    const r = Math.random();
-    const tier = r < 0.5 ? Math.max(0, rank - 1 - Math.floor(Math.random() * 2)) : r < 0.82 ? rank : Math.min(9, rank + 1 + Math.floor(Math.random() * 2));
-    return PET_LIST[Math.min(PET_LIST.length - 1, tier * 10 + Math.floor(Math.random() * 10))];
-  }
-
   /** Colourful paper raining down from the top of the screen. */
   private confetti(colors: number[], n: number): void {
     const s = this.scene;
@@ -662,17 +657,18 @@ export class RollScreen extends Screen {
     const bestRank = Math.max(...results.map((r) => rarityRank(r.item.rarity)));
     const best = results.reduce((a, b) => (b.item.oneIn > a.item.oneIn ? b : a));
     const fast = this.host.isFast();
-    const suspense = !fast && bestRank >= 3;
     const quick = Phaser.Math.Clamp(rollTime() / 2000, 0.12, 1) * (fast ? 0.5 : 1);
-    const spin = Math.max(140, 1000 * quick) + (suspense ? 500 + bestRank * 90 : 0) + (info.superRoll && !fast ? 500 : 0);
-    const hold = Math.max(150, 700 * quick) + (suspense ? 300 : 0) + bestRank * 60;
+    // first only the class card shows (the big letter), about 2 s, then it flips over
+    const classMs = fast ? 600 : 2000 + (info.superRoll ? 400 : 0);
+    // the pet stays up about 2 s after its flip (quicker in FAST mode)
+    const hold = fast ? Math.max(150, 700 * quick) + bestRank * 60 : 2000 + bestRank * 60;
     const fly = Math.max(140, 360 * quick);
     const burst = s.add.particles(0, 0, "spark", {
       speed: { min: 200, max: 620 }, lifespan: 800, scale: { start: 0.9, end: 0 }, rotate: { min: 0, max: 180 }, gravityY: 500, emitting: false,
     });
 
     // the die still tumbles behind the shade
-    const tumble = Math.min(spin, 900);
+    const tumble = Math.min(classMs, 900);
     s.tweens.add({ targets: this.die, angle: this.die.angle + 720, duration: tumble, ease: "Cubic.out" });
     const faces = s.time.addEvent({ delay: 70, repeat: Math.floor(tumble / 70), callback: () => this.die.setTexture(dieTexture(s, dieSkin(), 1 + Math.floor(Math.random() * 6))) });
     s.time.delayedCall(tumble + 80, () => {
@@ -686,7 +682,7 @@ export class RollScreen extends Screen {
     layer.add([auraRays, aura]);
     s.tweens.add({ targets: auraRays, angle: 360, duration: 12000, repeat: -1 });
     if (!fast && bestRank >= 2) {
-      const stepMs = Math.min(spin * 0.85, 300 + bestRank * 170) / bestRank;
+      const stepMs = Math.min(classMs * 0.85, 300 + bestRank * 170) / bestRank;
       for (let k = 1; k <= bestRank; k++) {
         s.time.delayedCall(k * stepMs, () => {
           const c = RARITY_INFO[RARITY_ORDER[k]].color;
@@ -731,7 +727,18 @@ export class RollScreen extends Screen {
       const name = text(s, 0, CARD_H / 2 - 27, "", 25);
       // a paint splat behind the pet, like an inventory slot
       const splat = s.add.image(0, -12, "paint_splash").setScale(1.15).setAngle(Phaser.Math.Between(0, 359)).setAlpha(0.9);
-      const card = s.add.container(x, y + 200, [frame, rar, splat, pet, odds, name, badge]).setScale(0);
+      // the back of the card: the class colour, sunburst and the big class letter
+      const cls = res.item.cls;
+      const letter = classText(s, 0, -20, cls, cls.length > 2 ? 96 : 140, cls);
+      const back = s.add.container(0, 0, [
+        s.add.image(0, 0, vividCard(s, TIER_INFO[cls].color, CARD_W, CARD_H)),
+        letter,
+        text(s, 0, CARD_H / 2 - 50, "CLASS", 30, "#ffffff", { stroke: 7 }),
+      ]);
+      const front = [frame, rar, splat, pet, odds, name, badge];
+      front.forEach((o) => o.setVisible(false));
+      const card = s.add.container(x, y + 200, [frame, rar, splat, pet, odds, name, badge, back]).setScale(0);
+      s.tweens.add({ targets: letter, scale: 1.12, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       layer.add([rays, glow, card]);
       cards.push(card);
       extras.push(glow, rays);
@@ -751,21 +758,27 @@ export class RollScreen extends Screen {
       };
       const stagger = n > 3 ? 30 : 60;
       s.tweens.add({ targets: card, scale, y, duration: 220, delay: i * stagger, ease: "Back.out" });
-      let t = 0;
-      let k = 0;
-      const tick = () => {
-        show(this.fakePet(rank), false);
-        if (i === 0) sfx.tick(k);
-        k++;
-        const p = t / spin;
-        s.tweens.add({ targets: card, y: y - 10, duration: 30, yoyo: true });
-        if (suspense && p > 0.55) {
-          card.setAngle(Phaser.Math.Between(-4, 4));
-          glow.setAlpha(0.35 + p * 0.5).setScale(scale * (1.8 + p * 0.8));
-        }
-        const delay = 40 + (suspense ? 200 : 120) * p * p;
-        t += delay;
-        s.time.delayedCall(delay, t < spin ? tick : land);
+      const classPhase = () => {
+        const crank = tierIndex(cls);
+        glow.setTint(TIER_INFO[cls].color).setAlpha(0.6);
+        if (loud) sfx.charge(Math.min(6, 1 + crank));
+        // the better the class, the more it shakes before the flip
+        if (crank >= 3) s.tweens.add({ targets: card, angle: { from: -3, to: 3 }, duration: 70, yoyo: true, repeat: Math.floor(classMs / 140) - 2, delay: classMs * 0.4 });
+        s.tweens.add({ targets: glow, scale: scale * (2 + crank * 0.15), duration: classMs, ease: "Quad.in" });
+        s.time.delayedCall(classMs, () => {
+          // flip: squeeze to nothing, swap faces, open again on the pet
+          s.tweens.add({
+            targets: card, scaleX: 0, duration: 130, ease: "Quad.in",
+            onComplete: () => {
+              s.tweens.killTweensOf(letter);
+              back.setVisible(false);
+              front.forEach((o) => o.setVisible(true));
+              card.setAngle(0);
+              s.tweens.add({ targets: card, scaleX: scale, duration: 150, ease: "Back.out" });
+              land();
+            },
+          });
+        });
       };
       const land = () => {
         show(res.item, true);
@@ -815,7 +828,7 @@ export class RollScreen extends Screen {
         }
         if (++landed === n) allLanded();
       };
-      s.time.delayedCall(i * stagger + 140 + (info.superRoll && !fast ? 300 : 0), tick);
+      s.time.delayedCall(i * stagger + 140, classPhase);
     });
     layer.add(burst);
 

@@ -33,11 +33,11 @@ export const MINUTE_HP_STEP = 0.3;
 export const HERO_BASE_DMG = 6;
 /** Hero adds this share of the team's pet damage to each bullet. */
 export const HERO_TEAM_SHARE = 0.2;
-export const HERO_HP = 100;
+export const HERO_HP = 50;
 /** Your health grows with the stage as fast as the monsters' bites (5% a stage), so a touch hurts the same everywhere. */
 export const heroHpAt = (stage: number) => HERO_HP * (1 + 0.05 * (stage - 1));
 
-export const CRYSTAL_HP = 800;
+export const CRYSTAL_HP = 160;
 /** The crystal toughens up as fast as the monsters' bites grow (5% a stage). */
 export const crystalHpAt = (stage: number) => CRYSTAL_HP * (1 + 0.05 * (stage - 1));
 /** The crystal is open for 45 s, then shielded for 45 s, and so on. */
@@ -64,13 +64,13 @@ export interface MonsterStats {
   xp: number;
 }
 
-export const WALKER_A: MonsterStats = { hp: 4, speed: 165, cash: 0.1, dmg: 4, xp: 1 };
-export const WALKER_B: MonsterStats = { hp: 7, speed: 135, cash: 0.15, dmg: 6, xp: 2 };
-export const FLYER: MonsterStats = { hp: 3, speed: 235, cash: 0.1, dmg: 3, xp: 1 };
+export const WALKER_A: MonsterStats = { hp: 4, speed: 250, cash: 0.1, dmg: 4, xp: 1 };
+export const WALKER_B: MonsterStats = { hp: 7, speed: 215, cash: 0.15, dmg: 6, xp: 2 };
+export const FLYER: MonsterStats = { hp: 3, speed: 430, cash: 0.1, dmg: 3, xp: 1 };
 export const ELITE_MULT = 8;
 /** The boss has as much health as a hundred normal monsters (at the end of the stage). */
 export const BOSS_HP_MULT = 100;
-export const BOSS: MonsterStats = { hp: ((WALKER_A.hp + WALKER_B.hp) / 2) * BOSS_HP_MULT, speed: 120, cash: 60, dmg: 22, xp: 0 };
+export const BOSS: MonsterStats = { hp: ((WALKER_A.hp + WALKER_B.hp) / 2) * BOSS_HP_MULT, speed: 230, cash: 60, dmg: 22, xp: 0 };
 
 /**
  * Stage bosses heal themselves (Boss Rush bosses don't): this share of their health per second
@@ -83,6 +83,13 @@ export const SEALS = 5;
 export const SEAL_MS = 3000;
 /** Healing stage bosses start with less health than before, so closing the seals keeps them as hard as they were. */
 export const HEALING_BOSS_HP = 0.75;
+/** stage bosses (not Boss Rush) have this much more health */
+export const BATTLE_BOSS_MULT = 2;
+/**
+ * The lobby DPS that beats this stage's boss in about 40 s. Skills and gadgets picked up in a
+ * run make you about 3.5x stronger by 5:00 than the lobby number (see dev/sim.ts).
+ */
+export const recommendedDps = (stage: number) => (monsterHp(BOSS.hp, stage, MINUTES) * HEALING_BOSS_HP * BATTLE_BOSS_MULT) / (40 * 3.5);
 /** For the simulator: closing a seal about every 6 s lets the boss heal for this many full-rate seconds. */
 export const SKILLED_HEAL_SECS = 18;
 

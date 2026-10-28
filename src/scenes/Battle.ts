@@ -12,7 +12,7 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { crystalKey, makeWorldTextures } from "../art/world";
 import {
-  AIRDROP_FIRST_MS, AIRDROP_MS, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE, heroHpAt,
+  AIRDROP_FIRST_MS, AIRDROP_MS, BATTLE_BOSS_MULT, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE, heroHpAt,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
 import { BOOSTS, BoostDef } from "../data/boosts";
@@ -31,7 +31,7 @@ import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier
 import { ARENA, Arena, EDGE, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { questEvent } from "../systems/goals";
-import { hasPass, persist, save } from "../systems/save";
+import { hasPass, persist, save, stageCap } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
 import {
   cashMult, chestMult, critChance, critDamage, dmgMult, gadgetTierCap, gemsPerBoss, heroDmgMult, moveSpeedMult, petSlots, rangeMult, villageHpMult,
@@ -49,6 +49,13 @@ const HERO_SPEED = 390;
 const PET_LEASH = 1000;
 const PET_SPEED = 520;
 const HERO_R = 40;
+/** Dice Rain: how often each tier of falling die shows up */
+const RAIN_TIERS: [Tier, number][] = [["A", 40], ["B", 25], ["C", 15], ["D", 9], ["E", 6], ["S", 3], ["SSS", 1.5], ["uSSS", 0.5]];
+const pickWeighted = <T,>(list: [T, number][]): T => {
+  let r = Math.random() * list.reduce((t, [, w]) => t + w, 0);
+  for (const [v, w] of list) if ((r -= w) <= 0) return v;
+  return list[0][0];
+};
 /** the Air Zone covers 10% of the map */
 const AIR_ZONE = Math.round(ARENA * Math.sqrt(0.1));
 const PICK_R = 210;
@@ -389,6 +396,12 @@ export class BattleScene extends Phaser.Scene {
   private fogPuffs: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private dizzy = 0;
   private dizzyCam = false;
+  /** Air Zone: bubbles of air out in the fog (grab one for +35% air) */
+  private airBubbles: { img: Phaser.GameObjects.Image; glow: Phaser.GameObjects.Image; life: number }[] = [];
+  private airBubT = 4000;
+  /** Feed the Beast: the thought bubble over the cage */
+  private beastThought: Phaser.GameObjects.Container | null = null;
+  private roarT = 0;
   private dizzyStars: Phaser.GameObjects.Image[] = [];
   private vignette: Phaser.FX.Vignette | null = null;
   private shieldImg!: Phaser.GameObjects.Image;
@@ -471,6 +484,9 @@ export class BattleScene extends Phaser.Scene {
 
   private fx!: Phaser.GameObjects.Graphics;
   private bars!: Phaser.GameObjects.Graphics;
+  /** health numbers on the bars (reused every frame) */
+  private hpLabels: Phaser.GameObjects.Text[] = [];
+  private hpUsed = 0;
   private puff!: Phaser.GameObjects.Particles.ParticleEmitter;
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   private dmgTexts: Phaser.GameObjects.Text[] = [];
@@ -520,6 +536,10 @@ export class BattleScene extends Phaser.Scene {
     this.dizzy = 0;
     this.dizzyCam = false;
     this.dizzyStars = [];
+    this.airBubbles = [];
+    this.airBubT = 4000;
+    this.beastThought = null;
+    this.roarT = 0;
     this.vignette = null;
     this.land = regionForStage(save.stage);
     this.arena = getArena(this.land.id);
@@ -557,6 +577,7 @@ export class BattleScene extends Phaser.Scene {
 
     this.fx = this.add.graphics().setDepth(9000);
     this.bars = this.add.graphics().setDepth(9100);
+    this.hpLabels = [];
     this.puff = this.add.particles(0, 0, "puff", { speed: { min: 80, max: 340 }, lifespan: 500, scale: { start: 1.2, end: 0 }, emitting: false }).setDepth(8900);
     this.sparks = this.add.particles(0, 0, "spark", {
       speed: { min: 120, max: 360 }, lifespan: 320, scale: { start: 0.7, end: 0 }, rotate: { min: 0, max: 90 }, emitting: false,
@@ -588,6 +609,8 @@ export class BattleScene extends Phaser.Scene {
 
     this.buildPets();
     this.setupControls();
+    // a finger lifted while the fight was paused never let go of the joystick: let go now
+    this.events.on("resume", () => (this.joy = { ...NO_JOY }));
     const on: [string, (...a: never[]) => void][] = [
       ["pets-changed", this.buildPets],
       ["battle-start", this.begin],
@@ -773,6 +796,8 @@ export class BattleScene extends Phaser.Scene {
   /** The run starts: a fresh clock, the field fills with pickups. */
   private startRun(): void {
     this.state = "intro";
+    // the mode comes from the stage picked right now (the lobby may have switched stages since the world was built)
+    if (!this.rush) this.stageMode = battle.stageMode = modeForStage(save.stage);
     // dice picked up while roaming the lobby are not part of this run's results
     this.stats = freshStats();
     battle.stats = this.stats;
@@ -780,11 +805,11 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
-    this.banner(`STAGE ${save.stage}  •  ${MODE_INFO[this.stageMode].name}`, "peach", 900);
+    if (!this.rush) this.game.events.emit("mode-intro", this.stageMode);
     const boosts = this.useBoosts();
     this.modeStart();
     this.time.delayedCall(1500, () => {
-      this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
+      if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
       if (this.stageMode === "boss") this.time.delayedCall(900, () => this.state === "fight" && this.bossCutscene());
       music.play("battle");
@@ -2297,7 +2322,7 @@ export class BattleScene extends Phaser.Scene {
   /** The player picked a stage they have reached (in the lobby); a new land rebuilds the world. */
   private pickStage(n: number): void {
     if (this.state !== "lobby") return;
-    const st = Phaser.Math.Clamp(Math.round(n), 1, Math.min(MAX_STAGE, save.bestStage));
+    const st = Phaser.Math.Clamp(Math.round(n), 1, Math.min(MAX_STAGE, stageCap()));
     if (st === save.stage) return;
     save.stage = st;
     persist();
@@ -2329,9 +2354,27 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "dice") {
       this.sign(cx, cy + 520, "DICE RAIN!", "watch the shadows", "#ffe066");
+      // a dice graveyard: old giant dice half sunk into the ground all over
+      for (let i = 0; i < 26; i++) {
+        const [x, y] = this.randomSpot(500, 2600);
+        const d = this.add.image(x, y, i % 2 ? "big_die" : "big_die3").setOrigin(0.5, 0.8).setScale(0.55 + (i % 3) * 0.15).setAngle(Phaser.Math.Between(-25, 25)).setTint(0xd8d0c0).setDepth(y);
+        this.add.ellipse(x, y, d.displayWidth * 0.9, 40, 0x3a2a1a, 0.35).setDepth(y - 1);
+      }
       for (const [dx, dy] of [[-420, 380], [420, 380], [-300, -260], [300, -260]]) this.warnSign(cx + dx, cy + dy);
     }
-    if (m === "boss") this.sign(cx, cy + 520, "BOSS ARENA", "beat all four!", "#ff8a8a");
+    if (m === "boss") {
+      this.sign(cx, cy + 520, "BOSS ARENA", "beat all four!", "#ff8a8a");
+      // burning torches scattered around the field (no walls: the whole map is yours)
+      for (let i = 0; i < 18; i++) {
+        const [tx, ty] = this.randomSpot(500, 2600);
+        this.add.image(tx, ty, "torch").setOrigin(0.5, 1).setDepth(ty);
+        this.add.particles(tx, ty - 170, "spark", {
+          x: { min: -14, max: 14 }, lifespan: 600, speedY: { min: -160, max: -80 }, scale: { start: 1.1, end: 0 },
+          tint: [0xffe066, 0xff8a2a, 0xff3a3a], blendMode: Phaser.BlendModes.ADD, frequency: 40,
+        }).setDepth(ty + 1);
+        this.add.image(tx, ty - 170, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(ty);
+      }
+    }
     // only the crystal stage has a crystal to guard
     this.crystal.setVisible(false);
     this.crystalGlow.setAlpha(0);
@@ -2458,6 +2501,69 @@ export class BattleScene extends Phaser.Scene {
     this.airFx = fx;
   }
 
+  /** Things drawn every frame for the mode: your air ring, the path to the cage. */
+  private modeFx(): void {
+    if (battle.mode !== "run") return;
+    const g = this.fx;
+    const t = this.time.now;
+    if (this.stageMode === "air" && this.air.zone && this.air.oxygen < 0.999) {
+      // a ring of air around you, emptying as you run out
+      const o = this.air.oxygen;
+      const c = o > 0.35 ? 0x4fd8ff : t % 300 < 150 ? 0xffffff : 0xf26464;
+      const [hx, hy] = [this.hero.x, this.hero.y - 100];
+      g.lineStyle(20, 0x111111, 0.45).strokeCircle(hx, hy, 150);
+      g.lineStyle(12, c, 0.95).beginPath().arc(hx, hy, 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * o).strokePath();
+    }
+    const b = this.beast;
+    if (b?.carried && !b.friend && !b.escaped) {
+      // a dotted trail from you to the cage
+      const [cx, cy] = this.arena.center;
+      const d = Math.hypot(cx - this.hero.x, cy - this.hero.y);
+      const n = Math.floor(d / 70);
+      for (let i = 1; i < n; i++) {
+        const k = (i + ((t / 200) % 1)) / n;
+        g.fillStyle(0xffa040, 0.85).fillCircle(this.hero.x + (cx - this.hero.x) * k, this.hero.y + (cy - this.hero.y) * k, 11);
+      }
+    }
+  }
+
+  /** Air bubbles float out in the fog: grab one for a gulp of air. */
+  private airBubbleTick(delta: number): void {
+    this.airBubT -= delta;
+    if (this.airBubT <= 0) {
+      this.airBubT = 4500;
+      if (this.airBubbles.length < 5) {
+        for (let k = 0; k < 10; k++) {
+          const [x, y] = this.randomSpot(350, 900, [this.hero.x, this.hero.y]);
+          const a = this.air;
+          if (x > a.x - 60 && x < a.x + AIR_ZONE + 60 && y > a.y - 60 && y < a.y + AIR_ZONE + 60) continue;
+          const glow = this.add.image(x, y - 60, "glow").setTint(0x9ef0ff).setScale(1.2).setAlpha(0.7).setDepth(14004);
+          const img = this.add.image(x, y - 60, "mode_air").setScale(0).setDepth(14005);
+          this.tweens.add({ targets: img, scale: 1, duration: 300, ease: "Back.out" });
+          this.tweens.add({ targets: [img, glow], y: y - 100, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          this.airBubbles.push({ img, glow, life: 14000 });
+          break;
+        }
+      }
+    }
+    for (const bb of [...this.airBubbles]) {
+      bb.life -= delta;
+      const got = Math.hypot(this.hero.x - bb.img.x, this.hero.y - 60 - bb.img.y) < 130;
+      if (got || bb.life <= 0) {
+        this.airBubbles = this.airBubbles.filter((o) => o !== bb);
+        this.tweens.killTweensOf([bb.img, bb.glow]);
+        if (got) {
+          this.air.oxygen = Math.min(1, this.air.oxygen + 0.35);
+          this.sparks.setParticleTint(0x9ef0ff);
+          this.sparks.explode(20, bb.img.x, bb.img.y);
+          this.callout("+AIR!", "#9ef0ff");
+          sfx.coin();
+        }
+        this.tweens.add({ targets: [bb.img, bb.glow], scale: got ? 1.8 : 0, alpha: 0, duration: 250, onComplete: () => [bb.img, bb.glow].forEach((o) => o.destroy()) });
+      }
+    }
+  }
+
   /** Purple poison fog over the whole map except the air zone. */
   private drawFog(): void {
     const a = this.air;
@@ -2539,6 +2645,7 @@ export class BattleScene extends Phaser.Scene {
       sfx.alarm();
     }
     if (a.t <= 0) this.airMove();
+    this.airBubbleTick(delta);
     const inside = this.inAir();
     a.oxygen = Phaser.Math.Clamp(a.oxygen + (inside ? 0.5 : -1 / AIR_SECS) * (delta / 1000), 0, 1);
     // no air left: you choke, a bite of health every half second
@@ -2567,6 +2674,12 @@ export class BattleScene extends Phaser.Scene {
     cage.once("destroy", () => back.destroy());
     const bar = this.add.graphics().setDepth(cy + 42);
     this.feedSign = this.sign(cx + 470, cy + 260, "FEED ME!", `0/${FEEDS} snacks`, "#ffd29a");
+    for (const [dx, dy] of [[-380, 190], [-300, 260], [360, 120]]) this.add.image(cx + dx, cy + dy, "food_bowl").setDepth(cy + dy);
+    // a thought bubble: what the beast wants
+    const tg = this.add.graphics();
+    tg.fillStyle(0xffffff, 1).fillEllipse(0, 0, 170, 130).fillCircle(-60, 90, 18).fillCircle(-84, 124, 10);
+    tg.lineStyle(6, 0x111111, 1).strokeEllipse(0, 0, 170, 130).strokeCircle(-60, 90, 18).strokeCircle(-84, 124, 10);
+    this.beastThought = this.add.container(cx + 250, cy - 520, [tg, this.add.image(0, 0, "mode_feed").setScale(0.8)]).setDepth(cy + 600).setVisible(false);
     this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0 };
   }
 
@@ -2619,6 +2732,22 @@ export class BattleScene extends Phaser.Scene {
     b.bar.clear();
     drawBar(b.bar, cx - 200, b.cage.y - 300, 400, 30, b.hunger, b.hunger > 0.35 ? 0xffa040 : 0xf26464);
     b.cage.x = b.hunger < 0.3 && this.time.now % 300 < 150 ? cx + Phaser.Math.Between(-10, 10) : cx;
+    const th = this.beastThought;
+    if (th) {
+      th.setVisible(b.hunger < 0.75);
+      th.setScale(b.hunger < 0.3 ? 1 + Math.sin(this.time.now / 80) * 0.12 : 1 + Math.sin(this.time.now / 300) * 0.05);
+    }
+    // a hungry beast roars and rattles its cage
+    if (this.state === "fight" && b.hunger < 0.3) {
+      this.roarT -= delta;
+      if (this.roarT <= 0) {
+        this.roarT = 2500;
+        this.cameras.main.shake(250, 0.006);
+        this.tweens.add({ targets: b.img, scaleX: b.img.scaleX * 1.12, duration: 120, yoyo: true, repeat: 1 });
+        this.callout("GRRR!", "#ff8a6a");
+        sfx.alarm();
+      }
+    }
   }
 
   private feedBeast(): void {
@@ -2653,6 +2782,8 @@ export class BattleScene extends Phaser.Scene {
     const b = this.beast!;
     b.friend = true;
     b.bar.clear();
+    this.beastThought?.destroy();
+    this.beastThought = null;
     const cage = b.cage;
     this.tweens.add({ targets: cage, y: cage.y - 900, alpha: 0, angle: 25, duration: 900, ease: "Back.in", onComplete: () => cage.destroy() });
     this.tweens.killTweensOf(b.img);
@@ -2692,6 +2823,8 @@ export class BattleScene extends Phaser.Scene {
     const b = this.beast!;
     b.escaped = true;
     b.bar.clear();
+    this.beastThought?.destroy();
+    this.beastThought = null;
     b.food?.destroy();
     b.food = null;
     b.carried = false;
@@ -2731,48 +2864,104 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** A giant die: its shadow and a red ring grow, then it slams down. */
+  /**
+   * A giant die of a random tier (A is common, uSSS very rare). The rarer it is, the bigger it hits
+   * and the wider, the faster it falls and the louder its show: trails, flashes, shockwaves.
+   * Its shadow and a ring in its colour warn you where it lands.
+   */
   private dropBigDie(x: number, y: number): void {
-    const R = 170;
-    const fall = 1300;
+    const tier = pickWeighted(RAIN_TIERS);
+    const rank = tierIndex(tier);
+    const color = TIER_INFO[tier].color;
+    const R = 150 + rank * 28;
+    const fall = Math.max(600, 1450 - rank * 115);
+    const dmg = this.heroMax * (0.14 + rank * 0.045);
     const shadow = this.add.ellipse(x, y, R * 2, R, 0x000000, 0.35).setScale(0.15).setDepth(4);
-    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(8, 0xff3a3a, 0.9).setDepth(4);
-    this.tweens.add({ targets: ring, alpha: 0.3, duration: 180, yoyo: true, repeat: -1 });
-    this.tweens.add({ targets: shadow, scale: 1, duration: fall, ease: "Quad.in" });
+    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(8 + rank, rank >= 3 ? color : 0xff3a3a, 0.95).setDepth(4);
+    const inner = this.add.ellipse(x, y, R * 2, R, rank >= 3 ? color : 0xff3a3a, 0.18).setDepth(4).setScale(0);
+    this.tweens.add({ targets: ring, alpha: 0.3, duration: Math.max(80, 180 - rank * 15), yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: [shadow, inner], scale: 1, duration: fall, ease: "Quad.in" });
     // it starts small (high up) and grows as it comes down
-    const die = this.add.image(x, y - 1500, Math.random() < 0.5 ? "big_die" : "big_die3").setScale(0.5).setDepth(y + 2000);
-    this.tweens.add({ targets: die, angle: Phaser.Math.Between(-400, 400), scale: 1.3, duration: fall, ease: "Quad.in" });
+    const size = 2.4 + rank * 0.28;
+    const die = this.add.image(x, y - 1500, `die_${tier}`).setScale(size * 0.3).setDepth(y + 2000);
+    this.tweens.add({ targets: die, angle: Phaser.Math.Between(-400, 400) * (1 + rank * 0.3), scale: size, duration: fall, ease: "Quad.in" });
+    // rare ones glow and leave a trail of sparks on the way down
+    let trail: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+    if (rank >= 2) {
+      trail = this.add.particles(0, 0, "spark", {
+        speed: { min: 20, max: 80 }, lifespan: 500, scale: { start: 0.6 + rank * 0.1, end: 0 }, tint: [color, 0xffffff],
+        blendMode: Phaser.BlendModes.ADD, frequency: Math.max(12, 50 - rank * 6),
+      }).setDepth(y + 1999);
+      trail.startFollow(die);
+      if (rank >= 5) sfx.charge(3);
+    }
+    const rolls = rank <= 2 && Math.random() < 0.3;
     this.tweens.add({
-      targets: die, y: y - 110, duration: fall, ease: "Quad.in",
+      targets: die, y: y - 40, duration: fall, ease: "Quad.in",
       onComplete: () => {
         ring.destroy();
         shadow.destroy();
+        inner.destroy();
+        trail?.stop();
+        this.time.delayedCall(600, () => trail?.destroy());
         if (!this.fighting) {
           this.tweens.add({ targets: die, alpha: 0, duration: 300, onComplete: () => die.destroy() });
           return;
         }
-        this.cameras.main.shake(160, 0.008);
+        this.cameras.main.shake(140 + rank * 50, 0.006 + rank * 0.002);
         sfx.boom();
-        buzz(30);
+        buzz(30 + rank * 15);
+        if (rank >= 4) this.cameras.main.flash(120 + rank * 20, (color >> 16) & 255, (color >> 8) & 255, color & 255);
         this.puff.setParticleTint(0xd8c8a8);
-        this.puff.explode(24, x, y);
-        this.stars.explode(8, x, y - 80);
+        this.puff.explode(20 + rank * 6, x, y);
+        this.stars.explode(6 + rank * 3, x, y - 80);
+        if (rank >= 2) {
+          this.sparks.setParticleTint(color);
+          this.sparks.explode(15 + rank * 8, x, y - 60);
+        }
         die.setAngle(Math.round(die.angle / 90) * 90);
-        this.tweens.add({ targets: die, scaleY: 1.0, scaleX: 1.55, duration: 90, yoyo: true });
-        const wave = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(14, 0xffffff, 0.9).setDepth(5).setScale(0.4);
-        this.tweens.add({ targets: wave, scale: 1.8, alpha: 0, duration: 450, ease: "Quad.out", onComplete: () => wave.destroy() });
-        const crack = this.add.image(x, y, "dice_crack").setDepth(3).setScale(1.1);
+        this.tweens.add({ targets: die, scaleY: size * 0.75, scaleX: size * 1.25, duration: 90, yoyo: true });
+        // one shockwave, more for the rare ones
+        for (let k = 0; k <= Math.floor(rank / 2); k++) {
+          const wave = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(14, k ? color : 0xffffff, 0.9).setDepth(5).setScale(0.4);
+          this.tweens.add({ targets: wave, scale: 1.8 + k * 0.4, alpha: 0, duration: 450 + k * 120, delay: k * 110, ease: "Quad.out", onComplete: () => wave.destroy() });
+        }
+        const crack = this.add.image(x, y, "dice_crack").setDepth(3).setScale(1 + rank * 0.18);
         this.tweens.add({ targets: crack, alpha: 0, delay: 2200, duration: 800, onComplete: () => crack.destroy() });
         if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
-          this.hurt(this.heroMax * 0.22);
-          this.callout("SQUASHED!", "#ff8a8a");
+          this.hurt(dmg);
+          this.callout(rank >= 5 ? `${tier} SMASH!` : "SQUASHED!", "#ff8a8a");
         } else this.rain.dodged++;
         // monsters under it get squashed too
-        for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * 0.6 + this.heroDamage() * 3);
-        if (Math.random() < 0.12) this.addDie(rollDiceTier(save.stage), x, y, 30000);
+        for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * (0.6 + rank * 0.2) + this.heroDamage() * (3 + rank));
+        // the rare ones leave a real die behind
+        if (rank >= 4) {
+          this.addDie(rollDiceTier(save.stage + rank), x + 70, y + 30, 30000);
+          this.callout(`${tier} DIE!`, TIER_INFO[tier].css);
+        } else if (Math.random() < 0.1) this.addDie(rollDiceTier(save.stage), x, y, 30000);
         die.setDepth(y + 10);
-        this.tweens.add({ targets: die, y: y - 170, duration: 200, yoyo: true, ease: "Quad.out" });
-        this.tweens.add({ targets: die, alpha: 0, delay: 700, duration: 400, onComplete: () => die.destroy() });
+        if (rolls) {
+          // it tumbles on across the ground: get out of its way!
+          const a = Math.random() * Math.PI * 2;
+          let hitYou = false;
+          this.tweens.add({
+            targets: die, x: clampX(x + Math.cos(a) * 650), y: clampY(y + Math.sin(a) * 450) - 40, angle: die.angle + (Math.cos(a) > 0 ? 540 : -540),
+            duration: 900, delay: 250, ease: "Quad.out",
+            onUpdate: () => {
+              die.setDepth(die.y + 60);
+              if (!hitYou && this.fighting && Math.hypot(this.hero.x - die.x, this.hero.y - (die.y + 40)) < 150) {
+                hitYou = true;
+                this.hurt(dmg * 0.7);
+                this.callout("BONK!", "#ff8a8a");
+              }
+              for (const en of this.near(die.x, die.y + 40, 140)) if (!en.type.boss) this.hit(en, en.maxHp);
+            },
+          });
+          this.tweens.add({ targets: die, alpha: 0, delay: 1300, duration: 300, onComplete: () => die.destroy() });
+          return;
+        }
+        this.tweens.add({ targets: die, y: y - 110, duration: 200, yoyo: true, ease: "Quad.out" });
+        this.tweens.add({ targets: die, alpha: 0, delay: 700 + rank * 100, duration: 400, onComplete: () => die.destroy() });
       },
     });
   }
@@ -2816,6 +3005,17 @@ export class BattleScene extends Phaser.Scene {
       e.huntHero = true;
       e.phaseT = 3500 + i * 900;
     }
+  }
+
+  /** A health number like 1.2K / 3K on a bar (labels are reused frame to frame). */
+  private hpNum(x: number, y: number, hp: number, max: number, size: number): void {
+    let t = this.hpLabels[this.hpUsed];
+    if (!t) {
+      t = text(this, 0, 0, "", size, "#ffffff", { stroke: 6 }).setDepth(9102);
+      this.hpLabels.push(t);
+    }
+    this.hpUsed++;
+    t.setVisible(true).setPosition(x, y).setFontSize(size).setText(`${fmt(Math.max(0, Math.ceil(hp)))} / ${fmt(Math.ceil(max))}`);
   }
 
   private bossCutscene(): void {
@@ -2930,7 +3130,8 @@ export class BattleScene extends Phaser.Scene {
         this.puff.setParticleTint(0xd8c8a8);
         this.puff.explode(40, x, y);
         const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves }, x, y);
-        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP);
+        // Battle bosses are twice as tough as in Boss Rush
+        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP * BATTLE_BOSS_MULT);
         boss.huntHero = true;
         boss.phaseT = 2500;
         if (this.beast?.friend) {
@@ -3026,7 +3227,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.time.delayedCall(reason === "quit" ? 300 : 1300, () => {
       const result: StageResult = {
-        stage: save.stage, reason, time: this.elapsed, stats: this.stats, canRevive: !this.revived && reason !== "quit", reviveGems: REVIVE_GEMS,
+        stage: save.stage, reason, time: this.elapsed, stats: this.stats, canRevive: false, reviveGems: REVIVE_GEMS,
       };
       this.game.events.emit("stage-failed", result);
     });
@@ -3379,6 +3580,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Starts a boss move: each one shows itself first so you can get out of the way. */
   private startBossMove(e: Enemy, move: BossMoveId, ux: number, uy: number): void {
+    this.bossAlert(e, move);
     const glowUp = (color: number) => {
       e.img.setTintFill(color);
       this.time.delayedCall(90, () => e.img.clearTint());
@@ -3493,6 +3695,27 @@ export class BattleScene extends Phaser.Scene {
         this.tweens.add({ targets: e.img, scaleY: e.img.scaleY * 1.08, duration: 400, yoyo: true });
         break;
     }
+  }
+
+  /** Before every boss move: a big red "!" with the move's name, and the boss flashes red. */
+  private bossAlert(e: Enemy, move: BossMoveId): void {
+    const top = e.img.y - e.img.displayHeight * 0.95 - 120;
+    const bubble = this.add.container(e.img.x, top, [
+      this.add.image(0, 0, "comic_burst").setScale(0.9, 0.75),
+      text(this, 0, -4, "!", 92, "#ffffff", { stroke: 14 }),
+      text(this, 0, 92, `${BOSS_MOVES[move].toUpperCase()}!`, 46, "#ffe066", { stroke: 10 }),
+    ]).setDepth(9300).setScale(0);
+    this.tweens.add({ targets: bubble, scale: 1, duration: 220, ease: "Back.out" });
+    this.tweens.add({ targets: bubble, y: top - 30, alpha: 0, delay: 900, duration: 300, onComplete: () => bubble.destroy() });
+    // keep the bubble over the boss while it moves
+    const follow = this.time.addEvent({ delay: 16, repeat: 70, callback: () => bubble.active && e.img.active && bubble.setX(e.img.x) });
+    bubble.once("destroy", () => follow.remove());
+    for (let i = 0; i < 3; i++) this.time.delayedCall(i * 180, () => {
+      if (!e.img.active) return;
+      e.img.setTintFill(0xff3a3a);
+      this.time.delayedCall(90, () => e.img.active && e.img.clearTint());
+    });
+    sfx.charge(2);
   }
 
   /** Is the hero inside the boss's breath cone? */
@@ -3983,6 +4206,7 @@ export class BattleScene extends Phaser.Scene {
   /** Warnings for the boss's moves (marks on the ground, no lines) and health bars. */
   private drawFx(time: number): void {
     this.fx.clear();
+    this.modeFx();
     for (const sl of this.seals) {
       if (sl.done) continue;
       if (Math.hypot(sl.x - this.hero.x, sl.y - this.hero.y) < SEAL_SEE) {
@@ -3996,10 +4220,30 @@ export class BattleScene extends Phaser.Scene {
     for (const e of this.enemies) {
       const blink = time % 200 < 100 ? 0.55 : 0.3;
       if (e.phase === "windup") {
-        // a trail of red marks where the boss will charge
-        for (let d = 120; d <= 700; d += 75) {
-          this.fx.fillStyle(0xff3a3a, blink).fillEllipse(e.img.x + e.dashX * d, e.img.y + e.dashY * d, 70, 32);
+        // a red lane with an arrow where the boss will charge
+        const [nx, ny] = [-e.dashY, e.dashX];
+        const L = 760;
+        const W2 = 70;
+        const pts = [
+          [e.img.x + nx * W2, e.img.y + ny * W2], [e.img.x + e.dashX * L + nx * W2, e.img.y + e.dashY * L + ny * W2],
+          [e.img.x + e.dashX * (L + 110), e.img.y + e.dashY * (L + 110)],
+          [e.img.x + e.dashX * L - nx * W2, e.img.y + e.dashY * L - ny * W2], [e.img.x - nx * W2, e.img.y - ny * W2],
+        ].map(([x, y]) => new Phaser.Math.Vector2(x, y));
+        this.fx.fillStyle(0xff3a3a, blink * 0.6).fillPoints(pts, true);
+        this.fx.lineStyle(10, 0xffffff, blink + 0.3).strokePoints(pts, true);
+        for (let d = 120; d <= L; d += 110) {
+          this.fx.fillStyle(0xffffff, blink).fillTriangle(
+            e.img.x + e.dashX * (d + 40), e.img.y + e.dashY * (d + 40),
+            e.img.x + e.dashX * d + nx * 30, e.img.y + e.dashY * d + ny * 30,
+            e.img.x + e.dashX * d - nx * 30, e.img.y + e.dashY * d - ny * 30,
+          );
         }
+      } else if (e.phase === "throw" || e.phase === "volley") {
+        // aim line at you
+        this.fx.lineStyle(10, 0xff3a3a, blink).lineBetween(e.img.x, e.img.y - 60, this.hero.x, this.hero.y - 40);
+        this.fx.lineStyle(6, 0xffffff, blink).strokeCircle(this.hero.x, this.hero.y - 40, 60);
+      } else if (e.phase === "ring") {
+        this.fx.lineStyle(12, 0xff3a3a, blink).strokeEllipse(e.img.x, e.img.y, 900 * (1 - e.phaseT / 600) + 100, (900 * (1 - e.phaseT / 600) + 100) * 0.7);
       } else if (e.phase === "breath") {
         const a = Math.atan2(e.dashY, e.dashX);
         const [ox, oy] = [e.img.x, e.img.y - 60];
@@ -4008,32 +4252,46 @@ export class BattleScene extends Phaser.Scene {
           ox, oy, ox + Math.cos(a - BREATH_HALF) * BREATH_LEN, oy + Math.sin(a - BREATH_HALF) * BREATH_LEN,
           ox + Math.cos(a + BREATH_HALF) * BREATH_LEN, oy + Math.sin(a + BREATH_HALF) * BREATH_LEN,
         );
+        this.fx.lineStyle(10, 0xffffff, blink + 0.3).strokeTriangle(
+          ox, oy, ox + Math.cos(a - BREATH_HALF) * BREATH_LEN, oy + Math.sin(a - BREATH_HALF) * BREATH_LEN,
+          ox + Math.cos(a + BREATH_HALF) * BREATH_LEN, oy + Math.sin(a + BREATH_HALF) * BREATH_LEN,
+        );
       } else if (e.phase === "burrow") {
         this.fx.fillStyle(0x8a6a3a, 0.85).fillEllipse(e.img.x, e.img.y, 150, 56);
         this.fx.fillStyle(0xc8a878, 0.9).fillEllipse(e.img.x, e.img.y - 8, 100, 34);
       } else if (e.phase === "stomp") {
         const f = 1 - Math.max(0, e.phaseT) / 950;
-        this.fx.fillStyle(0xff3a3a, 0.15 + f * 0.25).fillEllipse(e.img.x, e.img.y, 720 * f, 504 * f);
-        this.fx.lineStyle(8, 0xff3a3a, blink).strokeEllipse(e.img.x, e.img.y, 720, 504);
+        this.fx.fillStyle(0xff3a3a, 0.2 + f * 0.3).fillEllipse(e.img.x, e.img.y, 720 * f, 504 * f);
+        this.fx.lineStyle(16, 0xff3a3a, blink + 0.3).strokeEllipse(e.img.x, e.img.y, 720, 504);
+        this.fx.lineStyle(6, 0xffffff, blink + 0.3).strokeEllipse(e.img.x, e.img.y, 700, 490);
       }
     }
     for (const st of this.strikes) {
       const f = Phaser.Math.Clamp(1 - (st.at - time) / st.ms, 0, 1);
       const blink = time % 200 < 100 ? 0.75 : 0.4;
-      this.fx.fillStyle(0xff3a3a, 0.1 + f * 0.3).fillEllipse(st.x, st.y, st.r * 2 * f, (st.r * 2 * f) / 1.4);
-      this.fx.lineStyle(8, 0xff3a3a, blink).strokeEllipse(st.x, st.y, st.r * 2, (st.r * 2) / 1.4);
+      this.fx.fillStyle(0xff3a3a, 0.15 + f * 0.35).fillEllipse(st.x, st.y, st.r * 2 * f, (st.r * 2 * f) / 1.4);
+      this.fx.lineStyle(14, 0xff3a3a, blink).strokeEllipse(st.x, st.y, st.r * 2, (st.r * 2) / 1.4);
+      this.fx.lineStyle(6, 0xffffff, blink).strokeEllipse(st.x, st.y, st.r * 1.9, (st.r * 1.9) / 1.4);
+      // a crosshair in the middle
+      this.fx.lineStyle(8, 0xffffff, blink).lineBetween(st.x - st.r * 0.3, st.y, st.x + st.r * 0.3, st.y).lineBetween(st.x, st.y - st.r * 0.22, st.x, st.y + st.r * 0.22);
     }
     this.bars.clear();
+    this.hpUsed = 0;
+    const numbers = battle.mode === "run";
     for (const e of this.enemies) {
       // only bosses and elites get bars (a horde of bars is just noise)
       if (!e.type.boss && !e.elite) continue;
       const w = e.type.boss ? 300 : e.elite ? 170 : 120;
       const y = e.img.y - e.img.displayHeight * (e.type.flying ? 0.5 : 0.95) - 24;
       drawBar(this.bars, e.img.x - w / 2, y, w, e.type.boss ? 30 : 18, e.hp / e.maxHp, e.type.boss || e.elite ? 0xf26464 : 0x7ad651);
+      if (numbers && e.type.boss) this.hpNum(e.img.x, y + 15, e.hp, e.maxHp, 26);
     }
     for (const p of this.pets) {
       drawBar(this.bars, p.img.x - 55, p.img.y - 128, 110, 12, p.hp / p.maxHp, p.down > 0 ? 0x9a9aa8 : p.hp / p.maxHp > 0.35 ? 0x7ad651 : 0xf26464);
+      if (numbers) this.hpNum(p.img.x, p.img.y - 146, p.hp, p.maxHp, 20);
     }
+    if (numbers) this.hpNum(this.hero.x, this.hero.y + 26, this.heroHp, this.heroMax, 24);
+    for (let i = this.hpUsed; i < this.hpLabels.length; i++) this.hpLabels[i].setVisible(false);
     if (battle.mode === "lobby") return;
     if (this.lv("haunt") && this.fighting) {
       const r = this.hauntR();

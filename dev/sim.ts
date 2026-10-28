@@ -15,7 +15,7 @@
  *   kills inside 15 s clears its stage
  */
 import {
-  BOSS, BOSS_HEAL, FLYER, HEALING_BOSS_HP, SKILLED_HEAL_SECS, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
+  BATTLE_BOSS_MULT, BOSS, BOSS_HEAL, FLYER, HEALING_BOSS_HP, SKILLED_HEAL_SECS, HERO_BASE_DMG, HERO_TEAM_SHARE, MAX_STAGE, MINUTES, WALKER_A, WALKER_B, monsterCash,
   monsterHp, spawnGap,
 } from "../src/data/balance";
 import { GADGET_TIERS, DICE_TIERS, DICE_LUCK, Tier, diceTierChances } from "../src/data/tiers";
@@ -104,7 +104,7 @@ function run(s: number, dps: number): { won: boolean; secs: number; cash: number
     minutesSurvived++;
   }
   // the boss heals until you close its seals (a skilled player closes one every ~6 s)
-  const bossHp = monsterHp(BOSS.hp, s, MINUTES) * HEALING_BOSS_HP * (1 + BOSS_HEAL * SKILLED_HEAL_SECS);
+  const bossHp = monsterHp(BOSS.hp, s, MINUTES) * HEALING_BOSS_HP * BATTLE_BOSS_MULT * (1 + BOSS_HEAL * SKILLED_HEAL_SECS);
   const bossOk = minutesSurvived === MINUTES && dps * skillMult(MINUTES) * 40 >= bossHp;
   const cash = kills * monsterCash((WALKER_A.cash + WALKER_B.cash + FLYER.cash) / 3, s) * prod("cash") * 1.4 + (bossOk ? monsterCash(BOSS.cash, s) : 0);
   // dice: ~60% of the 14 on the map, elites, chests, rare drops, boss

@@ -22,23 +22,23 @@ export interface ModeInfo {
 export const MODE_INFO: Record<StageMode, ModeInfo> = {
   air: {
     name: "AIR ZONE", banner: "STAY IN THE AIR!", icon: "mode_air", color: 0x4fd8ff, css: "#9ef0ff",
-    goal: "Stay inside the green air zone: it moves every 30s. Outside, your air runs out!",
+    goal: "Stay in the air zone!",
   },
   crystal: {
     name: "CRYSTAL", banner: "SURVIVE 5:00!", icon: "mode_crystal", color: 0xff7ad8, css: "#ffc2f0",
-    goal: "Survive 5:00 and keep the crystal safe, then beat the boss",
+    goal: "Guard the crystal!",
   },
   feed: {
     name: "FEED THE BEAST", banner: "FEED THE BEAST!", icon: "mode_feed", color: 0xffa040, css: "#ffd29a",
-    goal: "Bring 6 snacks to the giant pet in the cage. Feed it all 6 and it fights the boss with you; let it go hungry and it breaks out!",
+    goal: "Feed the beast 6 snacks!",
   },
   dice: {
     name: "DICE RAIN", banner: "DODGE THE DICE!", icon: "mode_dice", color: 0xffe066, css: "#fff2a8",
-    goal: "Giant dice fall from the sky all game long: watch the shadows and dodge!",
+    goal: "Dodge the giant dice!",
   },
   boss: {
     name: "BOSS BATTLE", banner: "BOSS BATTLE!", icon: "mode_boss", color: 0xff4a4a, css: "#ffb0b0",
-    goal: "HARDCORE: you start fully powered up against a HUGE boss and its 3 boss kids",
+    goal: "Beat 4 bosses!",
   },
 };
 

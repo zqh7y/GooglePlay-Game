@@ -380,4 +380,54 @@ export function makeModeTextures(scene: Phaser.Scene): void {
       c.stroke();
     }
   });
+
+  // a stone torch post (the flame is particles in the game)
+  canvasTexture(scene, "torch", 90, 220, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 6;
+    c.strokeStyle = INK;
+    c.fillStyle = "#5a4a6a";
+    c.beginPath();
+    c.moveTo(30, 60);
+    c.lineTo(60, 60);
+    c.lineTo(66, 214);
+    c.lineTo(24, 214);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#3a2e48";
+    c.fillRect(48, 64, 10, 146);
+    c.fillStyle = "#8a7a9a";
+    c.beginPath();
+    c.ellipse(45, 58, 38, 16, 0, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#2a1a10";
+    c.beginPath();
+    c.ellipse(45, 54, 28, 9, 0, 0, Math.PI * 2);
+    c.fill();
+  });
+  // a food bowl next to the beast's cage
+  canvasTexture(scene, "food_bowl", 160, 90, (c) => {
+    c.lineWidth = 6;
+    c.strokeStyle = INK;
+    c.fillStyle = "#c85a3a";
+    c.beginPath();
+    c.moveTo(10, 36);
+    c.quadraticCurveTo(80, 120, 150, 36);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#b0541c";
+    c.beginPath();
+    c.ellipse(80, 36, 70, 18, 0, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#f0a050";
+    for (const [x, y] of [[56, 30], [82, 26], [104, 32], [70, 38], [94, 40]]) {
+      c.beginPath();
+      c.arc(x, y, 9, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
 }

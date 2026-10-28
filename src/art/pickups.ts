@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DICE_TIERS, TIER_INFO, Tier } from "../data/tiers";
+import { DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { FONT } from "../ui/widgets";
 import { makeSkillTextures } from "./skills";
 import { INK, Ctx, canvasTexture, circle, darken, ellipse, fill, fillOutline, lighten, linear, outline, radial, rgba, rr, starPath } from "./draw";
@@ -69,30 +69,89 @@ function meat(big: boolean) {
 }
 
 /** A die in its tier colour with the tier letter on it. */
+/**
+ * A tier die as a little 3D cube: a front face with the tier letter, a lit top with two pips and a
+ * shaded side, all in the tier colour; S and better get a gold rim and sparkles.
+ */
 function tierDie(t: Tier) {
   return (ctx: Ctx) => {
     const { color } = TIER_INFO[t];
-    ctx.save();
-    ctx.translate(40, 40);
-    ctx.rotate(-0.15);
-    rr(ctx, -30, -30, 60, 64, 14);
-    fill(ctx, INK);
-    rr(ctx, -26, -26, 52, 54, 11);
-    fill(ctx, rgba(darken(color, 0.3)));
-    rr(ctx, -26, -26, 52, 48, 11);
-    fill(ctx, linear(ctx, 0, -26, 0, 22, [[0, rgba(lighten(color, 0.55))], [1, rgba(color)]]));
-    ellipse(ctx, -12, -16, 9, 4, -0.4);
+    const rich = tierIndex(t) >= 5;
+    const rim = rich ? "#ffd23f" : INK;
+    const f = 50;
+    const d = 15;
+    const x0 = 8;
+    const y0 = 8 + d + 4;
+    ctx.lineJoin = "round";
+    // a soft shadow on the ground
+    ellipse(ctx, x0 + f / 2 + 6, y0 + f + 2, 30, 6, 0);
+    fill(ctx, "rgba(0,0,0,0.25)");
+    const face = (pts: [number, number][], paint: string | CanvasGradient) => {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.fillStyle = paint;
+      ctx.fill();
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+    };
+    // top
+    face([[x0, y0], [x0 + d, y0 - d], [x0 + d + f, y0 - d], [x0 + f, y0]], rgba(lighten(color, 0.6)));
+    // side
+    face([[x0 + f, y0], [x0 + f + d, y0 - d], [x0 + f + d, y0 - d + f], [x0 + f, y0 + f]], rgba(darken(color, 0.3)));
+    // front
+    rr(ctx, x0, y0, f, f, 8);
+    ctx.fillStyle = t === "uSSS"
+      ? linear(ctx, x0, y0, x0 + f, y0 + f, [[0, "#ff7a9a"], [0.25, "#ffd23f"], [0.5, "#7af07a"], [0.75, "#5ac8ff"], [1, "#b36aff"]])
+      : linear(ctx, x0, y0, x0 + f, y0 + f, [[0, rgba(lighten(color, 0.4))], [1, rgba(color)]]);
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    if (rich) {
+      rr(ctx, x0 + 3, y0 + 3, f - 6, f - 6, 6);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = rim;
+      ctx.stroke();
+    }
+    // gloss on the front
+    ellipse(ctx, x0 + 14, y0 + 10, 9, 4, -0.5);
     fill(ctx, "rgba(255,255,255,0.6)");
-    const size = t.length >= 4 ? 18 : t.length === 3 ? 22 : 34;
+    // two pips on the top (squashed by the angle) and one on the side
+    for (const k of [0.3, 0.7]) {
+      ellipse(ctx, x0 + d / 2 + f * k, y0 - d / 2, 4.5, 2.2, 0);
+      fill(ctx, "#ffffff");
+    }
+    ellipse(ctx, x0 + f + d / 2, y0 - d / 2 + f / 2, 2.4, 4.5, 0);
+    fill(ctx, "rgba(255,255,255,0.75)");
+    // the tier letter
+    const size = t.length >= 4 ? 16 : t.length === 3 ? 19 : 30;
     ctx.font = `${size}px ${FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 5;
     ctx.strokeStyle = INK;
-    ctx.strokeText(t, 0, 0);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(t, 0, 0);
-    ctx.restore();
+    ctx.strokeText(t, x0 + f / 2, y0 + f / 2 + 1);
+    ctx.fillStyle = rich ? "#fff3a0" : "#ffffff";
+    ctx.fillText(t, x0 + f / 2, y0 + f / 2 + 1);
+    if (rich) {
+      // sparkles
+      for (const [sx, sy, r] of [[70, 12, 5], [6, 60, 4], [72, 56, 3]]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - r * 2);
+        ctx.lineTo(sx + r * 0.5, sy - r * 0.5);
+        ctx.lineTo(sx + r * 2, sy);
+        ctx.lineTo(sx + r * 0.5, sy + r * 0.5);
+        ctx.lineTo(sx, sy + r * 2);
+        ctx.lineTo(sx - r * 0.5, sy + r * 0.5);
+        ctx.lineTo(sx - r * 2, sy);
+        ctx.lineTo(sx - r * 0.5, sy - r * 0.5);
+        ctx.closePath();
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+      }
+    }
   };
 }
 

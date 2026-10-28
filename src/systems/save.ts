@@ -76,6 +76,8 @@ export interface SaveData {
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
   fishing: FishingState;
+  /** developer mode: every stage can be played from the map */
+  dev: boolean;
   /** gamepasses bought (kept forever) */
   passes: string[];
   /** the daily pack chain: which day and how many steps claimed */
@@ -173,6 +175,7 @@ function fresh(): SaveData {
     fishing: freshFishing(),
     tickets: 0,
     passes: [],
+    dev: false,
     pack: { day: -1, step: 0 },
     eventShop: { slot: -1, bought: [], week: -1, special: false },
     merchant: { cycle: -1, shift: 0, bought: [] },
@@ -287,3 +290,6 @@ export function resetSave(): void {
 
 /** Owns this gamepass. */
 export const hasPass = (id: string) => save.passes.includes(id);
+
+/** The highest stage you may pick: the best you reached (every stage in developer mode). */
+export const stageCap = () => (save.dev ? 100 : Math.max(1, save.bestStage));

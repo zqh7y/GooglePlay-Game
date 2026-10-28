@@ -52,6 +52,26 @@ export function questText(q: Quest): string {
   }
 }
 
+/** A short name (the numbers go on the bar) and an icon for each kind of quest. */
+export function questTitle(q: Quest): string {
+  switch (q.type) {
+    case "kill": return "Defeat monsters";
+    case "roll": return "Roll dice";
+    case "wave": return "Survive minutes";
+    case "dice": return "Find dice";
+    case "buy": return "Buy upgrades";
+    case "boss": return "Beat bosses";
+    case "combo": return "Kill streak";
+    case "fish": return "Go fishing";
+    case "rare": return `Roll ${RARITY_INFO[RARITY_ORDER[q.target]].label}`;
+  }
+}
+
+export const QUEST_ICON: Record<QuestType, string> = {
+  kill: "icon_skull", roll: "icon_dice", wave: "icon_clock", dice: "icon_dice", buy: "icon_star",
+  boss: "mode_boss", combo: "icon_bolt", fish: "icon_fish", rare: "icon_egg",
+};
+
 /** For progress bars: "rare" is a yes/no goal. */
 export const questGoal = (q: Quest) => (q.type === "rare" ? 1 : q.target);
 export const questDone = (q: Quest) => q.progress >= questGoal(q);

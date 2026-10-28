@@ -131,8 +131,11 @@ hour of fishing brings.
   and vivid cards: colour gradients with sunburst rays, sparkles and thick black outlines, big outlined
   titles, chunky green price buttons, and every item sitting on a paint splat. Rewards (chests, rolls,
   fishing) show on paint splats too, like an inventory.
-  - **Classic Pack** (FEATURED): a daily chain of 5 rewards. The first costs 60 gems, then each next one is
-    FREE, in order. A new pack every day.
+  - **Classic Pack** (FEATURED): a 50-step chain you swipe through sideways. Every 5th step costs gems
+    (60, 120, 200 ... 2000) and the 4 after it are FREE, in order; the last step is **5 uSSS dice**.
+    Progress is kept until you finish, then it starts over.
+  - Gem prices are 3x what they were (gems are worth more), and the **Gems & Potions** branch of the
+    upgrade tree is bought with gems. **Free Gifts** pile up (one every 30 min, up to 8): one tap opens them all.
   - **Gamepasses** (FEATURED): bought once, kept forever (gems for now, real money later): **VIP** +25% money,
     **Magic Dice** +50% luck, **Super Drops** every die from battles counts twice, **Super Roller** a SUPER
     ROLL every 30 rolls instead of 50, **Fast Fisher** catches twice as fast, **Gem Hunter** double boss gems.
@@ -212,17 +215,28 @@ hour of fishing brings.
 - **Stage modes** (`src/data/modes.ts`): stages cycle through 5 modes, 1-2-3-4-5-1-2-3... up to 100. The
   lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green zone covering 10% of the map is the only place with air. Every 30 s it moves
-     (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke.
+     (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
+     a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.
   2. **Crystal**: the classic mode below (guard the crystal for 5:00).
   3. **Feed the Beast**: a giant pet sits in a cage in the middle and gets hungry over 60 s. A snack shows
      up 6 times (from 0:20, every 45 s): grab it and carry it to the cage (each feed also drops a die).
      Feed all 6 and the cage flies off: the beast follows you and stomps monsters and the boss, but the
      boss gets 1.8x health. If it ever starves, it breaks out, huge and angry, and hunts you.
-  4. **Dice Rain**: giant dice fall from the sky all game, more and more often. A shadow and a red ring
-     show where; getting hit costs 22% health, monsters under them get squashed, and some leave a real die.
+  4. **Dice Rain**: giant dice of every tier fall from the sky all game (A common ... uSSS very rare). The
+     rarer the die, the bigger its hit area and damage, the faster it falls and the bigger its show (spark
+     trails, flashes, several shockwaves). A shadow and a ring show where; tier E and better leave a real
+     die, some small ones keep rolling after they land, and old dice lie half buried all over the field.
   5. **Boss Battle** (hardcore): no 5:00. You start fully powered up (3 gadgets at your best tier and max
      level, 4 skills at level 3) against a HUGE boss (1.5x health) and 3 smaller boss kids. Beat all four.
   Only the Crystal mode has a crystal (and the crystal skills); the other modes show their goal in its place.
+  Every stage starts with a picture card (3 icons) showing how its mode works. The mode is read when you
+  press START, so a stage picked in the lobby always plays its own mode. Before every boss move a red
+  "!" bubble with the move's name pops up and the boss flashes; its lanes, circles and cones are drawn bold.
+- **Tougher fights**: your hero has half the health it had, the crystal a fifth, monsters and bosses are
+  much faster (flyers outrun you), stage bosses have 2x health (not in Boss Rush), and there is no revive
+  for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
+  the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
+- **Developer mode**: tap the top panel of the map 5 times. Every stage can then be played from the map.
   Free roam has no crystal: a wooden signboard stands in the middle showing the next stage and its mode,
   and the crystal only drops out of the sky when a Crystal stage starts. Every mode has its own signs and
   effects: the Air Zone is a glowing wall of light with light pillars on its corners and bubbles inside,

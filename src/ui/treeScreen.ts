@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { canvasTexture, darken, lighten, linear, mix, rgba } from "../art/draw";
 import { BRANCH_INFO, Branch, TREE, TREE_BY_ID, TreeNode, effectText, hexPos, perAt, stepsOf } from "../data/tree";
-import { buyNode, canBuy, nextCost, nodeOwned, nodeUnlocked, stepsBought } from "../systems/stats";
+import { buyNode, canBuy, nextCost, nodeOwned, nodeUnlocked, paysGems, stepsBought } from "../systems/stats";
 import { sfx } from "../systems/sound";
 import { Layout } from "../layout";
 import { fmt } from "./format";
@@ -233,7 +233,10 @@ export class TreeScreen {
     const check = s.add.image(x + 46, y - 44, "icon_check").setScale(0.48);
     const n = stepsOf(node);
     const pips = n > 1 ? [...Array(n)].map((_, i) => s.add.circle(x + (i - (n - 1) / 2) * 22, y - 54, 8, 0x0a1a20, 0.5).setStrokeStyle(3, 0xffffff, 0.9)) : [];
-    this.map.add([glow, hex, icon, name, price, q, check, ...pips]);
+    // gem hexagons show a little gem next to their price
+    const gem = paysGems(node) ? s.add.image(x - 34, y + 52, "icon_gem").setScale(0.28) : null;
+    if (gem) price.setX(x + 10);
+    this.map.add([glow, hex, icon, name, price, q, check, ...pips, ...(gem ? [gem] : [])]);
     this.views.set(node.id, { node, hex, icon, name, price, q, check, glow, pips, state: "", steps: -1 });
   }
 
@@ -245,7 +248,7 @@ export class TreeScreen {
 
   /** The best thing to buy now: the cheapest one you can afford, else the cheapest open one. */
   private bestNext(): TreeNode | null {
-    const open = TREE.filter((n) => n.id !== "start" && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => nextCost(a) - nextCost(b));
+    const open = TREE.filter((n) => n.id !== "start" && !paysGems(n) && (this.stateOf(n) === "ready" || this.stateOf(n) === "open")).sort((a, b) => nextCost(a) - nextCost(b));
     return open.find((n) => this.stateOf(n) === "ready") ?? open[0] ?? null;
   }
 
@@ -280,7 +283,7 @@ export class TreeScreen {
     this.best.icon.setTexture(`icon_${node.icon}`);
     fitText(this.best.name.setText(`${node.name}  •  ${BRANCH_INFO[node.branch].label}`), this.scene.scale.width - 460);
     const what = this.stepText(node);
-    fitText(this.best.info.setText(ready ? what : `${what}  •  need ${fmt(nextCost(node) - save.cash)} more`), this.scene.scale.width - 460);
+    fitText(this.best.info.setText(ready ? what : `${what}  •  need ${fmt(nextCost(node) - (paysGems(node) ? save.gems : save.cash))} more`), this.scene.scale.width - 460);
     this.best.buy.setVisible(true).setColor(ready ? "green" : "grey").setSub(fmt(nextCost(node)));
   }
 
@@ -310,7 +313,7 @@ export class TreeScreen {
     for (const v of this.views.values()) {
       const st = this.stateOf(v.node);
       const showPrice = st === "ready" || st === "open";
-      if (showPrice) v.price.setText(fmt(nextCost(v.node))).setColor(st === "ready" ? "#b6ff8a" : "#ff9a9a");
+      if (showPrice) v.price.setText(fmt(nextCost(v.node))).setColor(st === "ready" ? (paysGems(v.node) ? "#9ae6ff" : "#b6ff8a") : "#ff9a9a");
       v.price.setVisible(showPrice);
       const steps = stepsBought(v.node);
       if (steps !== v.steps) {
@@ -470,7 +473,7 @@ export class TreeScreen {
       fitText(label(s, 0, -h / 2 + 142, {
         owned: "You own this",
         ready: stepsOf(node) > 1 ? `Step ${stepsBought(node) + 1} of ${stepsOf(node)}: you can buy it now!` : "You can buy this now!",
-        open: `Need ${fmt(nextCost(node) - save.cash)} more money`,
+        open: paysGems(node) ? `Need ${fmt(nextCost(node) - save.gems)} more gems` : `Need ${fmt(nextCost(node) - save.cash)} more money`,
         locked: `Part of the ${BRANCH_INFO[node.branch].label} path`,
       }[st], 26, st === "ready" ? "#3f9a2f" : st === "open" ? "#c0564a" : "#8a8a8a"), w - 60),
     ];
@@ -480,7 +483,7 @@ export class TreeScreen {
       parts.push(fitText(label(s, 0, h / 2 - 62, `Needs: ${node.req.map((r) => TREE_BY_ID[r].name).join(", ")}`, 30, "#c0564a"), w - 60));
     } else {
       parts.push(button(s, 0, h / 2 - 66, 360, 100, st === "ready" ? "green" : "grey", stepsOf(node) > 1 ? `BUY STEP ${stepsBought(node) + 1}` : "BUY", () => this.buy(node), {
-        sub: fmt(nextCost(node)), subIcon: "icon_cash", size: 34,
+        sub: fmt(nextCost(node)), subIcon: paysGems(node) ? "icon_gem" : "icon_cash", size: 34,
       }));
     }
     this.tip = s.add.container(tx, ty, parts).setScale(0.6).setAlpha(0);

@@ -20,9 +20,12 @@ import { fmt } from "./format";
 import { Host, Screen } from "./screens";
 import { Button, button, fitText, label, text } from "./widgets";
 
-const FREE_GIFT_MS = 10 * 60 * 1000;
+/** Free gifts pile up: one every 30 minutes, up to 8, all opened with one tap. */
+const FREE_GIFT_MS = 30 * 60 * 1000;
+const FREE_GIFT_MAX = 8;
+export const freeGifts = () => (Date.now() < save.freeGiftAt ? 0 : Math.min(FREE_GIFT_MAX, 1 + Math.floor((Date.now() - save.freeGiftAt) / FREE_GIFT_MS)));
 const WHEEL_MS = 4 * 60 * 60 * 1000;
-const WHEEL_GEMS = 8;
+const WHEEL_GEMS = 25;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const income = (minutes: number) => Math.max(1000, save.cashPerSec * 60 * minutes);
@@ -81,11 +84,11 @@ const CHESTS: ChestDef[] = [
     rewards: () => [...diceRewards(4 + Math.floor(Math.random() * 3), 5), cashReward(income(5))],
   },
   {
-    id: "silver", name: "Silver Chest", tex: "chest_silver", color: "blue", hint: "8-12 better dice + gems", gems: 25, minutes: 0,
+    id: "silver", name: "Silver Chest", tex: "chest_silver", color: "blue", hint: "8-12 better dice + gems", gems: 75, minutes: 0,
     rewards: () => [...diceRewards(8 + Math.floor(Math.random() * 5), 20), gemReward(3 + Math.floor(Math.random() * 4)), cashReward(income(15))],
   },
   {
-    id: "gold", name: "Golden Chest", tex: "chest_gold", color: "gold", hint: "15-20 rare dice + lots more", gems: 80, minutes: 0,
+    id: "gold", name: "Golden Chest", tex: "chest_gold", color: "gold", hint: "15-20 rare dice + lots more", gems: 240, minutes: 0,
     rewards: () => [...diceRewards(15 + Math.floor(Math.random() * 6), 40), gemReward(10), potionReward(10), cashReward(income(45))],
   },
 ];
@@ -101,11 +104,11 @@ interface Deal {
 
 /** One Deal of the Day, a different one each day. */
 const DEALS: Deal[] = [
-  { title: "MEGA DICE BOX", desc: "20 A dice + 8 B dice + 2 C dice", icons: ["die_A", "die_B", "die_C"], was: 140, gems: 55, rewards: () => [diceReward("A", 20), diceReward("B", 8), diceReward("C", 2)] },
-  { title: "LUCKY BUNDLE", desc: "3 Luck Potions + 5 B dice", icons: ["icon_potion", "icon_clover", "die_B"], was: 60, gems: 25, rewards: () => [potionReward(potionMinutes() * 3), diceReward("B", 5)] },
-  { title: "BOOST PACK", desc: "2 of every Battle Boost", icons: ["gd_bubble", "pk_heart", "skill_orb"], was: 90, gems: 35, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x2", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 2) })) },
-  { title: "RARE ROLLER", desc: "4 C dice + 1 D die", icons: ["die_C", "die_D", "die_C"], was: 120, gems: 50, rewards: () => [diceReward("C", 4), diceReward("D", 1)] },
-  { title: "TREASURE TRIO", desc: "3 Silver Chests in one", icons: ["chest_silver", "chest_silver", "chest_silver"], was: 75, gems: 35, rewards: () => [0, 1, 2].flatMap(() => CHESTS[1].rewards()) },
+  { title: "MEGA DICE BOX", desc: "20 A dice + 8 B dice + 2 C dice", icons: ["die_A", "die_B", "die_C"], was: 420, gems: 165, rewards: () => [diceReward("A", 20), diceReward("B", 8), diceReward("C", 2)] },
+  { title: "LUCKY BUNDLE", desc: "3 Luck Potions + 5 B dice", icons: ["icon_potion", "icon_clover", "die_B"], was: 180, gems: 75, rewards: () => [potionReward(potionMinutes() * 3), diceReward("B", 5)] },
+  { title: "BOOST PACK", desc: "2 of every Battle Boost", icons: ["gd_bubble", "pk_heart", "skill_orb"], was: 270, gems: 105, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x2", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 2) })) },
+  { title: "RARE ROLLER", desc: "4 C dice + 1 D die", icons: ["die_C", "die_D", "die_C"], was: 360, gems: 150, rewards: () => [diceReward("C", 4), diceReward("D", 1)] },
+  { title: "TREASURE TRIO", desc: "3 Silver Chests in one", icons: ["chest_silver", "chest_silver", "chest_silver"], was: 225, gems: 105, rewards: () => [0, 1, 2].flatMap(() => CHESTS[1].rewards()) },
 ];
 
 // ───────────────────────── the Event Shop ─────────────────────────
@@ -223,7 +226,7 @@ function shopState() {
 
 /** The merchant restocks every 30 minutes: 6 slots, each a random ware of a random rarity. */
 const MERCHANT_MS = 30 * 60 * 1000;
-const REROLL_GEMS = 15;
+const REROLL_GEMS = 45;
 const cycleNow = () => Math.floor(Date.now() / MERCHANT_MS);
 const RARITY_NAMES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
 const RARITY_BG: BtnColor[] = ["mint", "blue", "purple", "orange", "gold"];
@@ -250,30 +253,30 @@ const stageTierPlus = (k: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.indexO
 const WARES: Ware[][] = [
   [
     { id: "dice0", name: "Dice Bag", icon: "die_A", minutes: 8, rewards: () => [diceReward(stageTierPlus(0), 8)] },
-    { id: "cash0", name: "Coin Sack", icon: "icon_cash", gems: 4, rewards: () => [cashReward(income(30))] },
-    { id: "speed0", name: "Speed Potion", icon: "icon_clock", gems: 5, rewards: () => [{ icon: "icon_clock", amount: "10m", give: () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 600000) }] },
+    { id: "cash0", name: "Coin Sack", icon: "icon_cash", gems: 12, rewards: () => [cashReward(income(30))] },
+    { id: "speed0", name: "Speed Potion", icon: "icon_clock", gems: 15, rewards: () => [{ icon: "icon_clock", amount: "10m", give: () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 600000) }] },
     { id: "shell0", name: "Shell Pouch", icon: "fish_shell", minutes: 10, rewards: () => [{ icon: "fish_shell", amount: "x60", give: () => (save.fishing.shells += 60) }] },
   ],
   [
-    { id: "dice1", name: "Better Dice", icon: "die_B", gems: 12, rewards: () => [diceReward(stageTierPlus(1), 4)] },
-    { id: "potion1", name: "Luck Potion", icon: "icon_potion", gems: 8, rewards: () => [potionReward(10)] },
+    { id: "dice1", name: "Better Dice", icon: "die_B", gems: 36, rewards: () => [diceReward(stageTierPlus(1), 4)] },
+    { id: "potion1", name: "Luck Potion", icon: "icon_potion", gems: 24, rewards: () => [potionReward(10)] },
     { id: "boost1", name: "Battle Boost", icon: "skill_orb", minutes: 12, rewards: () => boostPack(1) },
-    { id: "lucky1", name: "Lucky Rolls", icon: "icon_clover", gems: 10, rewards: () => [{ icon: "icon_clover", amount: "x10", give: () => (save.luckyBoost += 10) }] },
+    { id: "lucky1", name: "Lucky Rolls", icon: "icon_clover", gems: 30, rewards: () => [{ icon: "icon_clover", amount: "x10", give: () => (save.luckyBoost += 10) }] },
   ],
   [
-    { id: "dice2", name: "Rare Dice", icon: "die_C", gems: 35, rewards: () => [diceReward(stageTierPlus(2), 3)] },
-    { id: "boost2", name: "Boost Bundle", icon: "pk_heart", gems: 25, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x1", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1) })) },
-    { id: "chest2", name: "Silver Chest", icon: "chest_silver", gems: 20, rewards: () => CHESTS[1].rewards() },
+    { id: "dice2", name: "Rare Dice", icon: "die_C", gems: 105, rewards: () => [diceReward(stageTierPlus(2), 3)] },
+    { id: "boost2", name: "Boost Bundle", icon: "pk_heart", gems: 75, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x1", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1) })) },
+    { id: "chest2", name: "Silver Chest", icon: "chest_silver", gems: 60, rewards: () => CHESTS[1].rewards() },
   ],
   [
-    { id: "dice3", name: "Epic Dice", icon: "die_D", gems: 90, rewards: () => [diceReward(stageTierPlus(3), 2)] },
-    { id: "chest3", name: "Golden Chest", icon: "chest_gold", gems: 60, rewards: () => CHESTS[2].rewards() },
-    { id: "potion3", name: "Mega Potion", icon: "icon_potion", gems: 40, rewards: () => [potionReward(45)] },
+    { id: "dice3", name: "Epic Dice", icon: "die_D", gems: 270, rewards: () => [diceReward(stageTierPlus(3), 2)] },
+    { id: "chest3", name: "Golden Chest", icon: "chest_gold", gems: 180, rewards: () => CHESTS[2].rewards() },
+    { id: "potion3", name: "Mega Potion", icon: "icon_potion", gems: 120, rewards: () => [potionReward(45)] },
   ],
   [
-    { id: "dice4", name: "Legendary Die", icon: "die_S", gems: 300, rewards: () => [diceReward(stageTierPlus(4), 1)] },
-    { id: "egg4", name: "Lucky Egg", icon: "icon_egg", gems: 450, rewards: (sc) => eggReward(sc, 0, 1) },
-    { id: "ticket4", name: "Golden Ticket", icon: "icon_ticket", gems: 800, rewards: () => [{ icon: "icon_ticket", amount: "x1", give: () => save.tickets++ }] },
+    { id: "dice4", name: "Legendary Die", icon: "die_S", gems: 900, rewards: () => [diceReward(stageTierPlus(4), 1)] },
+    { id: "egg4", name: "Lucky Egg", icon: "icon_egg", gems: 1350, rewards: (sc) => eggReward(sc, 0, 1) },
+    { id: "ticket4", name: "Golden Ticket", icon: "icon_ticket", gems: 2400, rewards: () => [{ icon: "icon_ticket", amount: "x1", give: () => save.tickets++ }] },
   ],
 ];
 
@@ -363,13 +366,23 @@ const CARD_HEX: Record<string, number> = {
 /** Paint splat colours behind rewards, like inventory slots. */
 const SPLASH = [0x7fd8ff, 0xffe066, 0xff9ad0, 0x9cf07a, 0xc9a0ff, 0xffb070];
 /** The daily pack chain: the first step costs gems, then every next one is free. */
-const PACK: { gems: number; rewards: () => Reward[] }[] = [
-  { gems: 60, rewards: () => [diceReward("B", 10)] },
-  { gems: 0, rewards: () => [gemReward(10)] },
-  { gems: 0, rewards: () => [potionReward(10)] },
-  { gems: 0, rewards: () => [diceReward("C", 5)] },
-  { gems: 0, rewards: () => [gemReward(25)] },
-];
+/**
+ * The Classic Pack: a long chain. Every 5th step costs gems (more each time), the 4 after it are
+ * FREE, 10 times over, and the very last step is 5 uSSS dice. Progress is kept until you finish.
+ */
+const PACK_PAID = [60, 120, 200, 300, 450, 650, 900, 1200, 1600, 2000];
+const PACK_STEPS = PACK_PAID.length * 5;
+const packTier = (t: number): Tier => DICE_TIERS[Math.min(6, Math.floor(t * 0.7))];
+function packStep(i: number): { gems: number; rewards: () => Reward[] } {
+  const t = Math.floor(i / 5);
+  const k = i % 5;
+  if (i === PACK_STEPS - 1) return { gems: 0, rewards: () => [diceReward("uSSS", 5)] };
+  if (k === 0) return { gems: PACK_PAID[t], rewards: () => [diceReward(DICE_TIERS[Math.min(6, Math.floor(t * 0.7) + 1)], 5)] };
+  if (k === 1) return { gems: 0, rewards: () => [gemReward(5 + 5 * t)] };
+  if (k === 2) return { gems: 0, rewards: () => [potionReward(10 + 5 * t)] };
+  if (k === 3) return { gems: 0, rewards: () => [diceReward(packTier(t), 3 + t)] };
+  return { gems: 0, rewards: () => [cashReward(income(30 + 30 * t))] };
+}
 
 /** The shop window: bright sky blue with soft diagonal stripes. */
 function shopBg(scene: Phaser.Scene, w: number, h: number): string {
@@ -473,7 +486,11 @@ export class ShopScreen extends Screen {
   private top: number;
   private bottom: number;
   private max = 0;
-  private drag = { on: false, y: 0, oy: 0, moved: 0 };
+  private drag = { on: false, y: 0, oy: 0, moved: 0, x: 0, ox: 0, axis: "" as "" | "x" | "y", strip: false };
+  /** the Classic Pack's sideways strip, and how far it can scroll */
+  private packStrip: Phaser.GameObjects.Container | null = null;
+  private packMin = 0;
+  private packBox = { y0: 0, y1: 0 };
   private refreshers: (() => void)[] = [];
   private ticking: (() => void)[] = [];
   private wheel!: Phaser.GameObjects.Container;
@@ -509,12 +526,19 @@ export class ShopScreen extends Screen {
     this.build();
     s.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       if (!this.visible || this.overlay || p.y < this.top || p.y > this.bottom || p.x < RAIL) return;
-      this.drag = { on: true, y: p.y, oy: this.list.y, moved: 0 };
+      // is the finger on the Classic Pack strip? (its box is in list space)
+      const ly = (p.y - this.list.y) / this.k;
+      const strip = !!this.packStrip && ly > this.packBox.y0 && ly < this.packBox.y1;
+      this.drag = { on: true, y: p.y, oy: this.list.y, moved: 0, x: p.x, ox: this.packStrip?.x ?? 0, axis: "", strip };
     });
     s.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (!this.drag.on || !p.isDown) return;
-      this.drag.moved = Math.max(this.drag.moved, Math.abs(p.y - this.drag.y));
-      this.list.y = Phaser.Math.Clamp(this.drag.oy + p.y - this.drag.y, this.baseY - this.max, this.baseY);
+      const dx = p.x - this.drag.x;
+      const dy = p.y - this.drag.y;
+      this.drag.moved = Math.max(this.drag.moved, Math.abs(dx), Math.abs(dy));
+      if (!this.drag.axis && Math.hypot(dx, dy) > 12) this.drag.axis = this.drag.strip && Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (this.drag.axis === "x" && this.packStrip) this.placeStrip(this.drag.ox + dx / this.k);
+      else if (this.drag.axis === "y") this.list.y = Phaser.Math.Clamp(this.drag.oy + dy, this.baseY - this.max, this.baseY);
     });
     s.input.on("pointerup", () => (this.drag.on = false));
   }
@@ -716,17 +740,19 @@ export class ShopScreen extends Screen {
       y = this.header(y, "FREE", "green");
       const fh = 360;
       const giftBtn = this.priceButton(0, 0, 260, 88, () => {
-        const left = save.freeGiftAt - Date.now();
-        return { label: left > 0 ? clock(left) : "OPEN", color: left > 0 ? "grey" : "green", ok: left <= 0 };
+        const n = freeGifts();
+        return { label: n ? `OPEN x${n}` : clock(save.freeGiftAt - Date.now()), color: n ? "green" : "grey", ok: n > 0 };
       }, () => {
-        const gems = 2 + Math.floor(Math.random() * 4);
-        const r = [gemReward(gems), diceReward("A", 3), cashReward(income(5))];
+        const n = freeGifts();
+        let gems = 0;
+        for (let i = 0; i < n; i++) gems += 1 + Math.floor(Math.random() * 2);
+        const r = [gemReward(gems), diceReward("A", 3 * n), cashReward(income(5 * n))];
         r.forEach((x) => x.give());
         save.freeGiftAt = Date.now() + FREE_GIFT_MS;
-        this.rewardShow("FREE GIFT", null, r);
+        this.rewardShow(n > 1 ? `${n} FREE GIFTS!` : "FREE GIFT", null, r);
         return true;
       });
-      this.tile(W / 2 - 255, y + fh / 2, 490, fh, "green", "icon_gift", 120, "Free Gift", () => "Gems, dice and money every 10 minutes", giftBtn);
+      this.tile(W / 2 - 255, y + fh / 2, 490, fh, "green", "icon_gift", 120, "Free Gifts", () => `${freeGifts()}/${FREE_GIFT_MAX} waiting  •  +1 every 30 min`, giftBtn, 3);
       const dailyBtn = this.priceButton(0, 0, 260, 88, () => {
         const ready = dailyDay() >= 0;
         return { label: ready ? "CLAIM" : "TOMORROW", color: ready ? "gold" : "grey", ok: true };
@@ -778,7 +804,7 @@ export class ShopScreen extends Screen {
       // ── dice
       y = this.header(y, "DICE", "purple");
       const dh2 = 370;
-      const dice: [Tier, number, number, number][] = [["A", 10, 0, 10], ["A", 50, 20, 0], ["B", 10, 25, 0], ["C", 5, 60, 0], ["D", 2, 120, 0], ["E", 1, 300, 0]];
+      const dice: [Tier, number, number, number][] = [["A", 10, 0, 10], ["A", 50, 60, 0], ["B", 10, 75, 0], ["C", 5, 180, 0], ["D", 2, 360, 0], ["E", 1, 900, 0]];
       dice.forEach(([tier, n, gems, minutes], i) => {
         const x = W / 2 + ((i % 3) - 1) * 345;
         const ty = y + Math.floor(i / 3) * (dh2 + 30) + dh2 / 2;
@@ -803,8 +829,8 @@ export class ShopScreen extends Screen {
       const ph = 370;
       const potions: [string, string, () => string, number, () => void][] = [
         ["icon_potion", "Luck Potion", () => `x${potionMult()} luck for ${potionMinutes()} min`, POTION_GEMS, () => (save.potionUntil = Math.max(Date.now(), save.potionUntil) + potionMinutes() * 60000)],
-        ["icon_clock", "Speed Potion", () => "Roll twice as fast for 10 min", 12, () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 10 * 60000)],
-        ["icon_clover", "10 Lucky Rolls", () => `Your next 10 rolls are Lucky (${save.luckyBoost} left)`, 15, () => (save.luckyBoost += 10)],
+        ["icon_clock", "Speed Potion", () => "Roll twice as fast for 10 min", 36, () => (save.speedUntil = Math.max(Date.now(), save.speedUntil) + 10 * 60000)],
+        ["icon_clover", "10 Lucky Rolls", () => `Your next 10 rolls are Lucky (${save.luckyBoost} left)`, 45, () => (save.luckyBoost += 10)],
       ];
       potions.forEach(([icon, name, desc, gems, give], i) => {
         const x = W / 2 + (i - 1) * 345;
@@ -820,7 +846,7 @@ export class ShopScreen extends Screen {
       // ── money
       y = this.header(y, "MONEY", "green");
       const mh = 360;
-      ([["Bag of Money", 15, 5], ["Chest of Money", 120, 30], ["Vault of Money", 720, 150]] as [string, number, number][]).forEach(([name, minutes, gems], i) => {
+      ([["Bag of Money", 15, 15], ["Chest of Money", 120, 90], ["Vault of Money", 720, 450]] as [string, number, number][]).forEach(([name, minutes, gems], i) => {
         const x = W / 2 + (i - 1) * 345;
         const btn = this.priceButton(0, 0, 270, 88, this.gemsPrice(gems, "green"), () => {
           if (!this.spendGems(gems)) return false;
@@ -880,6 +906,7 @@ export class ShopScreen extends Screen {
   private rebuild(top = false): void {
     const y = this.list.y;
     this.list.removeAll(true);
+    this.packStrip = null;
     this.refreshers = [];
     this.ticking = [];
     this.build();
@@ -960,46 +987,94 @@ export class ShopScreen extends Screen {
   // ───────────────────────── Playtime Gifts ─────────────────────────
 
   /** 12 gifts that open as you play today; the last one is big. */
-  /** The Classic Pack: a chain of rewards, the first one paid and the rest free, new every day. */
+  /** The Classic Pack: a long chain you swipe through sideways. */
   private buildPack(y0: number): number {
     const s = this.scene;
     const W = s.scale.width;
-    let y = this.header(y0, "CLASSIC PACK", "blue");
-    if (save.pack.day !== day()) save.pack = { day: day(), step: 0 };
-    const ph = 400;
+    const y = this.header(y0, "CLASSIC PACK", "blue");
+    if (save.pack.step >= PACK_STEPS) save.pack.step = 0;
+    const ph = 440;
     const cy = y + ph / 2;
-    const timer = text(s, W / 2, y + 44, "", 30, "#ffffff", { stroke: 8 });
-    this.ticking.push(() => timer.setText(`New pack in ${clock((day() + 1) * DAY_MS - Date.now())}`));
-    this.list.add([s.add.image(W / 2, cy, vividCard(s, 0x4fa8ff, 1000, ph)), timer]);
-    const step = 186;
-    const x0 = W / 2 - ((PACK.length - 1) * step) / 2;
-    PACK.forEach((p, i) => {
-      const x = x0 + i * step;
+    this.list.add(s.add.image(W / 2, cy, vividCard(s, 0x4fa8ff, 1000, ph)));
+    // the goal at the end, and how far you are
+    const goal = s.add.container(W / 2 + 330, y + 46, [
+      itemSplash(s, "die_uSSS", 70, 0xffe066).setPosition(-60, 0),
+      text(s, 10, 0, "x5", 34, "#ffe066", { stroke: 8 }),
+    ]);
+    const prog = text(s, 90, y + 46, "", 30, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5);
+    this.refreshers.push(() => prog.setText(`${Math.min(save.pack.step, PACK_STEPS)}/${PACK_STEPS}`));
+    const hint = text(s, W / 2, y + ph - 30, "swipe  >>", 26, "#ffffff", { stroke: 6 });
+    this.tweens(hint);
+    this.list.add([goal, prog, hint]);
+    // the strip of steps
+    const step = 196;
+    const strip = s.add.container(0, 0);
+    this.packStrip = strip;
+    this.packBox = { y0: y + 80, y1: y + ph - 50 };
+    this.packMin = -(PACK_STEPS - 4.5) * step;
+    const sy = cy + 4;
+    for (let i = 0; i < PACK_STEPS; i++) {
+      const p = packStep(i);
+      const x = 200 + i * step;
+      const paid = p.gems > 0;
+      const last = i === PACK_STEPS - 1;
       const slot = s.add.graphics();
-      slot.fillStyle(0xffffff, 0.92).fillRoundedRect(x - 78, cy - 120, 156, 170, 24);
-      slot.lineStyle(6, 0x111111, 1).strokeRoundedRect(x - 78, cy - 120, 156, 170, 24);
+      const fill = last ? 0xffe066 : paid ? 0xd8b8ff : 0xffffff;
+      slot.fillStyle(0x000000, 0.25).fillRoundedRect(-80, sy - 128, 164, 184, 24);
+      slot.fillStyle(fill, 0.95).fillRoundedRect(-84, sy - 134, 164, 184, 24);
+      slot.lineStyle(6, 0x111111, 1).strokeRoundedRect(-84, sy - 134, 164, 184, 24);
+      slot.setX(x);
       const r = p.rewards()[0];
-      const item = itemSplash(s, r.icon, 110, SPLASH[i % SPLASH.length], r.amount, i === PACK.length - 1);
-      item.setPosition(x, cy - 36);
-      this.list.add([slot, item]);
-      if (i < PACK.length - 1) this.list.add(s.add.triangle(x + step / 2, cy - 36, 0, 0, 0, 30, 22, 15, 0xffe066).setStrokeStyle(4, 0x111111));
-      const btn = this.priceButton(x, cy + 112, 164, 84, () => {
+      const item = itemSplash(s, r.icon, 112, SPLASH[i % SPLASH.length], r.amount, last || paid).setPosition(x - 2, sy - 50);
+      const parts: Phaser.GameObjects.GameObject[] = [slot, item];
+      if (paid) parts.push(text(s, x - 2, sy - 150, `TIER ${Math.floor(i / 5) + 1}`, 24, "#ffffff", { stroke: 6 }));
+      if (last) {
+        const glow = s.add.image(x - 2, sy - 50, "rays").setTint(0xffe066).setScale(0.45).setAlpha(0.8);
+        s.tweens.add({ targets: glow, angle: 360, duration: 5000, repeat: -1 });
+        parts.unshift(glow);
+      }
+      if (i < PACK_STEPS - 1) parts.push(s.add.triangle(x + step / 2, sy - 50, 0, 0, 0, 26, 18, 13, 0xffe066).setStrokeStyle(4, 0x111111));
+      const btn = this.priceButton(x - 2, sy + 102, 170, 80, () => {
         const done = save.pack.step > i;
         const now = save.pack.step === i;
         if (done) return { label: "DONE", color: "grey", ok: false };
-        if (p.gems) return { label: `${p.gems}`, icon: "icon_gem", color: now && save.gems >= p.gems ? "green" : "grey", ok: now && save.gems >= p.gems };
+        if (paid) return { label: `${p.gems}`, icon: "icon_gem", color: now && save.gems >= p.gems ? "purple" : "grey", ok: now && save.gems >= p.gems };
         return { label: "FREE", color: now ? "green" : "grey", ok: now };
       }, () => {
         if (p.gems && !this.spendGems(p.gems)) return false;
         save.pack.step = i + 1;
         const got = p.rewards();
-        got.forEach((x) => x.give());
-        this.rewardShow(p.gems ? "CLASSIC PACK" : "FREE!", null, got);
+        got.forEach((g) => g.give());
+        this.rewardShow(last ? "CLASSIC PACK DONE!" : paid ? `TIER ${Math.floor(i / 5) + 1}!` : "FREE!", null, got);
         return true;
       });
-      this.list.add(btn);
-    });
+      parts.push(btn);
+      strip.add(parts);
+    }
+    this.list.add(strip);
+    // start with the step you are on near the left
+    this.placeStrip(-(Math.max(0, save.pack.step - 1)) * step);
     return y + ph + 40;
+  }
+
+  /** Scroll the pack strip; steps outside the card fade out. */
+  private placeStrip(x: number): void {
+    const strip = this.packStrip;
+    if (!strip) return;
+    strip.x = Phaser.Math.Clamp(x, this.packMin, 0);
+    const W = this.scene.scale.width;
+    for (const o of strip.list as unknown as (Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.Components.Visible & { x: number })[]) {
+      const sx = o.x + strip.x;
+      // the card runs from 40 to W-40 and a step is ~170 wide: fade them out before the border
+      const edge = Math.min(sx - 130, W - 130 - sx);
+      o.setVisible(edge > -50);
+      o.setAlpha(Phaser.Math.Clamp((edge + 50) / 60, 0, 1));
+    }
+  }
+
+  /** A gentle pulse for a hint. */
+  private tweens(t: Phaser.GameObjects.Text): void {
+    this.scene.tweens.add({ targets: t, alpha: 0.4, x: t.x + 14, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
   }
 
   /** Gamepasses: bought once, bonuses forever. */
