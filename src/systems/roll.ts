@@ -1,3 +1,4 @@
+import { petChances } from "../data/luck";
 import { ItemDef } from "../data/items";
 import { rollPet } from "../data/luck";
 import { addPet, persist, save } from "./save";
@@ -5,11 +6,14 @@ import { addPet, persist, save } from "./save";
 export interface RollResult {
   item: ItemDef;
   isNew: boolean;
+  /** how rare it was for you, with your luck right now: 1 in this many */
+  youOneIn: number;
 }
 
 /** Roll `n` pets with the same luck and add them to your collection. */
 export function rollMany(n: number, luck: number): RollResult[] {
   const results: RollResult[] = [];
+  const chances = petChances(luck);
   for (let i = 0; i < n; i++) {
     const item = rollPet(luck);
     const isNew = !save.discovered.includes(item.id);
@@ -19,7 +23,7 @@ export function rollMany(n: number, luck: number): RollResult[] {
     }
     addPet(item.id);
     save.bestRoll = Math.max(save.bestRoll, item.oneIn);
-    results.push({ item, isNew });
+    results.push({ item, isNew, youOneIn: 1 / Math.max(1e-300, chances[item.index]) });
   }
   persist();
   return results;

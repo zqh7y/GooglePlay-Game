@@ -237,6 +237,12 @@ hour of fishing brings.
   for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
   the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
 - **Developer mode**: tap the top panel of the map 5 times. Every stage can then be played from the map.
+- **Roll reveal**: each card first shows only its class (the big letter, like SSS) for 2 s, shaking more
+  for better classes, then flips over to the pet for another 2 s. A pull that was **1 in 1,000 or rarer
+  for you** (with your luck at that moment) gets a MIRACLE show: rainbow shockwaves, lightning, a
+  spinning rainbow halo, a golden confetti storm and your odds in big letters.
+- **Tier dice** are little 3D cubes in their tier colour (S and better with a gold rim and sparkles,
+  uSSS with a rainbow face).
   Free roam has no crystal: a wooden signboard stands in the middle showing the next stage and its mode,
   and the crystal only drops out of the sky when a Crystal stage starts. Every mode has its own signs and
   effects: the Air Zone is a glowing wall of light with light pillars on its corners and bubbles inside,

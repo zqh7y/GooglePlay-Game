@@ -21,6 +21,8 @@ import { Button, button, drawBar, fitText, label, lockedCard, text } from "./wid
 /** Every this many rolls is a SUPER ROLL with x10 luck. */
 /** Rolls per SUPER ROLL (30 with the Super Roller pass). */
 export const superEvery = () => (hasPass("super") ? 30 : 50);
+/** a pull this rare for you (1 in this many) gets the miracle show */
+const MIRACLE = 1000;
 export const SUPER_MULT = 10;
 /** Every this many rolls you get a little gift of dice and gems. */
 export const GIFT_EVERY = 25;
@@ -599,6 +601,56 @@ export class RollScreen extends Screen {
    * colours, then land. A good roll (a new pet, a record or a pull far beyond your luck) stays
    * up for 3 s to enjoy (tap to skip); otherwise the pets fly straight into your collection.
    */
+  /** A pull that was 1 in 1,000 or rarer for you: rainbow shockwaves, lightning, a golden shower. */
+  private miracle(layer: Phaser.GameObjects.Container, card: Phaser.GameObjects.Container, x: number, y: number, scale: number, oneInYou: number): void {
+    const s = this.scene;
+    const W = s.scale.width;
+    const H = s.scale.height;
+    const cam = s.cameras.main;
+    cam.flash(400, 255, 255, 255);
+    cam.shake(700, 0.012);
+    buzz(300);
+    sfx.superRoll();
+    s.time.delayedCall(250, () => sfx.record());
+    const rainbow = [0xff5a7a, 0xffb02e, 0xffe066, 0x7af07a, 0x5ac8ff, 0xb36aff];
+    // rainbow shockwaves from the card
+    rainbow.forEach((c, i) => {
+      const ring = s.add.circle(x, y, 60).setStrokeStyle(22, c, 1);
+      layer.add(ring);
+      s.tweens.add({ targets: ring, scale: 14, alpha: 0, duration: 1100, delay: i * 110, ease: "Quad.out", onComplete: () => ring.destroy() });
+    });
+    // lightning strikes around the screen
+    for (let i = 0; i < 6; i++) s.time.delayedCall(i * 160, () => {
+      const g = s.add.graphics();
+      layer.add(g);
+      let lx = Phaser.Math.Between(80, W - 80);
+      let ly = 0;
+      g.lineStyle(10, 0xfff3a0, 1).beginPath().moveTo(lx, ly);
+      while (ly < H * 0.7) {
+        lx += Phaser.Math.Between(-60, 60);
+        ly += Phaser.Math.Between(60, 120);
+        g.lineTo(lx, ly);
+      }
+      g.strokePath();
+      s.tweens.add({ targets: g, alpha: 0, duration: 300, onComplete: () => g.destroy() });
+    });
+    // a spinning rainbow halo behind the card, and the card pumps
+    const halo = s.add.image(x, y, "rays").setScale(scale * 1.6).setTint(0xffe066).setAlpha(0.9);
+    layer.addAt(halo, layer.getIndex(card));
+    s.tweens.add({ targets: halo, angle: 360, duration: 3000, repeat: -1 });
+    let k = 0;
+    s.time.addEvent({ delay: 120, repeat: 40, callback: () => halo.active && halo.setTint(rainbow[k++ % rainbow.length]) });
+    s.tweens.add({ targets: card, scale: scale * 1.25, duration: 300, yoyo: true, repeat: 3, ease: "Sine.inOut" });
+    // the big words
+    const words = text(s, W / 2, H * 0.25, "MIRACLE!", 120, "#ffffff", { stroke: 16 }).setScale(0);
+    const odds = text(s, W / 2, H * 0.2 + 110, `${oneIn(oneInYou)} FOR YOU!`, 52, "#ffe066", { stroke: 10 }).setScale(0).setY(H * 0.25 + 110);
+    layer.add([words, odds]);
+    s.tweens.add({ targets: [words, odds], scale: 1, duration: 420, ease: "Back.out", delay: 150 });
+    let c = 0;
+    s.time.addEvent({ delay: 100, repeat: 45, callback: () => words.active && words.setColor(`#${rainbow[c++ % rainbow.length].toString(16).padStart(6, "0")}`) });
+    this.confetti([...rainbow, 0xffffff], 160);
+  }
+
   reveal(results: RollResult[], info: RollInfo, done: () => void): void {
     const s = this.scene;
     const W = s.scale.width;
@@ -710,6 +762,7 @@ export class RollScreen extends Screen {
 
     const cards: Phaser.GameObjects.Container[] = [];
     const extras: Phaser.GameObjects.GameObject[] = [];
+    let miracle = false;
     let landed = 0;
     results.forEach((res, i) => {
       const [x, y] = spot(i);
@@ -826,6 +879,11 @@ export class RollScreen extends Screen {
           const ready = pst.copies >= 2 + pst.level;
           card.add(text(s, 0, CARD_H / 2 + 26, ready ? "LEVEL UP READY!" : `+1 copy  (Lv.${pst.level})`, 26, ready ? "#8af06a" : "#b6f59a"));
         }
+        // 1 in 1,000 or rarer for you: a miracle show
+        if (res.youOneIn >= MIRACLE && res === best) {
+          miracle = true;
+          this.miracle(layer, card, x, y, scale, res.youOneIn);
+        }
         if (++landed === n) allLanded();
       };
       s.time.delayedCall(i * stagger + 140, classPhase);
@@ -834,7 +892,7 @@ export class RollScreen extends Screen {
 
     // everything is on the table: a good roll gets its moment, then the pets fly to your collection
     const allLanded = () => {
-      const ms = info.good ? (fast ? GOOD_HOLD_MS / 2 : GOOD_HOLD_MS) : hold;
+      const ms = (info.good ? (fast ? GOOD_HOLD_MS / 2 : GOOD_HOLD_MS) : hold) + (miracle ? 2500 : 0);
       const stopShow = info.good ? this.showcase(layer, cards, results.indexOf(best), shoutY, areaBottom, ms, info, results.some((r) => r.isNew)) : null;
       let over = false;
       const finish = () => {
