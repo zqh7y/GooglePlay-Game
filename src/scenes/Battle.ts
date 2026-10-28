@@ -432,7 +432,8 @@ export class BattleScene extends Phaser.Scene {
   private skills: Partial<Record<SkillId, number>> = {};
   private revived = false;
   /** a Second Chance boost: get back up once without gems */
-  private freeRevive = false;
+  /** the Super Magnet boost doubles how far XP is pulled in this fight */
+  private magnetBoost = false;
   /** Boss Rush mode, the time left on the current boss, and this run's haul */
   private rush = false;
   private rushLeft = 0;
@@ -548,7 +549,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
-      revived: false, freeRevive: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
+      revived: false, magnetBoost: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       streak: 0, streakTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
@@ -834,8 +835,8 @@ export class BattleScene extends Phaser.Scene {
       if (b.id === "gun") {
         const kinds = GADGET_KINDS.filter((k) => k !== STARTER_GADGET);
         this.addGadget(kinds[Math.floor(Math.random() * kinds.length)], GADGET_TIERS[Math.min(2, gadgetTierCap())]);
-      } else if (b.id === "revive") {
-        this.freeRevive = true;
+      } else if (b.id === "magnet") {
+        this.magnetBoost = true;
       } else if (b.id === "armor") {
         this.crystalMax *= 1.5;
         this.crystalHp = this.crystalMax;
@@ -1495,7 +1496,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private magnetMult(): number {
-    return 1 + 0.5 * this.lv("vacuum");
+    return (1 + 0.5 * this.lv("vacuum")) * (this.magnetBoost ? 2 : 1);
   }
 
   private heal(frac: number): void {
@@ -2375,13 +2376,6 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "dice") {
       this.sign(cx, cy + 520, "DICE RAIN!", "watch the shadows", "#ffe066");
-      // a dice graveyard: old giant dice half sunk into the ground all over
-      for (let i = 0; i < 26; i++) {
-        const [x, y] = this.randomSpot(500, 2600);
-        const d = this.add.image(x, y, i % 2 ? "big_die" : "big_die3").setOrigin(0.5, 0.8).setScale(0.55 + (i % 3) * 0.15).setAngle(Phaser.Math.Between(-25, 25)).setTint(0xd8d0c0).setDepth(y);
-        this.addStatic(d, x, y);
-        this.addStatic(this.add.ellipse(x, y, d.displayWidth * 0.9, 40, 0x3a2a1a, 0.35).setDepth(y - 1), x, y);
-      }
       for (const [dx, dy] of [[-420, 380], [420, 380], [-300, -260], [300, -260]]) this.warnSign(cx + dx, cy + dy);
     }
     if (m === "boss") {
@@ -3244,14 +3238,6 @@ export class BattleScene extends Phaser.Scene {
       this.boom(this.crystal.x, this.crystal.y - 100, 2.5);
     }
     this.banner(reason === "hero" ? "YOU FELL!" : reason === "crystal" ? "CRYSTAL BROKE!" : "YOU GAVE UP", "red", 1100);
-    if (this.freeRevive && reason !== "quit") {
-      this.freeRevive = false;
-      this.time.delayedCall(1300, () => {
-        this.banner("SECOND CHANCE!", "green", 900);
-        this.revive(true);
-      });
-      return;
-    }
     this.time.delayedCall(reason === "quit" ? 300 : 1300, () => {
       const result: StageResult = {
         stage: save.stage, reason, time: this.elapsed, stats: this.stats, canRevive: false, reviveGems: REVIVE_GEMS,

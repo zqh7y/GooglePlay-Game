@@ -1,5 +1,5 @@
 /** Battle Boosts bought in the shop with money; each one is used up by the next fight. */
-export type BoostId = "gun" | "revive" | "start" | "armor";
+export type BoostId = "gun" | "magnet" | "start" | "armor";
 
 export interface BoostDef {
   id: BoostId;
@@ -12,7 +12,7 @@ export interface BoostDef {
 
 export const BOOSTS: BoostDef[] = [
   { id: "gun", name: "Golden Start", icon: "gdi_boomerang", desc: "Start the next fight with an extra C-tier gadget", minutes: 15 },
-  { id: "revive", name: "Second Chance", icon: "pk_heart", desc: "Get back up once for free in the next fight", minutes: 20 },
+  { id: "magnet", name: "Super Magnet", icon: "pk_magnet", desc: "Pull in XP from twice as far in the next fight", minutes: 20 },
   { id: "start", name: "Head Start", icon: "skill_orb", desc: "Start the next fight with 2 free skills", minutes: 10 },
   { id: "armor", name: "Crystal Armor", icon: "icon_shield", desc: "The crystal has +50% health next fight", minutes: 10 },
 ];

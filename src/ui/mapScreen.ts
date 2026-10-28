@@ -1,245 +1,237 @@
 import Phaser from "phaser";
-import { INK_N, darken, lighten, rgba } from "../art/draw";
-import { crystalKey } from "../art/world";
-import { ribbonTexture, panelTexture } from "../art/ui";
+import { canvasTexture, darken, lighten, rgba } from "../art/draw";
+import { vividCard } from "../art/ps";
 import { MAX_STAGE } from "../data/balance";
 import { BOSS_EVERY, bossForStage } from "../data/bosses";
-import { REGIONS, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
-import { itemSplash, vividCard } from "../art/ps";
 import { MODE_INFO, modeForStage } from "../data/modes";
+import { REGIONS, Region, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
 import { persist, save, stageCap } from "../systems/save";
 import { Host, Screen } from "./screens";
-import { button, drawBar, fitText, iconButton, label, text } from "./widgets";
+import { button, fitText, text } from "./widgets";
 
-const STEP = 160;
+/** Where each world floats in space (x as a share of the width), one under the other. */
+const SPOTS = [0.5, 0.74, 0.28, 0.72, 0.3];
+const GAP = 560;
 
 /**
- * The journey: 100 stages winding up through the five lands on a road. Every 5th stage is a
- * boss (its portrait, dark until you get there), each land has its own colours, scenery and
- * falling sparkles, clouds drift by, lands you haven't reached hide in fog, and a panel up
- * top says where you are and which boss is next.
+ * The worlds map: deep space with a planet for each land. Every planet has its name, a row of
+ * little progress icons (bosses beaten, stages cleared) and your face on the one you are on.
+ * Lands you have not reached are dark with a lock. Tap a planet for its 20 stages, tap a stage
+ * and PLAY. Developer mode (tap the title 5 times) opens every stage.
  */
 export class MapScreen extends Screen {
-  private path: Phaser.GameObjects.Container;
+  private world: Phaser.GameObjects.Container;
+  private sheet: Phaser.GameObjects.Container;
   private top: number;
   private bottom: number;
   private height = 0;
-  private drag = { on: false, y: 0, oy: 0, v: 0, lastY: 0 };
-  private info: Phaser.GameObjects.Container;
-  private ambient: Phaser.GameObjects.Particles.ParticleEmitter;
-  /** the stage card at the bottom: the stage you tapped and PLAY */
-  private card: Phaser.GameObjects.Container;
-  private pickRing!: Phaser.GameObjects.Arc;
+  private drag = { on: false, y: 0, oy: 0, moved: 0 };
+  private picked = 1;
 
   constructor(scene: Phaser.Scene, host: Host, onBack: () => void) {
-    super(scene, host, "map");
+    super(scene, host, null);
     const s = scene;
     const W = s.scale.width;
     this.top = host.L.headerBottom;
     this.bottom = host.L.navTop;
-    this.path = s.add.container(0, 0);
-    const mask = s.make.graphics({}, false).fillRect(0, this.top, W, this.bottom - this.top);
-    this.path.setMask(mask.createGeometryMask());
-    this.ambient = s.add.particles(0, this.top, "spark", {
-      x: { min: 0, max: W }, y: { min: 0, max: this.bottom - this.top }, lifespan: 5000, speedY: { min: 10, max: 40 }, speedX: { min: -20, max: 20 },
-      scale: { start: 0.45, end: 0 }, alpha: { start: 0.8, end: 0 }, frequency: 220,
-    });
-    this.info = s.add.container(0, 0);
-    this.card = s.add.container(W / 2, this.bottom - 150);
-    this.root.add([this.path, this.ambient, this.info, this.card]);
-    this.root.add(iconButton(s, 70, this.top + 70, "icon_back", 100, onBack));
+    this.root.add(s.add.image(0, 0, spaceTexture(s, W, this.bottom)).setOrigin(0).setInteractive());
+    // twinkling stars
+    for (let i = 0; i < 40; i++) {
+      const st = s.add.star((i * 977) % W, this.top + ((i * 613) % (this.bottom - this.top)), 4, 2, 7 + (i % 3) * 3, 0xffffff).setAlpha(0.6);
+      s.tweens.add({ targets: st, alpha: 0.1, scale: 0.6, duration: 700 + (i % 5) * 300, yoyo: true, repeat: -1, delay: i * 90 });
+      this.root.add(st);
+    }
+    this.world = s.add.container(0, 0);
+    // the worlds scroll in the space under the title
+    const mask = s.make.graphics({}, false).fillRect(0, this.top + 130, W, this.bottom - this.top - 130);
+    this.world.setMask(mask.createGeometryMask());
+    this.sheet = s.add.container(0, 0).setVisible(false);
+    this.root.add([this.world, this.sheet]);
+    // the title (tap it 5 times for developer mode) and a big red Back
+    // a dark band behind the title so the worlds scroll under it
+    const band = s.add.graphics();
+    band.fillGradientStyle(0x0b1530, 0x0b1530, 0x0b1530, 0x0b1530, 1, 1, 0, 0).fillRect(0, this.top, W, 170);
+    this.root.add(band);
+    const title = text(s, W / 2, this.top + 60, "YOUR WORLDS", 64, "#ffffff", { stroke: 12 });
+    this.devTaps(title);
+    this.root.add(title);
+    this.root.add(button(s, W / 2, this.bottom - 90, 360, 120, "red", "BACK", onBack, { size: 56 }));
     s.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (!this.visible || p.y < this.top + 150 || p.y > this.bottom - 270) return;
-      this.drag = { on: true, y: p.y, oy: this.path.y, v: 0, lastY: p.y };
+      if (!this.visible || this.sheet.visible || p.y < this.top + 120 || p.y > this.bottom - 160) return;
+      this.drag = { on: true, y: p.y, oy: this.world.y, moved: 0 };
     });
     s.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (!this.drag.on || !p.isDown) return;
-      this.drag.v = p.y - this.drag.lastY;
-      this.drag.lastY = p.y;
-      this.path.y = this.clampY(this.drag.oy + p.y - this.drag.y);
+      this.drag.moved = Math.max(this.drag.moved, Math.abs(p.y - this.drag.y));
+      this.world.y = this.clampY(this.drag.oy + p.y - this.drag.y);
     });
     s.input.on("pointerup", () => (this.drag.on = false));
   }
 
-  private nodePos(stage: number): { x: number; y: number } {
-    const W = this.scene.scale.width;
-    return { x: W / 2 + Math.sin(stage * 0.55) * 290, y: this.height - 260 - (stage - 1) * STEP };
-  }
-
   private clampY(y: number): number {
-    const viewH = this.bottom - this.top;
-    return Phaser.Math.Clamp(y, this.top + viewH - this.height, this.top);
-  }
-
-  /** Smooth scroll to a stage. */
-  private scrollTo(stage: number, ms = 500): void {
-    const y = this.clampY((this.top + this.bottom) / 2 + 60 - this.nodePos(stage).y);
-    this.scene.tweens.add({ targets: this.path, y, duration: ms, ease: "Cubic.out" });
-  }
-
-  update(): void {
-    if (!this.visible || this.drag.on) return;
-    // a little glide after a flick
-    if (Math.abs(this.drag.v) > 0.5) {
-      this.path.y = this.clampY(this.path.y + this.drag.v);
-      this.drag.v *= 0.92;
-    }
-    // sparkles in the colour of the land in view
-    const mid = (this.top + this.bottom) / 2 - this.path.y;
-    const stage = Phaser.Math.Clamp(Math.round((this.height - 260 - mid) / STEP) + 1, 1, MAX_STAGE);
-    this.ambient.setParticleTint(regionForStage(stage).ambient);
+    const view = this.bottom - this.top - 260;
+    return Phaser.Math.Clamp(y, Math.min(0, view - this.height), 0);
   }
 
   protected onShow(): void {
+    this.sheet.setVisible(false).removeAll(true);
+    this.drawWorlds();
+    // start with your world in view
+    const i = REGIONS.indexOf(regionForStage(save.stage));
+    const mid = (this.top + this.bottom) / 2 - 60;
+    this.world.y = this.clampY(mid - (this.top + 360 + i * GAP));
+  }
+
+  update(): void {}
+
+  private drawWorlds(): void {
     const s = this.scene;
     const W = s.scale.width;
-    this.path.removeAll(true);
-    this.height = MAX_STAGE * STEP + 520;
-    this.drawLands(W);
-    this.drawRoad();
-    this.drawNodes();
-    this.drawClouds(W);
-    this.drawFog(W);
-    this.drawInfo(W);
-    this.path.y = this.clampY((this.top + this.bottom) / 2 + 60 - this.nodePos(save.stage).y);
-    this.pick(save.stage);
-  }
-
-  /** Each land: its ground, scattered blobs, rows of its trees and plants, and a big banner. */
-  private drawLands(W: number): void {
-    const s = this.scene;
-    REGIONS.forEach((r, i) => {
-      const y0 = this.nodePos(r.from + STAGES_PER_REGION - 1).y - STEP * 0.7;
-      const y1 = i === 0 ? this.height : this.nodePos(r.from).y + STEP * 0.3;
-      const g = s.add.graphics();
-      g.fillGradientStyle(r.groundLight, r.groundLight, r.ground, r.ground, 1).fillRect(0, y0, W, y1 - y0);
-      g.fillStyle(r.groundDark, 0.6);
-      for (let k = 0; k < 18; k++) g.fillEllipse((k * 197 + i * 53) % W, y0 + ((k * 331 + i * 71) % (y1 - y0)), 200 + (k % 3) * 60, 70 + (k % 2) * 30);
-      this.path.add(g);
-      // scenery down both sides, bigger near the edges
-      for (let k = 0; k < 16; k++) {
-        const left = k % 2 === 0;
-        const tx = left ? 40 + ((k * 37) % 90) : W - 40 - ((k * 53) % 90);
-        const ty = y0 + 120 + k * ((y1 - y0 - 160) / 16);
-        const key = k % 3 === 2 ? r.plants[k % r.plants.length] : r.trees[k % r.trees.length];
-        this.path.add(s.add.image(tx, ty, key).setOrigin(0.5, 1).setScale(0.55 + (k % 3) * 0.12).setFlipX(!left));
+    const w = this.world.removeAll(true);
+    const y0 = this.top + 360;
+    this.height = REGIONS.length * GAP + 200;
+    // a dotted space route from world to world
+    const route = s.add.graphics();
+    REGIONS.forEach((_, i) => {
+      if (i === REGIONS.length - 1) return;
+      const [ax, ay] = [W * SPOTS[i], y0 + i * GAP];
+      const [bx, by] = [W * SPOTS[i + 1], y0 + (i + 1) * GAP];
+      for (let k = 1; k < 12; k++) {
+        const t = k / 12;
+        route.fillStyle(0xffffff, 0.35).fillCircle(ax + (bx - ax) * t, ay + (by - ay) * t, 6);
       }
-      // the land's banner with its crystal
-      const by = y1 - 70;
-      const color = ({ village: "pink", farm: "gold", woods: "green", desert: "orange", frost: "blue" } as const)[r.id];
-      const banner = s.add.container(W / 2, by, [
-        s.add.image(0, 0, ribbonTexture(s, color, 720, 120)),
-        s.add.image(-290, -8, crystalKey(r.id)).setScale(0.28),
-        fitText(text(s, 20, -18, r.name.toUpperCase(), 50), 480),
-        text(s, 20, 26, `Stages ${r.from}-${r.from + STAGES_PER_REGION - 1}`, 26, "#fff3dc"),
-      ]);
-      this.path.add(banner);
     });
+    w.add(route);
+    REGIONS.forEach((r, i) => this.drawPlanet(r, i, W * SPOTS[i], y0 + i * GAP));
   }
 
-  /** A dirt road with an outline, a dashed middle and pebbles along it. */
-  private drawRoad(): void {
+  /** One world: the planet, its name, its progress icons, and you if you are there. */
+  private drawPlanet(r: Region, i: number, x: number, y: number): void {
     const s = this.scene;
-    const g = s.add.graphics();
-    const trace = (w: number, color: number, alpha = 1) => {
-      g.lineStyle(w, color, alpha).beginPath();
-      for (let st = 1; st <= MAX_STAGE; st++) {
-        const p = this.nodePos(st);
-        if (st === 1) g.moveTo(p.x, p.y + 260);
-        g.lineTo(p.x, p.y);
-      }
-      g.strokePath();
-    };
-    trace(78, 0x2a1a10, 0.25);
-    trace(66, INK_N);
-    trace(52, 0xe8c890);
-    trace(24, 0xf6dcaa);
-    // dashes and pebbles, and the part you have walked glows gold
-    for (let st = 1; st < MAX_STAGE; st++) {
-      const a = this.nodePos(st);
-      const b = this.nodePos(st + 1);
-      const walked = st < save.bestStage;
-      for (let k = 1; k < 4; k++) {
-        const t = k / 4;
-        const x = a.x + (b.x - a.x) * t;
-        const y = a.y + (b.y - a.y) * t;
-        g.fillStyle(walked ? 0xffcf3a : 0xc8a068, 1).fillCircle(x, y, walked ? 8 : 6);
-      }
-      const nx = -(b.y - a.y);
-      const ny = b.x - a.x;
-      const n = Math.hypot(nx, ny) || 1;
-      g.fillStyle(0xb8a890, 1).fillEllipse(a.x + (nx / n) * 40, a.y + 70 + (ny / n) * 40, 14, 10);
+    const open = regionUnlocked(r, save.bestStage) || save.dev;
+    const here = regionForStage(save.stage) === r;
+    const planet = s.add.image(x, y, planetTexture(s, r)).setScale(here ? 1.05 : 0.9);
+    if (!open) planet.setTint(0x40404c);
+    s.tweens.add({ targets: planet, angle: 360, duration: 120000, repeat: -1 });
+    const glow = s.add.image(x, y, "glow").setTint(open ? lighten(r.crystal, 0.3) : 0x30304a).setScale(3.4).setAlpha(0.35);
+    // name above (a little "World N" over the big name), progress icons beside it
+    const last = r.from + STAGES_PER_REGION - 1;
+    const cleared = Phaser.Math.Clamp(save.bestStage - r.from, 0, STAGES_PER_REGION);
+    const bosses = Math.floor(cleared / BOSS_EVERY);
+    const parts: Phaser.GameObjects.GameObject[] = [
+      glow, planet,
+      text(s, x, y - 290, `World ${i + 1}`, 34, "#ffffff", { stroke: 8 }),
+      fitText(text(s, x, y - 240, r.name, 58, "#ffffff", { stroke: 12 }), 560),
+    ];
+    const icons: [string, string][] = open
+      ? [["mode_boss", `${bosses}/${STAGES_PER_REGION / BOSS_EVERY}`], ["icon_star", `${cleared}/${STAGES_PER_REGION}`]]
+      : [["icon_lock", `stage ${r.from}`]];
+    icons.forEach(([icon, val], k) => {
+      const ix = x + (k - (icons.length - 1) / 2) * 170;
+      const img = s.add.image(ix - 50, y - 182, icon);
+      img.setScale(52 / Math.max(img.width, img.height));
+      parts.push(img, text(s, ix - 16, y - 182, val, 32, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5));
+    });
+    if (!open) parts.push(s.add.image(x, y, "icon_lock").setScale(1.4));
+    if (here) {
+      // you: your hero in a white circle on top of the planet
+      const [mx, my] = [x + 150, y - 110];
+      const ring = s.add.circle(mx, my, 54, 0xffffff).setStrokeStyle(6, 0x111111);
+      const me = s.add.image(mx, my + 4, "hero").setScale(0.42);
+      const ping = s.add.circle(mx, my, 54).setStrokeStyle(6, 0xffe066);
+      s.tweens.add({ targets: ping, scale: 1.5, alpha: 0, duration: 1000, repeat: -1 });
+      s.tweens.add({ targets: [ring, me], y: "-=10", duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      parts.push(ping, ring, me);
     }
-    this.path.add(g);
+    // the whole planet is a button
+    const zone = s.add.zone(x, y, 420, 420).setInteractive({ useHandCursor: true });
+    zone.on("pointerup", () => {
+      if (this.drag.moved > 14) return;
+      if (!open) {
+        this.host.toast(`Reach stage ${r.from} to open ${r.name}`, "#ffd0d0");
+        return;
+      }
+      this.openSheet(r, Phaser.Math.Clamp(here ? save.stage : Math.min(last, Math.max(r.from, save.bestStage)), r.from, last));
+    });
+    parts.push(zone);
+    this.world.add(parts);
   }
 
-  private drawNodes(): void {
+  /** A world's 20 stages as bubbles (bosses show their face), and PLAY. */
+  private openSheet(r: Region, pick: number): void {
     const s = this.scene;
-    for (let st = 1; st <= MAX_STAGE; st++) {
-      const { x, y } = this.nodePos(st);
+    const W = s.scale.width;
+    const sh = this.sheet.removeAll(true).setVisible(true);
+    this.root.bringToTop(sh);
+    const h = 1180;
+    const cy = this.bottom - h / 2 - 20;
+    const dim = s.add.rectangle(0, 0, W, this.bottom, 0x0a0820, 0.7).setOrigin(0).setInteractive();
+    dim.on("pointerup", () => sh.setVisible(false).removeAll(true));
+    sh.add([dim, s.add.image(W / 2 + 4, cy + 6, vividCard(s, r.crystal, 1000, h))]);
+    sh.add(fitText(text(s, W / 2, cy - h / 2 + 70, r.name, 64, "#ffffff", { stroke: 12 }), 800));
+    this.picked = pick;
+    const bubbles: { st: number; ring: Phaser.GameObjects.Arc }[] = [];
+    const info = s.add.container(0, 0);
+    const choose = (st: number) => {
+      this.picked = st;
+      bubbles.forEach((b) => b.ring.setVisible(b.st === st));
+      const boss = st % BOSS_EVERY === 0;
+      const mode = MODE_INFO[modeForStage(st)];
+      info.removeAll(true);
+      info.add([
+        s.add.image(W / 2 - 330, cy + 300, mode.icon).setScale(0.8),
+        text(s, W / 2 - 270, cy + 280, boss ? `BOSS ${st}` : `STAGE ${st}`, 50, "#ffffff", { stroke: 10 }).setOrigin(0, 0.5),
+        fitText(text(s, W / 2 - 270, cy + 330, boss ? bossForStage(st).name : mode.name, 32, mode.css, { stroke: 8 }).setOrigin(0, 0.5), 340),
+      ]);
+    };
+    for (let k = 0; k < STAGES_PER_REGION; k++) {
+      const st = r.from + k;
+      const x = W / 2 + ((k % 5) - 2) * 176;
+      const y = cy - h / 2 + 230 + Math.floor(k / 5) * 170;
       const boss = st % BOSS_EVERY === 0;
       const done = st < save.bestStage;
-      const here = st === save.stage;
-      const locked = st > save.bestStage;
-      const land = regionForStage(st);
+      const can = st <= stageCap() && st <= MAX_STAGE;
+      const fill = !can ? 0x6a6a7a : done ? 0xffcf3a : st === save.stage ? 0xff9a3c : 0xffffff;
+      const c = s.add.container(x, y);
+      c.add(s.add.circle(0, 6, 66, 0x111111));
+      c.add(s.add.circle(0, 0, 64, fill).setStrokeStyle(7, 0x111111));
       if (boss) {
-        const def = bossForStage(st);
-        const r = 78;
-        const g = s.add.graphics();
-        g.fillStyle(0x000000, 0.25).fillEllipse(x, y + r * 0.85, r * 2, r * 0.5);
-        g.fillStyle(0x111111, 1).fillCircle(x, y + 6, r + 9);
-        g.fillStyle(done ? 0x7ad651 : locked ? 0x5a5a6a : 0xf26464, 1).fillCircle(x, y, r);
-        g.fillStyle(locked ? 0x3a3a4a : lighten(def.color, 0.5), 1).fillCircle(x, y, r - 12);
-        this.path.add(g);
-        if (!locked && !done) {
-          const glow = s.add.image(x, y, "glow").setTint(0xff5a5a).setScale(1.3).setAlpha(0.5);
-          s.tweens.add({ targets: glow, alpha: 0.9, scale: 1.5, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-          this.path.addAt(glow, this.path.list.indexOf(g));
+        const face = s.add.image(0, 4, bossForStage(st).tex);
+        face.setScale(100 / Math.max(face.width, face.height));
+        if (!can) face.setTintFill(0x22222e);
+        c.add(face);
+      } else c.add(text(s, 0, 0, `${st}`, 44, can ? "#ffffff" : "#c8c8d0", { stroke: 9 }));
+      if (done) c.add(s.add.image(42, -42, "icon_check").setScale(0.34));
+      if (!can) c.add(s.add.image(40, 40, "icon_lock").setScale(0.36));
+      const ring = s.add.circle(0, 0, 80).setStrokeStyle(10, 0x5aff8a).setVisible(false);
+      s.tweens.add({ targets: ring, scale: 1.12, duration: 420, yoyo: true, repeat: -1 });
+      c.add(ring);
+      c.setSize(140, 140).setInteractive({ useHandCursor: true });
+      c.on("pointerup", () => {
+        if (!can) {
+          this.host.toast("Beat the stage before it first", "#ffd0d0");
+          return;
         }
-        const face = s.add.image(x, y + 6, def.tex);
-        face.setScale(((r - 8) * 2) / Math.max(face.width, face.height));
-        // bosses you haven't reached are dark shapes
-        if (locked) face.setTintFill(0x1a1a28).setAlpha(0.85);
-        this.path.add(face);
-        const tag = s.add.container(x, y + r + 22, [
-          s.add.image(0, 0, panelTexture(s, "glass", 250, 48)),
-          fitText(text(s, 0, -1, locked ? `BOSS ${st}  ???` : `BOSS ${st}  ${def.name}`, 22, done ? "#b6ff8a" : "#ffffff"), 236),
-        ]);
-        this.path.add(tag);
-        if (done) this.path.add(s.add.image(x + r * 0.7, y - r * 0.7, "icon_check").setScale(0.5));
-      } else {
-        const r = 44;
-        const g = s.add.graphics();
-        g.fillStyle(0x111111, 1).fillCircle(x, y + 6, r + 8);
-        const color = here ? 0xff9a3c : done ? 0xffcf3a : locked ? 0x9aa4b2 : lighten(land.crystal, 0.55);
-        g.fillStyle(darken(color, 0.2), 1).fillCircle(x, y + 3, r);
-        g.fillStyle(color, 1).fillCircle(x, y - 2, r - 3);
-        g.fillStyle(0xffffff, 0.4).fillEllipse(x - r * 0.25, y - r * 0.45, r * 0.9, r * 0.32);
-        this.path.add(g);
-        if (done) this.path.add(s.add.image(x, y - 2, "icon_star").setScale(0.42));
-        else this.path.add(text(s, x, y - 2, `${st}`, 34, locked ? "#e8ecf2" : "#ffffff"));
-      }
-      if (here) this.drawHere(x, y, boss);
-      // stages you reached can be tapped (a drag is not a tap); in developer mode, every stage
-      if (st <= stageCap()) {
-        const r = boss ? 90 : 56;
-        const zone = s.add.zone(x, y, r * 2, r * 2).setInteractive({ useHandCursor: true });
-        zone.on("pointerup", (p: Phaser.Input.Pointer) => {
-          if (Math.abs(p.y - p.downY) < 14 && p.y > this.top + 150 && p.y < this.bottom - 260) this.pick(st);
-        });
-        this.path.add(zone);
-      }
+        choose(st);
+      });
+      bubbles.push({ st, ring });
+      sh.add(c);
     }
-    this.pickRing = s.add.circle(0, 0, 66).setStrokeStyle(10, 0x5aff8a);
-    s.tweens.add({ targets: this.pickRing, scale: 1.18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.path.add(this.pickRing);
+    sh.add(info);
+    sh.add(button(s, W / 2 + 270, cy + 300, 300, 130, "green", "PLAY", () => {
+      sh.setVisible(false);
+      this.host.pickStage(this.picked, true);
+    }, { size: 56 }));
+    choose(pick);
+    sh.setAlpha(0);
+    s.tweens.add({ targets: sh, alpha: 1, duration: 160 });
   }
 
-  /** For the developer: tap the top panel 5 times quickly to switch developer mode (play any stage). */
-  private devPanel(img: Phaser.GameObjects.Image): Phaser.GameObjects.Image {
+  /** For the developer: tap the title 5 times quickly to switch developer mode (play any stage). */
+  private devTaps(title: Phaser.GameObjects.Text): void {
     let taps = 0;
     let first = 0;
-    img.setInteractive().on("pointerup", () => {
+    title.setInteractive().on("pointerup", () => {
       const now = this.scene.time.now;
       if (now - first > 2000) {
         taps = 0;
@@ -252,109 +244,89 @@ export class MapScreen extends Screen {
       this.host.toast(save.dev ? "Developer mode ON: every stage is open" : "Developer mode OFF", save.dev ? "#ff9ad8" : "#ffffff");
       this.onShow();
     });
-    return img;
   }
+}
 
-  /** Tapped a stage: ring it and show its card with PLAY. */
-  private pick(st: number): void {
-    const s = this.scene;
-    const boss = st % BOSS_EVERY === 0;
-    const p = this.nodePos(st);
-    this.pickRing.setPosition(p.x, p.y).setRadius(boss ? 98 : 62);
-    const c = this.card.removeAll(true);
-    const land = regionForStage(st);
-    const cleared = st < save.bestStage;
-    const icon = boss ? bossForStage(st).tex : crystalKey(land.id);
-    const splat = itemSplash(s, icon, 130, boss ? 0xff8a8a : lighten(land.crystal, 0.5)).setPosition(-380, 0);
-    c.add([
-      s.add.image(2, 4, vividCard(s, land.crystal, 1000, 230)),
-      splat,
-      text(s, -280, -50, boss ? `BOSS ${st}` : `STAGE ${st}`, 60, "#ffffff", { stroke: 12 }).setOrigin(0, 0.5),
-      fitText(text(s, -280, 14, boss ? bossForStage(st).name : land.name, 32, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5), 400),
-      text(s, -280, 66, st === save.stage ? "You are here" : st > save.bestStage ? "DEV: play it!" : cleared ? "Cleared!  Play it again" : "Your next stage!", 28, st > save.bestStage ? "#ff9ad8" : cleared ? "#b6ff8a" : "#ffe066", { stroke: 7 }).setOrigin(0, 0.5),
-      s.add.image(34, -50, MODE_INFO[modeForStage(st)].icon).setScale(0.45),
-      fitText(text(s, 66, -50, MODE_INFO[modeForStage(st)].name, 26, MODE_INFO[modeForStage(st)].css, { stroke: 7 }).setOrigin(0, 0.5), 130),
-      button(s, 330, 0, 250, 130, "green", "PLAY", () => this.host.pickStage(st, true), { size: 52 }),
-    ]);
-    if (cleared) c.add(s.add.star(-438, -70, 5, 14, 30, 0xffe066).setStrokeStyle(5, 0x111111));
-    c.setScale(0.9).setAlpha(0);
-    s.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
-  }
-
-  /** You are here: the hero on the node, a pulsing ring and a flag. */
-  private drawHere(x: number, y: number, boss: boolean): void {
-    const s = this.scene;
-    const r = boss ? 92 : 56;
-    const ring = s.add.circle(x, y, r).setStrokeStyle(8, 0xffe066);
-    s.tweens.add({ targets: ring, scale: 1.3, alpha: 0, duration: 900, repeat: -1 });
-    const me = s.add.image(x + (boss ? 110 : 0), y - (boss ? 10 : 40), "hero").setScale(0.75).setOrigin(0.5, 0.95);
-    s.tweens.add({ targets: me, y: me.y - 18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    let f = 0;
-    s.time.addEvent({ delay: 220, loop: true, callback: () => me.active && me.setTexture(++f % 2 ? "hero_w1" : "hero_w2") });
-    const flag = s.add.container(me.x, me.y - 150, [
-      s.add.image(0, 0, panelTexture(s, "glass", 110, 44)),
-      text(s, 0, -1, "YOU", 26, "#ffe066"),
-    ]);
-    s.tweens.add({ targets: flag, y: flag.y - 18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.path.add([ring, me, flag]);
-  }
-
-  /** Big soft clouds drifting across. */
-  private drawClouds(W: number): void {
-    const s = this.scene;
-    for (let k = 0; k < 14; k++) {
-      const y = 200 + ((k * 977) % (this.height - 400));
-      const c = s.add.container((k * 313) % W, y);
-      const g = s.add.graphics();
-      g.fillStyle(0xffffff, 0.55);
-      for (const [dx, dy, rr] of [[0, 0, 60], [60, 10, 48], [-60, 12, 44], [24, -30, 46]]) g.fillCircle(dx, dy, rr);
-      c.add(g);
-      c.setScale(0.8 + (k % 3) * 0.3);
-      this.path.add(c);
-      s.tweens.add({ targets: c, x: c.x + (k % 2 ? 260 : -260), duration: 14000 + k * 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+/** Deep space: a dark blue gradient with stars of all sizes and a few soft nebula clouds. */
+function spaceTexture(scene: Phaser.Scene, w: number, h: number): string {
+  return canvasTexture(scene, `space_${w}_${h}`, w, h, (c) => {
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#0b1530");
+    g.addColorStop(1, "#141f45");
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+    for (const [x, y, r, col] of [[w * 0.2, h * 0.3, 380, "rgba(120,80,200,0.18)"], [w * 0.8, h * 0.7, 420, "rgba(60,140,220,0.16)"]] as [number, number, number, string][]) {
+      const n = c.createRadialGradient(x, y, 0, x, y, r);
+      n.addColorStop(0, col);
+      n.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = n;
+      c.fillRect(0, 0, w, h);
     }
-  }
+    for (let i = 0; i < 260; i++) {
+      const x = (i * 7919) % w;
+      const y = (i * 104729) % h;
+      c.fillStyle = `rgba(255,255,255,${0.25 + (i % 5) * 0.12})`;
+      c.beginPath();
+      c.arc(x, y, (i % 7 === 0 ? 2.6 : 1.2), 0, Math.PI * 2);
+      c.fill();
+    }
+  });
+}
 
-  /** Lands you have not reached yet are hidden in fog, with a lock. */
-  private drawFog(W: number): void {
-    const s = this.scene;
-    REGIONS.forEach((r) => {
-      if (regionUnlocked(r, save.bestStage)) return;
-      const y0 = this.nodePos(r.from + STAGES_PER_REGION - 1).y - STEP * 0.7;
-      const y1 = this.nodePos(r.from).y + STEP * 0.3;
-      const g = s.add.graphics();
-      g.fillStyle(0xdde6f2, 0.55).fillRect(0, y0, W, y1 - y0);
-      g.fillStyle(0xffffff, 0.35);
-      for (let k = 0; k < 10; k++) g.fillCircle((k * 211) % W, y0 + ((k * 389) % (y1 - y0)), 140);
-      const mid = (y0 + y1) / 2;
-      this.path.add([
-        g,
-        s.add.image(W / 2, mid - 60, "icon_lock").setScale(1.6),
-        label(s, W / 2, mid + 70, `Reach stage ${r.from} to explore ${r.name}`, 36, "#4a5a6a", 700),
-      ]);
-    });
-  }
-
-  /** Where you are and which boss is next, pinned at the top. */
-  private drawInfo(W: number): void {
-    const s = this.scene;
-    const c = this.info.removeAll(true);
-    const y = this.top + 70;
-    const next = Math.min(MAX_STAGE, Math.ceil(save.bestStage / BOSS_EVERY) * BOSS_EVERY);
-    const def = bossForStage(next);
-    const g = s.add.graphics();
-    drawBar(g, 150, y + 16, 480, 22, (save.bestStage - 1) / MAX_STAGE, 0xffcf3a);
-    const face = s.add.image(W - 150, y, def.tex);
-    face.setScale(120 / Math.max(face.width, face.height));
-    c.add([
-      this.devPanel(s.add.image(W / 2 + 42, y + 4, vividCard(s, save.dev ? 0xff6ad8 : 0x4fa8ff, 920, 140))),
-      text(s, 150, y - 26, `Best: stage ${save.bestStage} of ${MAX_STAGE}`, 36, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5),
-      g,
-      s.add.image(W - 150, y, "glow").setTint(0xff5a5a).setScale(0.6).setAlpha(0.7),
-      face,
-      fitText(text(s, W - 150, y + 52, next === save.bestStage ? "BOSS NOW!" : `boss at ${next}`, 22, "#ffd0d0"), 180),
-      fitText(text(s, W - 330, y - 30, def.name, 26, rgba(lighten(def.color, 0.4))), 210),
-      button(s, W - 330, y + 24, 130, 56, "orange", "HERE", () => this.scrollTo(save.stage), { size: 24 }),
-    ]);
-  }
+/** A round cartoon planet in a land's colours: sea, land blobs, shading, a shine and clouds. */
+function planetTexture(scene: Phaser.Scene, r: Region): string {
+  return canvasTexture(scene, `planet_${r.id}`, 440, 440, (c) => {
+    const cx = 220;
+    const cy = 220;
+    const R = 170;
+    const sea = r.detail === "snow" ? 0x8fd8ff : r.detail === "sand" ? 0x3fb8d8 : 0x3a9ff0;
+    c.save();
+    c.beginPath();
+    c.arc(cx, cy, R, 0, Math.PI * 2);
+    c.clip();
+    const g = c.createRadialGradient(cx - 50, cy - 60, 20, cx, cy, R);
+    g.addColorStop(0, rgba(lighten(sea, 0.3)));
+    g.addColorStop(1, rgba(darken(sea, 0.15)));
+    c.fillStyle = g;
+    c.fillRect(0, 0, 440, 440);
+    // land
+    const blobs: [number, number, number][] = [[-70, -50, 90], [60, 40, 110], [-40, 90, 60], [90, -90, 55], [-110, 40, 50]];
+    for (const [dx, dy, br] of blobs) {
+      c.fillStyle = rgba(r.ground);
+      c.beginPath();
+      for (let k = 0; k <= 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const rr = br * (0.8 + ((k * 37 + dx) % 9) / 30);
+        if (k === 0) c.moveTo(cx + dx + Math.cos(a) * rr, cy + dy + Math.sin(a) * rr);
+        else c.lineTo(cx + dx + Math.cos(a) * rr, cy + dy + Math.sin(a) * rr);
+      }
+      c.fill();
+      c.fillStyle = rgba(r.groundLight);
+      c.beginPath();
+      c.arc(cx + dx - br * 0.25, cy + dy - br * 0.25, br * 0.45, 0, Math.PI * 2);
+      c.fill();
+    }
+    // night side shading and a shine
+    const sh = c.createRadialGradient(cx - 70, cy - 80, R * 0.4, cx, cy, R * 1.05);
+    sh.addColorStop(0, "rgba(0,0,0,0)");
+    sh.addColorStop(1, "rgba(10,20,60,0.45)");
+    c.fillStyle = sh;
+    c.fillRect(0, 0, 440, 440);
+    c.restore();
+    c.fillStyle = "rgba(255,255,255,0.35)";
+    c.beginPath();
+    c.ellipse(cx - 70, cy - 95, 50, 22, -0.6, 0, Math.PI * 2);
+    c.fill();
+    // fluffy clouds hugging the edge
+    c.fillStyle = "#ffffff";
+    for (const [a, size] of [[-0.6, 1], [0.5, 0.8], [2.2, 1.1], [3.4, 0.9], [4.6, 0.7]] as [number, number][]) {
+      const px = cx + Math.cos(a) * R * 0.92;
+      const py = cy + Math.sin(a) * R * 0.92;
+      for (const [ox, oy, cr] of [[0, 0, 30], [32, 6, 24], [-30, 8, 22], [10, -16, 22]]) {
+        c.beginPath();
+        c.arc(px + ox * size, py + oy * size, cr * size, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  });
 }

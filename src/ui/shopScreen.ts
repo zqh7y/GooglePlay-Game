@@ -49,6 +49,20 @@ interface Reward {
   give: () => void;
 }
 
+/** Same rewards added up for showing (x3 + x5 dice of a tier = x8, 10m + 5m potion = 15m). */
+function mergeRewards(list: Reward[]): Reward[] {
+  const out: Reward[] = [];
+  for (const r of list) {
+    const m = /^(x?)(\d+)(m?)$/.exec(r.amount);
+    const same = m && out.find((o) => o.icon === r.icon && new RegExp(`^${m[1]}\\d+${m[3]}$`).test(o.amount));
+    if (m && same) {
+      const n = Number(/\d+/.exec(same.amount)![0]) + Number(m[2]);
+      same.amount = `${m[1]}${n}${m[3]}`;
+    } else out.push({ ...r });
+  }
+  return out;
+}
+
 const diceReward = (tier: Tier, n: number): Reward => ({ icon: `die_${tier}`, amount: `x${n}`, give: () => (save.dice[tier] += n) });
 const cashReward = (cash: number): Reward => ({ icon: "icon_cash", amount: fmt(cash), give: () => (save.cash += cash) });
 const gemReward = (n: number): Reward => ({ icon: "icon_gem", amount: `x${n}`, give: () => (save.gems += n) });
@@ -313,7 +327,6 @@ function merchantNow(): Slot[] {
 
 /** Gifts that unlock as you play today (minutes), better and better. */
 const PLAY_GIFTS = [1, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50, 60];
-const GIFT_COLORS = [0xff7ab8, 0x5ac8ff, 0x8af06a, 0xffd23f, 0xb36aff, 0xff9a3a];
 
 function playState() {
   const p = save.playtime;
@@ -1092,17 +1105,32 @@ export class ShopScreen extends Screen {
   }
 
   /** Gamepasses: bought once, bonuses forever. */
+  /**
+   * Gamepasses like Pet Simulator's: a big bright card each, the name huge on top, the art big on
+   * a spinning sunburst, a few big words for what it does and a chunky green price button.
+   */
   private buildPasses(y0: number): number {
     const s = this.scene;
     const W = s.scale.width;
     let y = this.header(y0, "GAMEPASSES", "gold");
-    const th = 420;
+    const cw = 490;
+    const ch = 520;
     PASSES.forEach((p, i) => {
       const col = i % 2;
-      if (i > 0 && col === 0) y += th + 30;
-      const btn = this.priceButton(0, 0, 280, 92, () => {
-        if (hasPass(p.id)) return { label: "OWNED", color: "grey", ok: false };
-        return { label: `${p.gems}`, icon: "icon_gem", color: save.gems >= p.gems ? "green" : "grey", ok: save.gems >= p.gems };
+      if (i > 0 && col === 0) y += ch + 30;
+      const x = W / 2 + (col ? 255 : -255);
+      const cy = y + ch / 2;
+      const owned = hasPass(p.id);
+      const rays = s.add.image(x, cy - 30, "rays").setScale(0.62).setAlpha(0.55);
+      s.tweens.add({ targets: rays, angle: 360, duration: 10000, repeat: -1 });
+      const art = s.add.image(x, cy - 30, p.icon);
+      art.setScale(220 / Math.max(art.width, art.height));
+      s.tweens.add({ targets: art, y: cy - 44, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: i * 120 });
+      const twinkle = s.add.star(x + 120, cy - 130, 4, 6, 22, 0xffffff);
+      s.tweens.add({ targets: twinkle, scale: 0.3, alpha: 0.3, duration: 600, yoyo: true, repeat: -1, delay: i * 200 });
+      const btn = this.priceButton(x, cy + ch / 2 - 72, 330, 112, () => {
+        if (hasPass(p.id)) return { label: "OWNED", color: "gold", ok: false };
+        return { label: `${p.gems}`, icon: "icon_gem", color: "green", ok: true };
       }, () => {
         if (hasPass(p.id) || !this.spendGems(p.gems)) return false;
         save.passes.push(p.id);
@@ -1110,70 +1138,118 @@ export class ShopScreen extends Screen {
         s.cameras.main.flash(200, 255, 240, 180);
         return true;
       });
-      this.tile(W / 2 + (col ? 255 : -255), y + th / 2, 490, th, p.color, p.icon, 150, p.name, () => p.desc, btn);
+      this.list.add([
+        s.add.image(x + 2, cy + 4, psCard(s, CARD_HEX[p.color] ?? 0xffffff, cw, ch)),
+        rays, art, twinkle,
+        fitText(text(s, x, y + 58, p.name.replace("!", ""), 58, "#ffffff", { stroke: 13 }), cw - 50),
+        fitText(text(s, x, cy + 110, p.short, 40, "#ffe066", { stroke: 10 }), cw - 50),
+        btn,
+      ]);
+      if (owned) this.list.add(s.add.image(x + cw / 2 - 60, y + 60, "icon_check").setScale(0.7));
     });
-    return y + th + 40;
+    return y + ch + 40;
   }
 
+  /**
+   * Playtime gifts as one track: 12 gifts along a bar that fills as you play today, and one
+   * CLAIM ALL that opens every gift that is ready (and the stacked free gifts) at once.
+   */
   private buildPlaytime(y0: number): number {
     const s = this.scene;
     const W = s.scale.width;
-    let y = this.header(y0, "PLAYTIME GIFTS", "pink");
-    const played = text(s, W / 2, y + 10, "", 30, "#4a2f1d", { stroke: false });
-    this.ticking.push(() => played.setText(`Played today: ${clock(playState().secs * 1000)}  •  new gifts tomorrow`));
+    const y = this.header(y0, "PLAYTIME GIFTS", "pink");
+    const ch = 520;
+    const cy = y + ch / 2;
+    this.list.add(s.add.image(W / 2, cy, vividCard(s, 0xff7ab8, 1000, ch)));
+    const played = text(s, W / 2, y + 50, "", 34, "#ffffff", { stroke: 8 });
     this.list.add(played);
-    y += 50;
-    const gw = 240;
-    const gh = 260;
-    PLAY_GIFTS.forEach((mins, i) => {
-      const x = W / 2 + ((i % 4) - 1.5) * (gw + 12);
-      const gy = y + Math.floor(i / 4) * (gh + 14) + gh / 2;
-      const color = GIFT_COLORS[i % GIFT_COLORS.length];
+    // the track
+    const x0 = 110;
+    const x1 = W - 110;
+    const ty = cy - 10;
+    const step = (x1 - x0) / (PLAY_GIFTS.length - 1);
+    const bar = s.add.graphics();
+    this.list.add(bar);
+    const nodes = PLAY_GIFTS.map((mins, i) => {
+      const x = x0 + i * step;
       const big = i === PLAY_GIFTS.length - 1;
-      const bg = s.add.image(x + 2, gy + 4, psCard(s, big ? 0xffc93a : color, gw, gh));
-      const glow = s.add.image(x, gy - 30, "glow").setTint(color).setScale(0.9).setAlpha(0);
-      s.tweens.add({ targets: glow, alpha: { from: 0.4, to: 0.9 }, duration: 500, yoyo: true, repeat: -1 });
-      const box = s.add.image(x, gy - 30, big ? "chest_gold" : "icon_gift").setTint(big ? 0xffffff : color);
-      box.setScale((big ? 120 : 100) / Math.max(box.width, box.height));
-      const line = text(s, x, gy + 86, "", 28);
-      const btnArea = s.add.zone(x, gy, gw, gh).setInteractive({ useHandCursor: true });
-      const state = () => {
-        const p = playState();
-        if (p.claimed.includes(i)) return "done";
-        return p.secs >= mins * 60 ? "ready" : "wait";
-      };
-      let bounce: Phaser.Tweens.Tween | null = null;
-      const refresh = () => {
-        const st = state();
-        const p = playState();
-        line.setText(st === "done" ? "CLAIMED" : st === "ready" ? "CLAIM!" : clock((mins * 60 - p.secs) * 1000)).setColor(st === "ready" ? "#ffe066" : st === "done" ? "#8af06a" : "#ffffff");
-        glow.setVisible(st === "ready");
-        box.setAlpha(st === "done" ? 0.35 : 1);
-        if (st === "ready" && !bounce) bounce = s.tweens.add({ targets: box, angle: { from: -10, to: 10 }, duration: 160, yoyo: true, repeat: -1 });
-        if (st !== "ready" && bounce) {
-          bounce.stop();
-          bounce = null;
-          box.setAngle(0);
-        }
-      };
-      refresh();
-      this.ticking.push(refresh);
-      btnArea.on("pointerup", () => {
-        if (this.scrolled || this.overlay) return;
-        if (state() !== "ready") {
-          sfx.error();
-          return;
-        }
-        playState().claimed.push(i);
-        const r = playGiftRewards(i);
-        r.forEach((x2) => x2.give());
-        persist();
-        this.rewardShow(big ? "BIG PLAYTIME GIFT!" : "PLAYTIME GIFT", big ? "chest_gold" : null, r);
-        refresh();
-      });
-      this.list.add([bg, glow, box, text(s, x, gy - gh / 2 + 30, `${mins} MIN`, 28, "#ffffff", { stroke: 7 }), line, btnArea]);
+      const glow = s.add.image(x, ty - 70, "glow").setTint(0xffe066).setScale(0.6).setVisible(false);
+      const box = s.add.image(x, ty - 70, big ? "chest_gold" : "icon_gift");
+      box.setScale((big ? 96 : 66) / Math.max(box.width, box.height));
+      const check = s.add.image(x + 22, ty - 50, "icon_check").setScale(0.36).setVisible(false);
+      const lbl = text(s, x, ty + 46, `${mins}m`, 24, "#ffffff", { stroke: 6 });
+      this.list.add([glow, box, check, lbl]);
+      return { mins, box, glow, check, bounce: null as Phaser.Tweens.Tween | null };
     });
-    return y + 3 * (gh + 14) + 40;
+    const next = text(s, W / 2, cy + 110, "", 30, "#ffffff", { stroke: 7 });
+    const btn = this.priceButton(W / 2, cy + 190, 520, 120, () => {
+      const n = this.giftsReady();
+      return { label: n ? `CLAIM ALL  (${n})` : "KEEP PLAYING", color: n ? "green" : "grey", ok: n > 0 };
+    }, () => {
+      this.claimAllGifts();
+      return true;
+    });
+    this.list.add([next, btn]);
+    const refresh = () => {
+      const p = playState();
+      played.setText(`Played today: ${clock(p.secs * 1000)}`);
+      // the bar fills between the gifts you have reached
+      let k = 0;
+      while (k < PLAY_GIFTS.length && p.secs >= PLAY_GIFTS[k] * 60) k++;
+      const prev = k ? PLAY_GIFTS[k - 1] * 60 : 0;
+      const part = k >= PLAY_GIFTS.length ? 0 : Math.min(1, (p.secs - prev) / (PLAY_GIFTS[k] * 60 - prev));
+      const fx = k === 0 ? x0 + part * 0 : x0 + (k - 1 + (k < PLAY_GIFTS.length ? part : 0)) * step;
+      bar.clear();
+      bar.fillStyle(0x14213d, 0.5).fillRoundedRect(x0 - 20, ty - 14, x1 - x0 + 40, 28, 14);
+      bar.fillStyle(0xffe066, 1).fillRoundedRect(x0 - 20, ty - 14, Math.max(28, fx - x0 + 20), 28, 14);
+      bar.lineStyle(5, 0x111111, 1).strokeRoundedRect(x0 - 20, ty - 14, x1 - x0 + 40, 28, 14);
+      nodes.forEach((nd, i) => {
+        const done = p.claimed.includes(i);
+        const ready = !done && p.secs >= nd.mins * 60;
+        nd.check.setVisible(done);
+        nd.box.setAlpha(done ? 0.4 : 1);
+        nd.glow.setVisible(ready);
+        if (ready && !nd.bounce) nd.bounce = s.tweens.add({ targets: nd.box, angle: { from: -12, to: 12 }, duration: 160, yoyo: true, repeat: -1 });
+        if (!ready && nd.bounce) {
+          nd.bounce.stop();
+          nd.bounce = null;
+          nd.box.setAngle(0);
+        }
+      });
+      const upcoming = PLAY_GIFTS.find((m, i) => p.secs < m * 60 && !p.claimed.includes(i));
+      next.setText(upcoming ? `Next gift in ${clock((upcoming * 60 - p.secs) * 1000)}` : "All gifts reached today: new ones tomorrow!");
+    };
+    refresh();
+    this.ticking.push(refresh);
+    return y + ch + 40;
+  }
+
+  /** Gifts waiting: playtime gifts reached and not opened, plus the stacked free gifts. */
+  private giftsReady(): number {
+    const p = playState();
+    return PLAY_GIFTS.filter((m, i) => p.secs >= m * 60 && !p.claimed.includes(i)).length + freeGifts();
+  }
+
+  /** Opens every ready gift in one go and shows what you got, grouped. */
+  private claimAllGifts(): void {
+    const p = playState();
+    const got: Reward[] = [];
+    PLAY_GIFTS.forEach((m, i) => {
+      if (p.secs >= m * 60 && !p.claimed.includes(i)) {
+        p.claimed.push(i);
+        got.push(...playGiftRewards(i));
+      }
+    });
+    const n = freeGifts();
+    if (n) {
+      let gems = 0;
+      for (let i = 0; i < n; i++) gems += 1 + Math.floor(Math.random() * 2);
+      got.push(gemReward(gems), diceReward("A", 3 * n), cashReward(income(5 * n)));
+      save.freeGiftAt = Date.now() + FREE_GIFT_MS;
+    }
+    got.forEach((r) => r.give());
+    persist();
+    this.rewardShow("GIFTS!", "chest_gold", mergeRewards(got));
   }
 
   // ───────────────────────── the Event Shop ─────────────────────────

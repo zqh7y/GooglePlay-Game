@@ -45,6 +45,7 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { MODE_INFO, StageMode, modeForStage } from "../data/modes";
+import type { DailyReward } from "../systems/goals";
 import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, petCard, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
@@ -141,7 +142,10 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Battle Boosts waiting for the next fight */
   private boostRow!: Phaser.GameObjects.Container;
   private boostKey = "";
-  private potionPill!: Pill;
+  /** the luck potion: a big glowing icon with its timer under it */
+  private potionBadge!: Phaser.GameObjects.Container;
+  private potionTime!: Phaser.GameObjects.Text;
+  private potionX!: Phaser.GameObjects.Text;
   private skillBar!: Phaser.GameObjects.Container;
   /** kill streak readout under the gadget panel */
   private streakHud!: Phaser.GameObjects.Text;
@@ -433,6 +437,10 @@ export class UIScene extends Phaser.Scene implements Host {
   showModal(m: Modal): Modal {
     this.openModal?.close();
     this.openModal = m;
+    // however a popup goes away, it no longer blocks the lobby buttons
+    m.root.once("destroy", () => {
+      if (this.openModal === m) this.openModal = null;
+    });
     return m;
   }
 
@@ -597,7 +605,13 @@ export class UIScene extends Phaser.Scene implements Host {
     this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
     this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
     // the luck potion timer sits centred above your DPS and luck
-    this.potionPill = new Pill(this, W / 2, bottom - 420, 270, 64, "icon_potion", 30, "glass");
+    const pGlow = this.add.image(0, 0, "glow").setTint(0x9cff6a).setScale(1.3).setAlpha(0.8);
+    this.tweens.add({ targets: pGlow, scale: 1.55, alpha: 0.45, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const pIcon = this.add.image(0, -6, "icon_potion").setScale(1.25);
+    this.tweens.add({ targets: pIcon, angle: { from: -8, to: 8 }, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.potionX = text(this, 44, -50, "", 32, "#ffe066", { stroke: 8 });
+    this.potionTime = text(this, 0, 74, "", 36, "#ffffff", { stroke: 9 });
+    this.potionBadge = this.add.container(96, bottom - 470, [pGlow, pIcon, this.potionX, this.potionTime]);
     // BATTLE: a big sunny orange card with a sword on a paint splat
     const sword = itemSplash(this, "icon_sword", 130, 0xffe066).setPosition(-196, 0);
     this.tweens.add({ targets: sword, angle: { from: -8, to: 8 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
@@ -638,7 +652,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.stageNext = arrowButton(this, 0, 178, 1, () => this.pickStage(save.stage + 1));
     this.lobby.add([this.stagePrev, this.stageNext]);
     this.boostRow = this.add.container(W / 2, bottom - 510);
-    this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
+    this.lobby.add([this.dpsPill, this.luckPill, this.potionBadge, this.boostRow, go]);
     this.lobby.bringToTop(this.rushHint);
     // quest tracker
     // a vivid card: the quest's icon on a paint splat, a short name, a bar with the numbers on it
@@ -875,10 +889,12 @@ export class UIScene extends Phaser.Scene implements Host {
         this.drawBoostRow(owned);
       }
       const active = potionActive();
-      this.potionPill.setVisible(active);
+      this.potionBadge.setVisible(active);
       if (active) {
         const s = Math.ceil((save.potionUntil - Date.now()) / 1000);
-        this.potionPill.setValue(`x${potionMult()} ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+        const hms = s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+        this.potionTime.setText(hms);
+        this.potionX.setText(`x${potionMult()}`);
       }
       return;
     }
@@ -1427,6 +1443,7 @@ export class UIScene extends Phaser.Scene implements Host {
    * on a sunburst, three chips with what matters, and a huge START. START plays the enter animation.
    */
   private confirmStart(kind: FightKind): void {
+    if (this.openModal && !this.openModal.root.active) this.openModal = null;
     if (battle.mode !== "lobby" || this.openModal) return;
     const rush = kind === "rush";
     const def = bossForStage(save.stage);
@@ -1786,39 +1803,83 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** 7-day login streak. */
+  /**
+   * Daily Rewards, Pet Simulator style: a white window, six colourful day cards (today's has a
+   * Claim! button, claimed ones a big tick) and a purple "OP REWARDS!" panel for day 7.
+   */
   showDaily(): void {
-    const h = 1060;
-    const m = this.showModal(modal(this, 920, h, "DAILY REWARD", "gold", () => (this.openModal = null)));
+    const w = 1000;
+    const h = 1400;
+    const m = this.showModal(modal(this, w, h, "", "gold", () => (this.openModal = null), undefined, true));
+    const b = m.body;
+    const top = -h / 2;
     const day = dailyDay();
-    DAILY.forEach((r, i) => {
-      const x = i < 4 ? -315 + i * 210 : -210 + (i - 4) * 210;
-      const y = i < 4 ? -250 : 30;
-      const claimed = day >= 0 ? i < day : i < save.dailyStreak;
-      const today = i === day;
-      const icon = r.gems ? "icon_gem" : r.potionMin ? "icon_potion" : "icon_cash";
-      const lines = [r.gems ? `${r.gems} gems` : "", r.cashMin ? `${fmt(dailyCash(r))}` : "", r.potionMin ? `${r.potionMin}m potion` : ""].filter(Boolean);
-      if (today) {
-        const glow = this.add.image(x, y, "glow").setTint(0xffe066).setScale(1.4);
-        m.body.add(glow);
-        this.tweens.add({ targets: glow, scale: 1.6, alpha: 0.6, duration: 600, yoyo: true, repeat: -1 });
-      }
-      m.body.add([
-        this.add.image(x, y, panelTexture(this, today ? "cream" : "inset", 190, 250)),
-        label(this, x, y - 96, `Day ${i + 1}`, 30, today ? "#c9663a" : "#7a5236"),
-        this.add.image(x, y - 18, icon).setScale(i === 6 ? 1.05 : 0.85).setAlpha(claimed ? 0.45 : 1),
-        fitText(label(this, x, y + 74, lines.join("\n"), 24, "#4a2f1d"), 176),
-      ]);
-      if (claimed) m.body.add(this.add.image(x + 58, y - 88, "icon_check").setScale(0.6));
-    });
-    m.body.add(label(this, 0, 240, day >= 0 ? "Come back every day! Missing a day restarts the streak." : "Claimed! Come back tomorrow for the next one.", 28, "#7a5236", 760));
-    m.body.add(button(this, 0, h / 2 - 140, 460, 130, day >= 0 ? "green" : "grey", day >= 0 ? "CLAIM" : "CLAIMED", () => {
-      if (!claimDaily()) return;
+    const win = this.add.graphics();
+    win.fillStyle(0x000000, 0.3).fillRoundedRect(-w / 2 + 10, top + 70, w, h - 70, 44);
+    win.fillStyle(0xffffff, 1).fillRoundedRect(-w / 2, top + 60, w, h - 70, 44);
+    win.lineStyle(12, 0x26263a, 1).strokeRoundedRect(-w / 2, top + 60, w, h - 70, 44);
+    b.addAt(win, 1);
+    // the title with a little calendar, sitting on the top border
+    const cal = this.add.graphics();
+    cal.fillStyle(0xffffff, 1).fillRoundedRect(-58, -50, 116, 104, 16);
+    cal.fillStyle(0xf04a5a, 1).fillRoundedRect(-58, -50, 116, 36, { tl: 16, tr: 16, bl: 0, br: 0 });
+    cal.lineStyle(7, 0x111111, 1).strokeRoundedRect(-58, -50, 116, 104, 16);
+    b.add([
+      this.add.container(-w / 2 + 70, top + 60, [cal, text(this, 0, 16, `${day >= 0 ? day + 1 : ((Math.max(1, save.dailyStreak) - 1) % 7) + 1}`, 44, "#26263a")]).setAngle(-10),
+      text(this, -w / 2 + 140, top + 60, "Daily Rewards", 84, "#ffffff", { stroke: 16 }).setOrigin(0, 0.5),
+      text(this, 0, top + 170, day >= 0 ? "Reward ready to Claim!" : "Come back tomorrow!", 50, day >= 0 ? "#5fc83a" : "#8a8aa0", { stroke: 0 }),
+    ]);
+    const amount = (r: DailyReward) => r.dice ? `x${r.dice[1]}` : r.gems ? `x${r.gems}` : r.potionMin ? `${r.potionMin}m` : fmt(dailyCash(r));
+    const claimed = (i: number) => (day >= 0 ? i < day : i < save.dailyStreak % 7 || save.dailyStreak % 7 === 0);
+    const claim = () => {
+      const r = claimDaily();
+      if (!r) return;
       sfx.fanfare();
       buzz(60);
-      this.coinShower(this.W / 2, this.H / 2 + h / 2 - 140, 14);
-      this.toast(`Day ${day + 1} reward collected!`, "#ffe066");
+      this.coinShower(this.W / 2, this.H / 2, 14);
+      this.toast(`Day ${day + 1}: ${r.name} collected!`, "#ffe066");
       m.close();
-    }, { size: 46 }).setEnabled(day >= 0));
+    };
+    // six day cards, 3 x 2
+    DAILY.slice(0, 6).forEach((r, i) => {
+      const x = (i % 3 - 1) * 310;
+      const y = top + 400 + Math.floor(i / 3) * 340;
+      const today = i === day;
+      const done = claimed(i);
+      const card = this.add.container(x, y);
+      card.add(this.add.image(4, 6, vividCard(this, i === 1 ? 0xff7ad8 : r.color, 290, 320)));
+      if (i === 1) card.add(classText(this, 90, -150, "OP!", 40, "uSSS").setAngle(14));
+      card.add(fitText(text(this, 0, -120, r.name, 34, "#ffffff", { stroke: 8 }), 250));
+      const ic = this.add.image(0, -10, r.icon);
+      ic.setScale(130 / Math.max(ic.width, ic.height));
+      card.add([ic, text(this, 78, -50, amount(r), 40, "#ffffff", { stroke: 9 })]);
+      if (today) {
+        card.add(button(this, 0, 100, 220, 84, "green", "Claim!", claim, { size: 38 }));
+        this.tweens.add({ targets: card, scale: 1.05, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      } else card.add(text(this, 0, 112, `Day ${i + 1}`, 52, "#ffffff", { stroke: 11 }));
+      if (done) {
+        card.setAlpha(0.55);
+        card.add(this.add.image(0, -10, "icon_check").setScale(1.1));
+      }
+      b.add(card);
+    });
+    // day 7: the big purple OP panel
+    const r7 = DAILY[6];
+    const py = top + 1150;
+    const op = this.add.container(0, py);
+    op.add(this.add.image(4, 6, vividCard(this, r7.color, 920, 420)));
+    op.add(classText(this, 0, -160, "OP REWARDS!", 64, "uSSS"));
+    op.add(text(this, 0, -100, `x${r7.dice![1]} ${r7.dice![0]} Dice  •  ${r7.gems} Gems  •  ${r7.potionMin}m Potion`, 30, "#ffffff", { stroke: 7 }));
+    const chest = this.add.image(-230, 50, "chest_gold");
+    chest.setScale(200 / Math.max(chest.width, chest.height));
+    const gem = this.add.image(-120, 100, "icon_gem").setScale(0.9).setAngle(-15);
+    const die = this.add.image(-330, 110, `die_${r7.dice![0]}`).setScale(1.4).setAngle(12);
+    this.tweens.add({ targets: chest, y: 36, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    op.add([chest, gem, die]);
+    if (day === 6) op.add(button(this, 200, 60, 340, 120, "green", "Claim!", claim, { size: 50 }));
+    else op.add(classText(this, 200, 60, "Day 7", 110, "uSSS"));
+    if (claimed(6) && day !== 6) op.setAlpha(0.6);
+    b.add(op);
   }
 
   /** Boss Rush top bar: the boss number and name over its health. */

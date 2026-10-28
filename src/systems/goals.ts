@@ -1,4 +1,5 @@
 import { RARITY_INFO, RARITY_ORDER } from "../data/rarity";
+import { Tier } from "../data/tiers";
 import { persist, save } from "./save";
 
 // ───────────────────────── quests ─────────────────────────
@@ -109,21 +110,27 @@ export function claimQuest(i: number): { gems: number; cash: number } | null {
 // ───────────────────────── daily reward ─────────────────────────
 
 export interface DailyReward {
+  /** what the day's card says, its picture and colour */
+  name: string;
+  icon: string;
+  color: number;
   gems: number;
   /** minutes of money income */
   cashMin: number;
   /** minutes of luck potion */
   potionMin: number;
+  /** dice of a tier */
+  dice?: [Tier, number];
 }
 
 export const DAILY: DailyReward[] = [
-  { gems: 5, cashMin: 0, potionMin: 0 },
-  { gems: 0, cashMin: 10, potionMin: 0 },
-  { gems: 10, cashMin: 0, potionMin: 0 },
-  { gems: 0, cashMin: 0, potionMin: 10 },
-  { gems: 15, cashMin: 20, potionMin: 0 },
-  { gems: 0, cashMin: 60, potionMin: 0 },
-  { gems: 50, cashMin: 0, potionMin: 30 },
+  { name: "Luck Potion", icon: "icon_potion", color: 0xffa83a, gems: 0, cashMin: 0, potionMin: 10 },
+  { name: "B Dice", icon: "die_B", color: 0xff7ad8, gems: 0, cashMin: 0, potionMin: 0, dice: ["B", 5] },
+  { name: "Gems", icon: "icon_gem", color: 0xf04a5a, gems: 10, cashMin: 0, potionMin: 0 },
+  { name: "Money Bag", icon: "icon_cash", color: 0x4fa8ff, gems: 0, cashMin: 30, potionMin: 0 },
+  { name: "C Dice", icon: "die_C", color: 0x5fc85a, gems: 0, cashMin: 0, potionMin: 0, dice: ["C", 5] },
+  { name: "Gem Pile", icon: "icon_gem", color: 0xa86aff, gems: 25, cashMin: 0, potionMin: 0 },
+  { name: "OP REWARDS!", icon: "chest_gold", color: 0x8a4ae0, gems: 50, cashMin: 0, potionMin: 30, dice: ["D", 3] },
 ];
 
 const dayKey = (t: number) => new Date(t).toDateString();
@@ -145,6 +152,7 @@ export function claimDaily(): DailyReward | null {
   save.gems += r.gems;
   if (r.cashMin) save.cash += dailyCash(r);
   if (r.potionMin) save.potionUntil = Math.max(Date.now(), save.potionUntil) + r.potionMin * 60000;
+  if (r.dice) save.dice[r.dice[0]] += r.dice[1];
   save.dailyStreak = day + 1;
   save.dailyLast = dayKey(Date.now());
   persist();

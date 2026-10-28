@@ -241,7 +241,18 @@ hour of fishing brings.
   (they still move and fight), mode decorations (dice graveyard, torches, bowls) are culled with the
   scenery, text objects only redraw when their words, colour, size or outline really change, and the game
   asks the phone for its fast GPU.
-- **Developer mode**: tap the top panel of the map 5 times. Every stage can then be played from the map.
+- **Worlds map**: deep space with a planet per land (its name, bosses beaten and stages cleared as icons,
+  your hero on the planet you are on, locked ones dark with a padlock) and a big red BACK. Tap a planet
+  for its 20 stages as bubbles (bosses show their face), tap one and PLAY.
+- **Gifts**: the 12 playtime gifts sit on one track that fills as you play, and one CLAIM ALL opens every
+  ready gift (and the stacked free gifts) together.
+- **Daily Rewards**: a white window with six colourful day cards (today's has Claim!) and a purple
+  "OP REWARDS!" day 7 panel. Days give potions, dice, gems and money; day 7 gives D dice, gems and a potion.
+- **Gamepasses**: big bright cards with the name huge on top, the art on a spinning sunburst, a few big
+  words for what it does and a chunky green price button.
+- The luck potion shows as a big glowing potion with its timer under it in the lobby. The "Second
+  Chance" boost (free revive) is gone; the Super Magnet boost replaced it.
+- **Developer mode**: tap the "YOUR WORLDS" title of the map 5 times. Every stage can then be played from the map.
 - **Roll reveal**: the class letters on each card spin like a slot machine and slow down (about 1.2 s),
   land on your class with a pop in its colours (1 s, better classes shake and flash), then the card flips
   over to the pet for another 2 s. A pull that was **1 in 1,000 or rarer
