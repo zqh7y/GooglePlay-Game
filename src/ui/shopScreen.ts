@@ -358,7 +358,9 @@ const SHOP_TABS: { id: ShopTab; label: string; icon: string; color: BtnColor }[]
 // ───────────────────────── the look (PS99-style) ─────────────────────────
 
 /** Width of the category rail on the left, and how much the content is scaled to fit beside it. */
-const RAIL = 170;
+/** the shop's categories are a row of tabs along the top (no side rail any more) */
+const RAIL = 0;
+const TAB_H = 112;
 const CARD_HEX: Record<string, number> = {
   peach: 0xffb08a, mint: 0x5fe0a8, orange: 0xff9a3a, green: 0x6fd25a, red: 0xff5a5a, grey: 0xa8b0bc, blue: 0x4fa8ff,
   purple: 0xb36aff, gold: 0xffc93a, brown: 0xb07a4a, cream: 0xf4dcb0, pink: 0xff7ab8,
@@ -502,8 +504,9 @@ export class ShopScreen extends Screen {
   private tab: ShopTab = "featured";
   private tabBtns: { id: ShopTab; bg: Phaser.GameObjects.Image; dot: Phaser.GameObjects.Arc }[] = [];
   /** content scale beside the rail, and where the list sits when scrolled to the top */
-  private readonly k = (1080 - RAIL - 8) / 1080;
+  private readonly k = 1;
   private baseY = 0;
+  private tabW = 240;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, null);
@@ -513,10 +516,11 @@ export class ShopScreen extends Screen {
     makeEventTextures(s);
     const W = s.scale.width;
     this.root.add(s.add.image(0, 0, shopBg(s, W, host.L.navTop)).setOrigin(0).setInteractive());
-    // categories down the left, the items beside them (scaled to fit)
-    this.top = host.L.headerBottom + 14;
+    // categories in a row of tabs along the top, the items below them
+    const tabsTop = host.L.headerBottom + 8;
+    this.buildTabs(tabsTop);
+    this.top = tabsTop + TAB_H + 8;
     this.bottom = host.L.navTop - 10;
-    this.buildTabs(this.top);
     this.list = s.add.container(RAIL, 0).setScale(this.k);
     this.baseY = this.top * (1 - this.k) - 6;
     this.list.y = this.baseY;
@@ -875,30 +879,39 @@ export class ShopScreen extends Screen {
   /** The category rail: big square buttons down the left side, the open one lit up. */
   private buildTabs(top: number): void {
     const s = this.scene;
+    const W = s.scale.width;
+    const n = SHOP_TABS.length;
+    const gap = 12;
+    const w = (W - 32 - gap * (n - 1)) / n;
+    const bar = s.add.graphics();
+    bar.fillStyle(0x14213d, 0.4).fillRoundedRect(8, top - 4, W - 16, TAB_H + 8, 30);
+    this.root.add(bar);
     SHOP_TABS.forEach((t, i) => {
-      const y = top + 90 + i * 170;
-      const bg = s.add.image(0, 0, btnTexture(s, t.id === this.tab ? t.color : "blue", 148, 150));
-      const icon = s.add.image(0, -18, t.icon);
-      icon.setScale(70 / Math.max(icon.width, icon.height));
-      const c = s.add.container(RAIL / 2, y, [bg, icon, text(s, 0, 46, t.label, t.label.length > 7 ? 20 : 24, "#ffffff", { stroke: 6 })]).setSize(148, 150).setInteractive({ useHandCursor: true });
-      c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.9, duration: 60 }));
+      const x = 16 + w / 2 + i * (w + gap);
+      const y = top + TAB_H / 2;
+      const bg = s.add.image(0, 0, btnTexture(s, t.id === this.tab ? t.color : "blue", w, TAB_H - 8));
+      const icon = s.add.image(-w / 2 + 46, -2, t.icon);
+      icon.setScale(58 / Math.max(icon.width, icon.height));
+      const c = s.add.container(x, y, [bg, icon, fitText(text(s, 22, -2, t.label, 28, "#ffffff", { stroke: 7 }), w - 100)]).setSize(w, TAB_H - 8).setInteractive({ useHandCursor: true });
+      c.on("pointerdown", () => s.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
       c.on("pointerout", () => c.setScale(1));
       c.on("pointerup", () => {
         c.setScale(1);
         this.setShopTab(t.id);
       });
-      const dot = s.add.circle(RAIL / 2 + 60, y - 62, 15, 0xf03e3e).setStrokeStyle(4, INK_N).setVisible(false);
+      const dot = s.add.circle(x + w / 2 - 12, top + 8, 14, 0xf03e3e).setStrokeStyle(4, INK_N).setVisible(false);
       s.tweens.add({ targets: dot, scale: 1.2, duration: 420, yoyo: true, repeat: -1 });
       this.root.add([c, dot]);
       this.tabBtns.push({ id: t.id, bg, dot });
     });
+    this.tabW = w;
   }
 
   private setShopTab(t: ShopTab): void {
     if (this.overlay || this.spinning) return;
     sfx.click();
     this.tab = t;
-    for (const b of this.tabBtns) b.bg.setTexture(btnTexture(this.scene, b.id === t ? SHOP_TABS.find((x) => x.id === b.id)!.color : "blue", 148, 150));
+    for (const b of this.tabBtns) b.bg.setTexture(btnTexture(this.scene, b.id === t ? SHOP_TABS.find((x) => x.id === b.id)!.color : "blue", this.tabW, TAB_H - 8));
     this.rebuild(true);
   }
 

@@ -596,7 +596,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.dpsPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showHero());
     this.luckPill = new Pill(this, W / 2 + 196, bottom - 330, 372, 76, "icon_clover", 34, "glass");
     this.luckPill.setSize(372, 76).setInteractive({ useHandCursor: true }).on("pointerup", () => this.setTab("roll"));
-    this.potionPill = new Pill(this, W - 160, 336, 270, 64, "icon_potion", 30, "glass");
+    // the luck potion timer sits centred above your DPS and luck
+    this.potionPill = new Pill(this, W / 2, bottom - 420, 270, 64, "icon_potion", 30, "glass");
     // BATTLE: a big sunny orange card with a sword on a paint splat
     const sword = itemSplash(this, "icon_sword", 130, 0xffe066).setPosition(-196, 0);
     this.tweens.add({ targets: sword, angle: { from: -8, to: 8 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
@@ -624,21 +625,21 @@ export class UIScene extends Phaser.Scene implements Host {
     });
     this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(rush);
-    this.rushHint = this.add.container(rush.x, rush.y - 150, [
-      this.add.image(0, 0, "comic_burst").setScale(0.95, 0.7).setTint(0xffe066),
-      text(this, 0, -4, "TRY ME!", 36, "#ffffff", { stroke: 9 }),
-      this.add.triangle(0, 64, 0, 0, 40, 0, 20, 28, 0xffe066).setStrokeStyle(5, 0x111111),
-    ]).setVisible(false);
-    this.tweens.add({ targets: this.rushHint, y: this.rushHint.y - 18, duration: 450, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.tweens.add({ targets: this.rushHint, angle: { from: -6, to: 6 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // a red comic sticker on the corner of the Boss Rush card
+    this.rushHint = this.add.container(W - 92, rush.y - 92, [
+      this.add.image(0, 0, "comic_burst").setScale(0.95, 0.8),
+      text(this, 0, -2, "TRY ME!", 38, "#ffffff", { stroke: 10 }),
+    ]).setAngle(12).setScale(0.75).setVisible(false);
+    this.tweens.add({ targets: this.rushHint, scale: 0.88, duration: 380, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.lobby.add(this.rushHint);
     this.tweens.add({ targets: go.list.slice(2, 3), scale: 1.08, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     // pick any stage you already reached
     this.stagePrev = arrowButton(this, 0, 178, -1, () => this.pickStage(save.stage - 1));
     this.stageNext = arrowButton(this, 0, 178, 1, () => this.pickStage(save.stage + 1));
     this.lobby.add([this.stagePrev, this.stageNext]);
-    this.boostRow = this.add.container(W / 2, bottom - 432);
+    this.boostRow = this.add.container(W / 2, bottom - 510);
     this.lobby.add([this.dpsPill, this.luckPill, this.potionPill, this.boostRow, go]);
+    this.lobby.bringToTop(this.rushHint);
     // quest tracker
     // a vivid card: the quest's icon on a paint splat, a short name, a bar with the numbers on it
     const qw = 400;
@@ -1464,12 +1465,11 @@ export class UIScene extends Phaser.Scene implements Host {
     b.add([this.add.image(0, top + 250, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(1.2).setAlpha(0.6), face]);
     this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     b.add(fitText(text(this, 0, top + 400, info.sub, 52, info.css, { stroke: 11 }), 800));
-    // each line on its own dark pill: an icon and big white outlined words
+    // each line on its own bright card: an icon and big white outlined words
+    const rowColors = [0x4fa8ff, 0xff8a3a, 0xb36aff, 0x5fc85a];
     info.lines.forEach(([icon, l], i) => {
       const y = top + 490 + i * 88;
-      const pill = this.add.graphics();
-      pill.fillStyle(0x5a3a22, 0.92).fillRoundedRect(-390, y - 36, 780, 72, 36);
-      pill.lineStyle(5, 0x2a1a10, 1).strokeRoundedRect(-390, y - 36, 780, 72, 36);
+      const pill = this.add.image(4, y + 4, vividCard(this, rowColors[i % rowColors.length], 790, 80));
       const ic = this.add.image(-342, y, icon);
       ic.setScale(62 / Math.max(ic.width, ic.height));
       b.add([pill, ic, fitText(text(this, -296, y, l, 40, "#ffffff", { stroke: 9 }).setOrigin(0, 0.5), 670)]);
@@ -1725,6 +1725,13 @@ export class UIScene extends Phaser.Scene implements Host {
       content.removeAll(true);
       const r = questReward();
       const colors = [0x4fa8ff, 0xff8a3a, 0xb36aff];
+      // a deep blue board behind the bright cards
+      const board = this.add.graphics();
+      board.fillStyle(0x1f3a6a, 1).fillRoundedRect(-440, -h / 2 + 110, 880, h - 150, 34);
+      board.fillStyle(0xffffff, 0.06);
+      for (let k = 0; k < 9; k++) board.fillRect(-440 + k * 100, -h / 2 + 110, 40, h - 150);
+      board.lineStyle(8, 0x14213d, 1).strokeRoundedRect(-440, -h / 2 + 110, 880, h - 150, 34);
+      content.add(board);
       save.quests.forEach((q, i) => {
         const y = -h / 2 + 230 + i * 236;
         const done = questDone(q);
@@ -1758,7 +1765,7 @@ export class UIScene extends Phaser.Scene implements Host {
       // every 3 quests the next ones get harder: three stars
       const k = save.questsDone % 3;
       for (let i = 0; i < 3; i++) content.add(this.add.star(-60 + i * 60, h / 2 - 96, 5, 14, 30, i < k ? 0xffe066 : 0x8a7a6a).setStrokeStyle(5, 0x111111));
-      content.add(text(this, 140, h / 2 - 96, `= harder & richer`, 26, "#9a7a5a").setOrigin(0, 0.5));
+      content.add(text(this, 140, h / 2 - 96, `= harder & richer`, 28, "#ffffff", { stroke: 7 }).setOrigin(0, 0.5));
     };
     draw();
   }
