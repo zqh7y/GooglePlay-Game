@@ -341,15 +341,20 @@ export interface Modal {
   close: () => void;
 }
 
-/** Centered cream popup with dimmed background, title ribbon and close button. */
-export function modal(scene: Phaser.Scene, w: number, h: number, title: string, color: BtnColor, onClose?: () => void, cy?: number): Modal {
+/**
+ * Centered cream popup with dimmed background, title ribbon and close button. A `bare` one has no
+ * cream panel (the caller draws its own) and a darker dim; an empty title has no ribbon.
+ */
+export function modal(scene: Phaser.Scene, w: number, h: number, title: string, color: BtnColor, onClose?: () => void, cy?: number, bare = false): Modal {
   const W = scene.scale.width;
   const H = scene.scale.height;
-  const dim = scene.add.rectangle(0, 0, W, H, 0x2a1a10, 0.6).setOrigin(0).setInteractive();
+  const dimAlpha = bare ? 0.8 : 0.6;
+  const dim = scene.add.rectangle(0, 0, W, H, bare ? 0x0e0a1e : 0x2a1a10, dimAlpha).setOrigin(0).setInteractive();
   const body = scene.add.container(W / 2, cy ?? H / 2);
-  body.add(scene.add.image(0, 0, panelTexture(scene, "cream", w, h)).setInteractive());
+  if (!bare) body.add(scene.add.image(0, 0, panelTexture(scene, "cream", w, h)).setInteractive());
+  else body.add(scene.add.zone(0, 0, w, h).setInteractive());
   const rw = Math.min(w - 40, 620);
-  body.add(scene.add.container(0, -h / 2, [
+  if (title) body.add(scene.add.container(0, -h / 2, [
     scene.add.image(0, 0, ribbonTexture(scene, color, rw, 116)),
     fitText(text(scene, 0, -12, title, 48), rw * 0.7),
   ]));
@@ -369,6 +374,6 @@ export function modal(scene: Phaser.Scene, w: number, h: number, title: string, 
   body.setScale(0.8).setAlpha(0);
   dim.setAlpha(0);
   scene.tweens.add({ targets: body, scale: 1, alpha: 1, duration: 220, ease: "Back.out" });
-  scene.tweens.add({ targets: dim, alpha: 0.6, duration: 160 });
+  scene.tweens.add({ targets: dim, alpha: dimAlpha, duration: 160 });
   return { root, body, close };
 }

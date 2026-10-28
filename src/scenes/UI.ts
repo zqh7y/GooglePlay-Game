@@ -1422,63 +1422,78 @@ export class UIScene extends Phaser.Scene implements Host {
     });
   }
 
-  /** What a fight is about, for the "Start?" popup. */
-  private eventInfo(kind: FightKind): { title: string; sub: string; tex: string; lines: [string, string][]; color: BtnColor; css: string } {
-    const def = bossForStage(save.stage);
-    if (kind === "battle") {
-      const muts = mutationsAt(save.stage);
-      return {
-        title: "BATTLE", sub: `Stage ${save.stage}  •  ${MODE_INFO[modeForStage(save.stage)].name}`, tex: def.tex, color: "orange", css: "#ffe066",
-        lines: [
-          [MODE_INFO[modeForStage(save.stage)].icon, MODE_INFO[modeForStage(save.stage)].goal],
-          modeForStage(save.stage) === "boss" ? ["mode_boss", `${def.name} + 3 kids`] : ["icon_clock", `5:00, then ${def.name}`],
-          ["icon_sword", `${fmt(teamDps().total)} / ${fmt(recommendedDps(save.stage))} DPS`],
-          ["icon_gem", `+${gemsPerBoss()}${muts.length ? `   •   ${muts.length} mutations` : ""}`],
-        ],
-      };
-    }
-    return {
-      title: "BOSS RUSH", sub: `Boss ${save.stage}  •  ${def.name}`, tex: def.tex, color: "purple", css: "#e6c8ff",
-      lines: [
-        ["icon_clock", `${RUSH_MS / 1000}s per boss`],
-        ["mode_boss", "Bosses only, back to back"],
-        ["icon_gem", "Every 5th: +3 gems, 2 dice"],
-        ["icon_trophy", `Best: boss ${save.bossRushBest}`],
-      ],
-    };
-  }
-
-  /** Are you sure? The fight's info, then START plays the start animation and the fight begins. */
+  /**
+   * Are you sure? A big game-style start screen: the stage (or BOSS RUSH) up top, the mode, the boss
+   * on a sunburst, three chips with what matters, and a huge START. START plays the enter animation.
+   */
   private confirmStart(kind: FightKind): void {
     if (battle.mode !== "lobby" || this.openModal) return;
-    const info = this.eventInfo(kind);
-    const h = 1010;
+    const rush = kind === "rush";
+    const def = bossForStage(save.stage);
+    const mode = MODE_INFO[modeForStage(save.stage)];
+    const w = 960;
+    const h = 1280;
     let go = false;
-    const m = this.showModal(modal(this, 900, h, `START ${info.title}?`, info.color, () => {
+    const m = this.showModal(modal(this, w, h, "", rush ? "purple" : "orange", () => {
       this.openModal = null;
-      if (go) this.game.events.emit(kind === "battle" ? "battle-start" : "rush-start");
-    }));
+      if (go) this.game.events.emit(rush ? "rush-start" : "battle-start");
+    }, undefined, true));
     const b = m.body;
     const top = -h / 2;
-    const face = this.add.image(0, top + 250, info.tex);
-    face.setScale(220 / Math.max(face.width, face.height));
-    b.add([this.add.image(0, top + 250, "glow").setTint(kind === "battle" ? 0xffb03a : 0xc080ff).setScale(1.2).setAlpha(0.6), face]);
-    this.tweens.add({ targets: face, angle: { from: -5, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    b.add(fitText(text(this, 0, top + 400, info.sub, 52, info.css, { stroke: 11 }), 800));
-    // each line on its own bright card: an icon and big white outlined words
-    const rowColors = [0x4fa8ff, 0xff8a3a, 0xb36aff, 0x5fc85a];
-    info.lines.forEach(([icon, l], i) => {
-      const y = top + 490 + i * 88;
-      const pill = this.add.image(4, y + 4, vividCard(this, rowColors[i % rowColors.length], 790, 80));
-      const ic = this.add.image(-342, y, icon);
-      ic.setScale(62 / Math.max(ic.width, ic.height));
-      b.add([pill, ic, fitText(text(this, -296, y, l, 40, "#ffffff", { stroke: 9 }).setOrigin(0, 0.5), 670)]);
+    const color = rush ? 0xb36aff : mode.color;
+    b.addAt(this.add.image(4, 10, vividCard(this, color, w - 20, h - 40)), 1);
+    // the title and the mode
+    b.add(fitText(text(this, 0, top + 110, rush ? "BOSS RUSH" : `STAGE ${save.stage}`, 104, "#ffffff", { stroke: 18 }), w - 160));
+    const chipW = 520;
+    const tag = this.add.graphics();
+    tag.fillStyle(0x14213d, 0.55).fillRoundedRect(-chipW / 2, top + 180, chipW, 76, 38);
+    b.add([tag,
+      this.add.image(-chipW / 2 + 48, top + 218, rush ? "icon_clock" : mode.icon).setScale(rush ? 0.5 : 0.52),
+      fitText(text(this, 30, top + 218, rush ? `${RUSH_MS / 1000}s PER BOSS` : mode.name, 40, rush ? "#ffe066" : mode.css, { stroke: 9 }), chipW - 130),
+    ]);
+    // the boss on a spinning sunburst
+    const by = top + 500;
+    const rays = this.add.image(0, by, "rays").setScale(1.1).setAlpha(0.55);
+    this.tweens.add({ targets: rays, angle: 360, duration: 9000, repeat: -1 });
+    const splat = this.add.image(0, by, "paint_splash").setScale(2.1).setAngle(20);
+    const face = this.add.image(0, by + 10, def.tex);
+    face.setScale(330 / Math.max(face.width, face.height));
+    this.tweens.add({ targets: face, y: by - 8, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.tweens.add({ targets: face, angle: { from: -4, to: 4 }, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    b.add([rays, splat, face]);
+    b.add(fitText(text(this, 0, by + 225, rush ? `BOSS ${save.stage}  •  ${def.name}` : def.name, 54, "#ffffff", { stroke: 12 }), w - 140));
+    // three chips: what you need to know at a glance
+    const dps = teamDps().total;
+    const rec = recommendedDps(save.stage);
+    const chips: [string, string, string][] = rush
+      ? [["icon_clock", `${RUSH_MS / 1000}s`, "#ffffff"], ["icon_gem", "+3 / 5", "#9ae6ff"], ["icon_trophy", `${save.bossRushBest}`, "#ffe066"]]
+      : [
+        [modeForStage(save.stage) === "boss" ? "mode_boss" : "icon_clock", modeForStage(save.stage) === "boss" ? "x4" : "5:00", "#ffffff"],
+        ["icon_sword", `${fmt(dps)}/${fmt(rec)}`, dps >= rec ? "#b6ff8a" : "#ffb0a0"],
+        ["icon_gem", `+${gemsPerBoss()}`, "#9ae6ff"],
+      ];
+    const cy = top + 900;
+    chips.forEach(([icon, val, css], i) => {
+      const x = (i - 1) * 290;
+      const g = this.add.graphics();
+      g.fillStyle(0x14213d, 0.5).fillRoundedRect(x - 130, cy - 90, 260, 180, 34);
+      g.lineStyle(5, 0xffffff, 0.35).strokeRoundedRect(x - 130, cy - 90, 260, 180, 34);
+      const ic = this.add.image(x, cy - 30, icon);
+      ic.setScale(78 / Math.max(ic.width, ic.height));
+      b.add([g, ic, fitText(text(this, x, cy + 50, val, 42, css, { stroke: 9 }), 230)]);
     });
-    b.add(this.startBtn = button(this, -175, h / 2 - 110, 320, 130, info.color, "START", () => {
+    // this stage's mutations as badges, and the mode's goal in a few words
+    if (!rush) {
+      const muts = mutationsAt(save.stage);
+      muts.forEach((mu, i) => {
+        if (this.textures.exists(`mut_${mu.id}`)) b.add(this.add.image((i - (muts.length - 1) / 2) * 62, top + 1030, `mut_${mu.id}`).setScale(0.9));
+      });
+    }
+    b.add(this.startBtn = button(this, 0, h / 2 - 130, 600, 156, "green", "START", () => {
       go = true;
       m.close();
-    }, { size: 46 }));
-    b.add(button(this, 175, h / 2 - 110, 320, 130, "peach", "CANCEL", () => m.close(), { size: 40 }));
+    }, { size: 70 }));
+    this.tweens.add({ targets: this.startBtn, scale: 1.06, duration: 520, yoyo: true, repeat: -1, ease: "Sine.inOut" });
   }
 
   // ───────────────────────── rolling ─────────────────────────
@@ -1718,19 +1733,19 @@ export class UIScene extends Phaser.Scene implements Host {
 
   private showQuests(): void {
     const h = 1000;
-    const m = this.showModal(modal(this, 900, h, "QUESTS", "green", () => (this.openModal = null)));
+    const m = this.showModal(modal(this, 900, h, "QUESTS", "green", () => (this.openModal = null), undefined, true));
     const content = this.add.container(0, 0);
-    m.body.add(content);
+    m.body.addAt(content, 1);
     const draw = () => {
       content.removeAll(true);
       const r = questReward();
       const colors = [0x4fa8ff, 0xff8a3a, 0xb36aff];
       // a deep blue board behind the bright cards
       const board = this.add.graphics();
-      board.fillStyle(0x1f3a6a, 1).fillRoundedRect(-440, -h / 2 + 110, 880, h - 150, 34);
+      board.fillStyle(0x1f3a6a, 1).fillRoundedRect(-450, -h / 2 + 20, 900, h - 30, 40);
       board.fillStyle(0xffffff, 0.06);
-      for (let k = 0; k < 9; k++) board.fillRect(-440 + k * 100, -h / 2 + 110, 40, h - 150);
-      board.lineStyle(8, 0x14213d, 1).strokeRoundedRect(-440, -h / 2 + 110, 880, h - 150, 34);
+      for (let k = 0; k < 9; k++) board.fillRect(-430 + k * 100, -h / 2 + 30, 40, h - 50);
+      board.lineStyle(10, 0x14213d, 1).strokeRoundedRect(-450, -h / 2 + 20, 900, h - 30, 40);
       content.add(board);
       save.quests.forEach((q, i) => {
         const y = -h / 2 + 230 + i * 236;
