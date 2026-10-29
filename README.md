@@ -64,6 +64,13 @@ hour of fishing brings.
   rarest to most common with a chance of `(that roll's luck) / N` ("1 in N"). So with x1B luck about 1 roll
   in 8 is still a common A-class pet, while about 1 in 5 lands a pet at least as rare as 1 in 1B. The ODDS
   button shows your chance per roll of each class.
+- **A slower start (beginner luck)**: on the first stages your total roll luck (potions, die tier, Lucky
+  and SUPER rolls, streak, all together) counts for less: luck to the power 0.4 at stage 1, growing to full
+  luck at stage 20 (by your best stage). Boosts still help, they just can't hand out very rare pets in the
+  first minutes. Monsters on those stages are weaker by about as much, so you clear stages at the same pace
+  (`dev/sim.ts`: stage 10 in ~0.8 h, 20 in ~8.7 h, 100 in ~83 h, as before). The Luck shown is the luck
+  your rolls really get. A typical first 10 minutes now ends with a best pet of about 100-500 power.
+- **Pet POWER** is about the damage a second the pet does (with your damage upgrades); TEAM POWER adds them up.
 - **Roll x1, x3 or x10** with the buttons over ROLL. Every die is one roll: a x10 uses 10 dice and counts as
   10 rolls for the lucky ring, the SUPER ROLL and gift meters, quests and stats (so a x10 can hold the lucky
   roll or the SUPER ROLL).

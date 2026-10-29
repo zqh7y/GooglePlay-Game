@@ -1,4 +1,4 @@
-import { petChances } from "../data/luck";
+import { petChances, stageLuck } from "../data/luck";
 import { ItemDef } from "../data/items";
 import { rollPet } from "../data/luck";
 import { addPet, persist, save } from "./save";
@@ -11,7 +11,8 @@ export interface RollResult {
 }
 
 /** Roll `n` pets with the same luck and add them to your collection. */
-export function rollMany(n: number, luck: number): RollResult[] {
+export function rollMany(n: number, rawLuck: number): RollResult[] {
+  const luck = stageLuck(rawLuck, save.bestStage);
   const results: RollResult[] = [];
   const chances = petChances(luck);
   for (let i = 0; i < n; i++) {

@@ -33,8 +33,8 @@ export function petScore(id: string): number {
   return ((def.damage * m * def.count) / (def.cooldown / 1000)) * (def.kind === "splash" || def.kind === "pierce" ? 1.4 : 1);
 }
 
-/** The big "POWER" number shown for pets and the team. */
-export const petPower = (id: string) => petScore(id) * dmgMult() * 10;
+/** The big "POWER" number shown for pets and the team: about the damage a second it does. */
+export const petPower = (id: string) => petScore(id) * dmgMult();
 const teamPower = () => save.equipped.reduce((s, id) => s + petPower(id), 0);
 
 export const anyLevelReady = () => Object.keys(save.pets).some(canLevelUp);

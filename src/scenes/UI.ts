@@ -19,7 +19,7 @@ import {
   QUEST_ICON, questGoal, questReward, questTitle,
 } from "../systems/goals";
 import { RollResult, rollMany } from "../systems/roll";
-import { classChances, topLuck } from "../data/luck";
+import { beginnerPow, classChances, stageLuck, topLuck } from "../data/luck";
 import { makeEventTextures, makeFishIcon, makeFishTextures } from "../art/fishing";
 import { PRIZES, ROW_COLORS } from "../data/fishing";
 import { Catch, anyFishUpgrade, eventNext, eventReady, fishAway, fishTick } from "../systems/fishing";
@@ -1018,7 +1018,7 @@ export class UIScene extends Phaser.Scene implements Host {
 
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
-      this.luckPill.setValue(`Luck ${luckText(luck())}`);
+      this.luckPill.setValue(`Luck ${luckText(stageLuck(luck(), save.bestStage))}`);
       // your DPS against what this stage's boss needs: green when you are ready
       const dps = teamDps().total;
       const rec = recommendedDps(save.stage);
@@ -2103,12 +2103,13 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   showOdds(): void {
-    const L = luck();
+    const L = stageLuck(luck(), save.bestStage);
     const chances = classChances(L);
     const h = 360 + DICE_TIERS.length * 92;
     const m = this.showModal(modal(this, 940, h, "YOUR ODDS", "green", () => (this.openModal = null)));
     m.body.add(text(this, 0, -h / 2 + 110, `Luck ${luckText(L)}`, 46, "#b6f59a"));
-    m.body.add(label(this, 0, -h / 2 + 162, `Every roll draws its own luck: x1 to ${luckText(topLuck(L))}, ${luckText(L)} on average`, 26, "#7a5236", 820));
+    const beginner = beginnerPow(save.bestStage) < 1 ? "  •  Beginner luck: full luck from stage 20" : "";
+    m.body.add(label(this, 0, -h / 2 + 162, `Every roll draws its own luck: x1 to ${luckText(topLuck(L))}, ${luckText(L)} on average${beginner}`, 26, "#7a5236", 820));
     // chance per roll of each pet class
     DICE_TIERS.forEach((c, i) => {
       const y = -h / 2 + 240 + i * 92;

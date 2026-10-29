@@ -27,7 +27,7 @@ import { GADGET_KINDS, STARTER_GADGET, gadgetDps } from "../src/data/gadgets";
 import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode, perAt, stepCost, stepsOf } from "../src/data/tree";
 import { RUSH_MS, rushBossHp } from "../src/data/bosses";
-import { petChances } from "../src/data/luck";
+import { petChances, stageLuck } from "../src/data/luck";
 
 // hexagons fully bought, and the steps bought of each (hexagons can come in 3 steps)
 const owned = new Set<string>(["start"]);
@@ -220,13 +220,13 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
   dice -= Math.floor(dice);
   const tiers = diceTierChances(Math.min(stage, MAX_STAGE));
   const ch = PET_LIST.map(() => 0);
-  DICE_TIERS.forEach((t, k) => petChances(luck() * DICE_LUCK[t]).forEach((c, i) => (ch[i] += c * tiers[k] * rolls)));
+  DICE_TIERS.forEach((t, k) => petChances(stageLuck(luck() * DICE_LUCK[t], stage)).forEach((c, i) => (ch[i] += c * tiers[k] * rolls)));
   // and the dice the fishing line brought, in their own tiers
   for (const k of DICE_TIERS) {
     const n = Math.floor(fishDice[k]);
     if (!n) continue;
     fishDice[k] -= n;
-    petChances(luck() * DICE_LUCK[k]).forEach((c, i) => (ch[i] += c * n * (1 + sum("multi"))));
+    petChances(stageLuck(luck() * DICE_LUCK[k], stage)).forEach((c, i) => (ch[i] += c * n * (1 + sum("multi"))));
   }
   for (let i = 0; i < ch.length; i++) {
     if (!ch[i]) continue;

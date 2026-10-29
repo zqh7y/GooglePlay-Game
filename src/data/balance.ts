@@ -93,8 +93,22 @@ export const recommendedDps = (stage: number) => (monsterHp(BOSS.hp, stage, MINU
 /** For the simulator: closing a seal about every 6 s lets the boss heal for this many full-rate seconds. */
 export const SKILLED_HEAL_SECS = 18;
 
+/**
+ * A slower start: on the first stages luck counts for less (your total roll luck to a power below 1),
+ * so potions, rare dice and SUPER ROLLs still help but don't hand out very rare pets in the first
+ * minutes (your best pet is a few hundred power, not tens of thousands). Monsters there are weaker by
+ * as much, so stages clear at the same pace. Both are back to full by stage BEGINNER_UNTIL.
+ */
+export const BEGINNER_UNTIL = 20;
+export const beginnerPow = (stage: number) => Math.min(1, 0.4 + (0.6 * (Math.max(1, stage) - 1)) / (BEGINNER_UNTIL - 1));
+/** how much weaker monsters are while luck is held back (the gap is widest in the middle, where luck is bigger) */
+export const BEGINNER_HP_A = 0.1;
+export const BEGINNER_HP_B = 0.26;
+export const beginnerHp = (stage: number) => Math.exp(-(1 - beginnerPow(stage)) * (BEGINNER_HP_A + BEGINNER_HP_B * stage));
+
 export const minuteMult = (minute: number) => 1 + MINUTE_HP_STEP * minute;
-export const monsterHp = (base: number, stage: number, minute: number) => base * HP_TABLE[Math.max(0, stage - 1)] * minuteMult(minute);
+export const monsterHp = (base: number, stage: number, minute: number) =>
+  base * HP_TABLE[Math.max(0, stage - 1)] * minuteMult(minute) * beginnerHp(stage);
 export const monsterCash = (base: number, stage: number) => base * CASH_GROWTH ** (stage - 1);
 /** Time between spawns at this point of the stage. */
 export const spawnGap = (minute: number) => SPAWN_MS / (1 + SPAWN_SPEEDUP * minute);

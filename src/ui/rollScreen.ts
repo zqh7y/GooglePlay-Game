@@ -5,7 +5,7 @@ import { petKey, petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { CARD_H, CARD_W, dieTexture, panelTexture, pillTexture } from "../art/ui";
 import { ItemDef, PET_LIST } from "../data/items";
-import { petChances } from "../data/luck";
+import { petChances, stageLuck } from "../data/luck";
 import { RARITY_INFO, RARITY_ORDER, rainbowColor, rarityRank } from "../data/rarity";
 import { DICE_LUCK, DICE_TIERS, TIER_INFO, Tier, tierIndex } from "../data/tiers";
 import { TOP_ROW, TOP_Y } from "../layout";
@@ -446,7 +446,7 @@ export class RollScreen extends Screen {
       if (f.img.y < this.host.L.headerBottom - 60) f.img.setPosition(Math.random() * W, this.host.L.navTop + 60);
     }
     const p = luckParts();
-    this.luckText.setText(`Luck ${luckText(luck())}`);
+    this.luckText.setText(`Luck ${luckText(stageLuck(luck(), save.bestStage))}`);
     const chips = [`Best: ${oneIn(save.bestRoll)}`];
     if (save.luckyBoost > 0) chips.push(`${save.luckyBoost} lucky rolls`);
     if (p.index > 1) chips.push(`Index x${p.index.toFixed(2)}`);
@@ -553,7 +553,7 @@ export class RollScreen extends Screen {
     }
     c.add(text(s, -470, -100, `NEXT TO FIND  •  ${save.discovered.length}/${PET_LIST.length} found`, 26, "#ffe066").setOrigin(0, 0.5));
     const tier = save.dice[save.diceTier] > 0 ? save.diceTier : DICE_TIERS.find((t) => save.dice[t] > 0) ?? save.diceTier;
-    const mine = petChances(luck() * DICE_LUCK[tier]);
+    const mine = petChances(stageLuck(luck() * DICE_LUCK[tier], save.bestStage));
     missing.forEach((def, i) => {
       const x = (i - 1) * 330;
       const card = gemCard(s, x - 88, 18, def.id).setScale(0.66);
