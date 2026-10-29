@@ -2383,6 +2383,10 @@ export class UIScene extends Phaser.Scene implements Host {
    * A Golden Ticket! The rarest thing in the game gets the whole screen: the ticket spins in over
    * golden rays, the screen flashes, and it says where to spend it. In a fight, just a note.
    */
+  showRewards(title: string, rewards: Reward[]): void {
+    (this.screens.shop as ShopScreen).rewardShow(title, null, rewards);
+  }
+
   ticketShow(how: string): void {
     sfx.superRoll();
     buzz(300);

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import type { Reward } from "./shopScreen";
 import { canvasTexture, darken, lighten, rgba, starPath } from "../art/draw";
 import { Layout } from "../layout";
 import { Modal } from "./widgets";
@@ -22,6 +23,8 @@ export interface Host {
   setTab(tab: Tab): void;
   /** Play a stage you already reached (play: open the START popup too). */
   pickStage(n: number, play?: boolean): void;
+  /** rewards popping up big, centred (like opening a chest) */
+  showRewards(title: string, rewards: Reward[]): void;
   /** the full-screen "GOLDEN TICKET!" moment */
   ticketShow(how: string): void;
 }
