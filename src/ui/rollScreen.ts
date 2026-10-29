@@ -18,7 +18,8 @@ import { classBadge, classText, setClassTint } from "./classText";
 import { Host, Screen } from "./screens";
 import { openFuse } from "./fuseWindow";
 import { canFuse } from "../systems/fuse";
-import { Button, button, drawBar, fitText, label, lockedCard, text } from "./widgets";
+import { Button, button, drawBar, fitText, label, text } from "./widgets";
+import { gemCard } from "./cardOptions";
 
 /** Every this many rolls is a SUPER ROLL with x10 luck. */
 /** Rolls per SUPER ROLL (30 with the Super Roller pass). */
@@ -555,7 +556,7 @@ export class RollScreen extends Screen {
     const mine = petChances(luck() * DICE_LUCK[tier]);
     missing.forEach((def, i) => {
       const x = (i - 1) * 330;
-      const card = lockedCard(s, x - 88, 18, def.id).setScale(0.6);
+      const card = gemCard(s, x - 88, 18, def.id).setScale(0.66);
       const glow = s.add.image(x - 88, 18, "glow").setTint(RARITY_INFO[def.rarity].color).setScale(0.75).setAlpha(0.5);
       s.tweens.add({ targets: glow, alpha: 0.9, duration: 800 + i * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       c.add([

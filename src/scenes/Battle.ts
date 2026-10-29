@@ -60,8 +60,6 @@ const pickWeighted = <T,>(list: [T, number][]): T => {
 };
 /** the Air Zone covers 10% of the map */
 /** The safe air square: a third as wide as it used to be, so you have to stay sharp. */
-/** How often the saved-up level-ups and skills can be picked. */
-const PICK_MS = 60000;
 const AIR_ZONE = Math.round((ARENA * Math.sqrt(0.1)) / 3);
 const PICK_R = 210;
 /** While the crystal is open, monsters this close to you go for you instead. */
@@ -127,9 +125,6 @@ export const battle = {
   streak: 0,
   /** a level-up skill choice is open */
   choosing: false,
-  /** level-ups and skills saved up for the next pick window, and the ms until it opens */
-  picks: 0,
-  pickIn: 0,
   shielded: false,
   /** ms until the shield goes up or down */
   shieldLeft: SHIELD_MS,
@@ -496,9 +491,6 @@ export class BattleScene extends Phaser.Scene {
   private level = 1;
   private xp = 0;
   private pendingLevels = 0;
-  /** picks only open once a minute (PICK_MS), all of them in a row, so they don't pop up every few seconds */
-  private pickClock = 0;
-  private pickOpen = false;
   /** skill picks waiting (from skill orbs, airdrops and elites) */
   private pendingSkills = 0;
   private gadgetOpts: GadgetOption[] = [];
@@ -625,7 +617,7 @@ export class BattleScene extends Phaser.Scene {
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
-      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, pickClock: 0, pickOpen: false, gadgetOpts: [], skills: {},
+      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
       revived: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
@@ -1331,7 +1323,7 @@ export class BattleScene extends Phaser.Scene {
         break;
       case "orb":
         sfx.fanfare();
-        this.toast("Skill orb! Saved for the next level up", "#ffe066");
+        this.toast("Skill orb! Pick a skill", "#ffe066");
         this.pendingSkills++;
         this.offerChoice();
         break;
@@ -1359,7 +1351,7 @@ export class BattleScene extends Phaser.Scene {
     this.puff.explode(24, p.x, p.y - 50);
     this.tweens.add({ targets: p.img, scaleX: 1.3, scaleY: 0.7, alpha: 0, duration: 260, onComplete: () => p.img.destroy() });
     this.pendingSkills++;
-    this.toast("Skill crate! Saved for the next level up", "#ffe066");
+    this.offerChoice();
   }
 
   private addDice(tier: Tier, n: number): void {
@@ -1448,23 +1440,9 @@ export class BattleScene extends Phaser.Scene {
     if (this.pendingLevels) this.offerChoice();
   }
 
-  /** Once a minute: everything saved up (level-ups, skill orbs, airdrops) is picked in one go. */
-  private pickTick(delta: number): void {
-    battle.picks = this.pendingLevels + this.pendingSkills;
-    if (battle.choosing) return;
-    this.pickClock += delta;
-    battle.pickIn = Math.max(0, PICK_MS - this.pickClock);
-    if (this.pickClock < PICK_MS) return;
-    this.pickClock = 0;
-    if (!battle.picks) return;
-    this.pickOpen = true;
-    this.banner(`LEVEL UP x${battle.picks}!`, "blue", 700);
-    this.time.delayedCall(700, () => this.offerChoice());
-  }
-
   /** Level-ups offer gadgets; skill orbs, airdrops and elites offer skills. Gadgets go first. */
   private offerChoice(): void {
-    if (battle.choosing || !this.fighting || !this.pickOpen) return;
+    if (battle.choosing || !this.fighting) return;
     if (this.pendingLevels > 0) {
       const options = this.gadgetChoices();
       if (options.length) {
@@ -1480,15 +1458,11 @@ export class BattleScene extends Phaser.Scene {
       const choices = skillChoices(this.skills, 3, this.stageMode !== "crystal");
       if (!choices.length) {
         this.pendingSkills = 0;
-        this.pickOpen = false;
         this.heal(0.2);
         return;
       }
       this.openChoice("skill-choice", { choices, levels: { ...this.skills }, level: this.level });
-      return;
     }
-    // all picked: the window shuts until next minute
-    this.pickOpen = false;
   }
 
   private openChoice(event: string, info: object): void {
@@ -2267,7 +2241,6 @@ export class BattleScene extends Phaser.Scene {
 
   private tick(delta: number): void {
     if (!this.fighting) return;
-    this.pickTick(delta);
     if (this.rush) {
       this.rushTick(delta);
       return;

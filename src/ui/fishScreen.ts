@@ -324,7 +324,8 @@ export class FishScreen extends Screen {
       if (done) parts.push(s.add.image(150, 40, "icon_check").setScale(0.5), label(s, 40, 40, "Claimed", 24, "#3f9a4f"));
       else if (open) parts.push(label(s, 60, 40, "READY!", 30, "#e8434f"));
       else parts.push(label(s, 60, 40, `${fmt(eventGoal(e.round, k))} catches`, 24, "#9a7a5a"));
-      if (big) parts.push(text(s, 60, 6, "BIG PRIZE  •  1 in 5: +GOLDEN TICKET", 18, "#ff8a2a"));
+      // the big prize's ticket chance, kept inside its box (right of the picture)
+      if (big) parts.push(fitText(text(s, 60, 4, "BIG PRIZE • 1 in 5: +TICKET", 18, "#ff8a2a"), 220));
       m.body.add(s.add.container(x, y, parts));
     }
     m.body.add(button(s, 0, h / 2 - 100, 460, 110, ready ? "green" : "grey", ready ? "CLAIM" : "OK", () => {
@@ -389,13 +390,14 @@ export class FishScreen extends Screen {
     const parts: Phaser.GameObjects.GameObject[] = [];
     // epic and legend prizes glow softly behind
     if (p.row >= 3) {
-      const glow = s.add.image(-30, -6, "glow").setTint(color).setScale(0.55).setAlpha(0.45);
+      const glow = s.add.image(-50, -6, "glow").setTint(color).setScale(0.55).setAlpha(0.45);
       s.tweens.add({ targets: glow, alpha: 0.15, scale: 0.48, duration: 800 + p.row * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       parts.push(glow);
     }
-    const icon = s.add.image(-30, -6, prizeIcon(p));
-    icon.setScale(100 / Math.max(icon.width, icon.height));
-    const chance = text(s, 2, 38, "", 34).setOrigin(0, 0.5);
+    // the picture on the left, its chance to its right (never on top of it)
+    const icon = s.add.image(-50, -6, prizeIcon(p));
+    icon.setScale(92 / Math.max(icon.width, icon.height));
+    const chance = text(s, 4, 34, "", 34).setOrigin(0, 0.5);
     parts.push(icon, chance);
     const c = s.add.container(x, y, parts).setSize(240, ROW_H).setInteractive({ useHandCursor: true });
     // float gently in the sky, each a little out of step
@@ -576,9 +578,9 @@ export class FishScreen extends Screen {
       pond.add([s.add.image(x + 74, h - 48, panelTexture(s, "glass", 200, 64)), s.add.image(x + 6, h - 48, icon).setScale(0.48), t]);
       this.chips.push(t);
     };
-    chip(20, "icon_clock");
-    chip(232, "fu_hook");
-    chip(444, "fu_super");
+    chip(40, "icon_clock");
+    chip(262, "fu_hook");
+    chip(484, "fu_super");
     // nothing spills over the bottom panel
     const mask = s.make.graphics({}, false);
     mask.fillStyle(0xffffff).fillRect(0, this.pondTop, W, h);
@@ -1005,10 +1007,10 @@ export class FishScreen extends Screen {
       const name = label(s, -310, y - 48, u.name, 38, "#4a2f1d").setOrigin(0, 0.5);
       const lv = label(s, 0, y - 48, "", 28, "#c9663a").setOrigin(0, 0.5);
       const desc = fitText(label(s, -310, y - 12, u.desc, 24, "#9a7a5a").setOrigin(0, 0.5), 470);
-      const eff = label(s, -310, y + 20, "", 30, "#3f9a4f").setOrigin(0, 0.5);
+      const eff = label(s, -310, y + 16, "", 28, "#3f9a4f").setOrigin(0, 0.5);
       // how far this upgrade is: one notch per level
       const bar = s.add.graphics();
-      const barText = text(s, 210, y + 50, "", 22).setOrigin(1, 0.5);
+      const barText = text(s, 195, y + 55, "", 20).setOrigin(1, 0.5);
       const icon = s.add.image(-380, y, u.icon).setScale(0.82);
       const buy: Button = button(s, 330, y - 8, 240, 104, "green", "", () => {
         if (!buyFish(u.id)) {
@@ -1035,8 +1037,9 @@ export class FishScreen extends Screen {
         lv.setText(`Lv ${l}/${u.max}`).setX(-310 + name.width + 20);
         eff.setText(max ? `${u.show(l)}  (max)` : `${u.show(l)}  →  ${u.show(l + 1)}`);
         bar.clear();
-        drawBar(bar, -400, y + 40, 620, 22, l / u.max, max ? 0xffcf3a : 0x5ac8ff);
-        if (u.max <= 30) for (let k = 1; k < u.max; k++) bar.fillStyle(0x4a2f1d, 0.35).fillRect(-400 + (620 * k) / u.max - 1, y + 40, 2, 22);
+        // the bar starts right of the icon, so it never covers it
+        drawBar(bar, -310, y + 46, 510, 18, l / u.max, max ? 0xffcf3a : 0x5ac8ff);
+        if (u.max <= 30) for (let k = 1; k < u.max; k++) bar.fillStyle(0x4a2f1d, 0.35).fillRect(-310 + (510 * k) / u.max - 1, y + 46, 2, 18);
         barText.setText(max ? "COMPLETE!" : `${l}/${u.max}`).setColor(max ? "#ffe066" : "#ffffff");
         buy.setLabel(max ? "MAX" : fmt(upgradeCost(u, l)));
         buy.setColor(max ? "grey" : canBuyFish(u.id) ? "green" : "grey");

@@ -77,9 +77,9 @@ export class MapScreen extends Screen {
     this.sheet.setVisible(false).removeAll(true);
     this.drawWorlds();
     // start with your world in view
+    // snapped to whole worlds, so no world's title is cut by the top bar: the one before yours on top
     const i = REGIONS.indexOf(regionForStage(save.stage));
-    const mid = (this.top + this.bottom) / 2 - 60;
-    this.world.y = this.clampY(mid - (this.top + 360 + i * GAP));
+    this.world.y = this.clampY(-Math.max(0, i - 1) * GAP);
   }
 
   update(): void {}
@@ -88,8 +88,9 @@ export class MapScreen extends Screen {
     const s = this.scene;
     const W = s.scale.width;
     const w = this.world.removeAll(true);
-    const y0 = this.top + 360;
-    this.height = REGIONS.length * GAP + 200;
+    // the first world's title sits just under the top bar
+    const y0 = this.top + 460;
+    this.height = REGIONS.length * GAP + 300;
     // a dotted space route from world to world
     const route = s.add.graphics();
     REGIONS.forEach((_, i) => {

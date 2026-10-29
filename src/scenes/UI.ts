@@ -1064,9 +1064,7 @@ export class UIScene extends Phaser.Scene implements Host {
       this.stageText.setText(`Boss Rush  •  best: boss ${save.bossRushBest}`);
     } else {
       drawBar(g, 220, 130, 480, 24, battle.xp, 0x5ac8ff);
-      // saved-up picks wait for the once-a-minute window
-      const picks = battle.picks ? `  •  ${battle.picks} pick${battle.picks > 1 ? "s" : ""} in ${Math.ceil(battle.pickIn / 1000)}s` : "";
-      this.levelText.setText(`Lv ${battle.level}${picks}`).setColor(battle.picks ? "#ffe066" : "#ffffff");
+      this.levelText.setText(`Lv ${battle.level}`).setColor("#ffffff");
       this.stageText.setText(`Stage ${save.stage}  •  ${regionForStage(save.stage).name}`);
     }
     fitText(this.stageText, 480);
@@ -1387,7 +1385,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private showStats(): void {
     if (battle.mode === "lobby") return;
     sfx.click();
-    const h = 1500;
+    // tall enough that the dice row clears the button at the bottom
+    const h = 1640;
     const m = this.showModal(modal(this, 960, h, "STATS", "blue", () => (this.openModal = null)));
     let y = -h / 2 + 150;
     m.body.add(text(this, 0, y, `Lv ${battle.level}  •  ${fmt(battle.dps)} DPS`, 46, "#ffe066"));
@@ -1420,7 +1419,7 @@ export class UIScene extends Phaser.Scene implements Host {
       m.body.add(badge(this, x, y + 96, 140, def.color, def.icon, { level: sk[1], max: MAX_SKILL, live: true }));
       m.body.add(fitText(label(this, x, y + 192, def.name, 24, "#7a5236"), 196));
     }
-    if (!picked.length) m.body.add(label(this, 0, y + 226, "Skills drop from airdrops, orbs and strong monsters", 24, "#9a7a5a"));
+    if (!picked.length) m.body.add(label(this, 0, y + 196, "Skills drop from airdrops, orbs and strong monsters", 24, "#9a7a5a"));
     // the numbers: an icon and a value each
     y += 290;
     const st = battle.stats;
@@ -2235,15 +2234,15 @@ export class UIScene extends Phaser.Scene implements Host {
       row("icon_trophy", `Best stage ${save.bestStage}/${MAX_STAGE}`, `${fmt(save.totalKills)} kills • ${fmt(save.totalRolls)} rolls • best ${oneIn(save.bestRoll)}`);
       if (!onlineEnabled() || new URLSearchParams(location.search).has("dev")) {
         const tool = (x: number, str: string, fn: () => void) =>
-          button(this, x, y - 20, 160, 80, "grey", str, () => {
+          button(this, x, y - 20, 150, 80, "grey", str, () => {
             fn();
             persist();
           }, { size: 24 });
         m.body.add([
-          tool(RX - 255, "+1B $", () => (save.cash += 1e9)),
-          tool(RX - 85, "+100 gem", () => (save.gems += 100)),
-          tool(RX + 85, "+100 dice", () => (save.dice.A += 100)),
-          tool(RX + 255, "+10K $", () => (save.cash += 1e4)),
+          tool(RX - 243, "+1B $", () => (save.cash += 1e9)),
+          tool(RX - 81, "+100 gem", () => (save.gems += 100)),
+          tool(RX + 81, "+100 dice", () => (save.dice.A += 100)),
+          tool(RX + 243, "+10K $", () => (save.cash += 1e4)),
         ]);
         y += 90;
       }

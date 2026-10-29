@@ -679,15 +679,15 @@ export class ShopScreen extends Screen {
         s.tweens.add({ targets: img, y: img.y - 10, duration: 900 + i * 150, yoyo: true, repeat: -1, ease: "Sine.inOut" });
         return img;
       });
-      const sticker = s.add.container(W - 110, y + 46, [
+      const sticker = s.add.container(W - 130, y + 56, [
         s.add.star(0, 0, 12, 50, 62, 0xff4a5a).setStrokeStyle(5, INK_N),
         text(s, 0, -2, `-${Math.round((1 - deal.gems / deal.was) * 100)}%`, 34),
       ]).setAngle(12);
       s.tweens.add({ targets: sticker, scale: 1.1, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const timer = text(s, 660, cy + 60, "", 28, "#fff3dc");
       this.ticking.push(() => timer.setText(save.dealDay === day() ? "Bought! New deal tomorrow" : `Ends in ${clock((day() + 1) * DAY_MS - Date.now())}`));
-      const was = text(s, 520, cy + 132, `${deal.was}`, 34, "#ffd0d0");
-      const strike = s.add.rectangle(520, cy + 132, 70, 5, 0xff4a5a);
+      const was = text(s, 470, cy + 132, `${deal.was}`, 34, "#ffd0d0");
+      const strike = s.add.rectangle(470, cy + 132, 70, 5, 0xff4a5a);
       const dealBtn = this.priceButton(730, cy + 130, 300, 110, () => {
         const bought = save.dealDay === day();
         const ok = !bought && save.gems >= deal.gems;
@@ -970,7 +970,8 @@ export class ShopScreen extends Screen {
       });
       this.tile(x, ty, 325, th, RARITY_BG[sl.rarity], w.icon, 130, w.name, () => `${RARITY_NAMES[sl.rarity]}\n${left() > 0 ? `${left()} left` : "Sold out"}`, btn);
       if (sl.rarity >= 3) {
-        const star = s.add.star(x + 130, ty - th / 2 + 30, 6, 16, 30, sl.rarity === 4 ? 0xffe066 : 0xff9a3a).setStrokeStyle(4, INK_N);
+        // on the card's top right corner, outside the title
+        const star = s.add.star(x + 150, ty - th / 2 + 8, 6, 16, 30, sl.rarity === 4 ? 0xffe066 : 0xff9a3a).setStrokeStyle(4, INK_N);
         s.tweens.add({ targets: star, angle: 360, duration: 3000, repeat: -1 });
         this.list.add(star);
       }
@@ -1098,11 +1099,11 @@ export class ShopScreen extends Screen {
     const cy = y + ch / 2;
     this.list.add(s.add.image(W / 2, cy, vividCard(s, 0x8a4ae0, 1020, ch)));
     // the egg
-    const egg = s.add.image(150, cy - 20, premiumEggTexture(s));
+    const egg = s.add.image(150, cy - 50, premiumEggTexture(s)).setScale(0.86);
     s.tweens.add({ targets: egg, angle: { from: -5, to: 5 }, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    const eggGlow = s.add.image(150, cy - 20, "glow").setTint(0xb98aff).setScale(2.4).setAlpha(0.7);
+    const eggGlow = s.add.image(150, cy - 50, "glow").setTint(0xb98aff).setScale(2.4).setAlpha(0.7);
     s.tweens.add({ targets: eggGlow, alpha: 0.3, duration: 800, yoyo: true, repeat: -1 });
-    const hot = s.add.container(W - 110, y + 54, [text(s, 0, 0, "HOT!", 50, "#ff8a3a", { stroke: 11 })]).setAngle(10);
+    const hot = s.add.container(W - 150, y + 56, [text(s, 0, 0, "HOT!", 44, "#ff8a3a", { stroke: 10 })]).setAngle(10);
     s.tweens.add({ targets: hot, scale: 1.12, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.list.add([eggGlow, egg, hot,
       text(s, 330, y + 62, "PREMIUM", 64, "#ffffff", { stroke: 13 }).setOrigin(0, 0.5),
@@ -1139,7 +1140,11 @@ export class ShopScreen extends Screen {
         return true;
       });
       this.list.add([text(s, x, by - 74, `${n} ${n === 1 ? "egg" : "eggs"}`, 26, "#ffffff", { stroke: 6 }), btn]);
-      if (off) this.list.add(text(s, x + 82, by - 52, off, 30, "#ff5a5a", { stroke: 7 }).setAngle(12));
+      // the discount as a red sticker on the button's top right corner
+      if (off) {
+        const tag = s.add.container(x + 92, by - 46, [s.add.rectangle(0, 0, 78, 36, 0xf03e3e).setStrokeStyle(4, 0xffffff), text(s, 0, -1, off, 24, "#ffffff", { stroke: 5 })]).setAngle(12);
+        this.list.add(tag);
+      }
     });
     return y + ch + 40;
   }

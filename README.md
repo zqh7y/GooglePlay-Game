@@ -383,9 +383,7 @@ hour of fishing brings.
   | Popcorn Pop | Pops a ring of hot kernels in every direction |
   | Grenade | Lobbed into crowds; at S tier and up it becomes a Black Hole that pulls monsters in, then bursts |
 
-  **Gadgets come from levelling up.** Level-ups (and skill orbs and crates) are **saved up**, and once a
-  minute a "LEVEL UP xN!" window opens and you pick them all in a row (so cards don't pop up every few
-  seconds). The bar at the top shows what is saved and when the next window opens. Each pick has three cards:
+  **Gadgets come from levelling up.** Every level up freezes the fight and three cards fly in:
   - **NEW!**: a gadget you don't have (while a slot is free there is always one), in a tier rolled for how
     long you have survived.
   - **Lv 2 → 3**: the next level of one you carry (up to 5, +20% damage each).
@@ -405,7 +403,7 @@ hour of fishing brings.
   stages 1-20, B on 21-40, C on 41-60, D on 61-80 and E on 81-100.
 - **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
 - **Skills come from drops**: airdrops (a gold beam and "SKILL DROP!"), skill orbs on the map, and elites
-  (half of them drop an orb). Each one is saved for the next minute's pick window (three skill cards). Monsters still drop bones
+  (half of them drop an orb). Each one freezes the fight with three skill cards. Monsters still drop bones
   and meat (XP), which level you up for gadgets. You carry at most **4 different skills** per stage, each up
   to level 5; they reset every stage and sit as medals along the bottom. Each has a big picture icon and a
   badge colour (red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky):
