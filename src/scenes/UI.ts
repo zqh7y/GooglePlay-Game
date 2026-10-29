@@ -104,6 +104,11 @@ const dhm = (ms: number) => {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m % 60}m`;
 };
 
+/** The lobby's quest card: its width, where its name and bar start (after the icon) and the bar's width. */
+const QUEST_W = 420;
+const QUEST_X = -QUEST_W / 2 + 112;
+const QUEST_BAR = QUEST_W / 2 - 38 - QUEST_X;
+
 export class UIScene extends Phaser.Scene implements Host {
   private W = GAME_W;
   private H = 0;
@@ -676,14 +681,15 @@ export class UIScene extends Phaser.Scene implements Host {
     this.lobby.bringToTop(this.rushHint);
     // quest tracker
     // a vivid card: the quest's icon on a paint splat, a short name, a bar with the numbers on it
-    const qw = 400;
+    // the icon has its own column on the left; the name and the bar start after it
+    const qw = QUEST_W;
     this.questGlow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(2.6, 1).setVisible(false);
     this.tweens.add({ targets: this.questGlow, alpha: { from: 0.25, to: 0.8 }, duration: 600, yoyo: true, repeat: -1 });
     this.questG = this.add.graphics();
-    this.questIcon = this.add.image(-qw / 2 + 58, 2, "icon_quest").setScale(0.62);
-    const splat = this.add.image(-qw / 2 + 58, 2, "paint_splash").setTint(0xfff3a0).setScale(0.62);
-    this.questLabel = text(this, -112, -24, "", 30, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5);
-    this.questCount = text(this, 34, 22, "", 22, "#ffffff", { stroke: 5 });
+    this.questIcon = this.add.image(-qw / 2 + 56, 0, "icon_quest").setScale(0.5);
+    const splat = this.add.image(-qw / 2 + 56, 0, "paint_splash").setTint(0xfff3a0).setScale(0.44);
+    this.questLabel = text(this, QUEST_X, -26, "", 28, "#ffffff", { stroke: 8 }).setOrigin(0, 0.5);
+    this.questCount = text(this, QUEST_X + QUEST_BAR / 2, 22, "", 22, "#ffffff", { stroke: 5 });
     this.questCard = this.add.image(0, 0, vividCard(this, 0x5fc85a, qw, 112));
     const tracker = this.add.container(W - qw / 2 - 16, this.L.hudBottom + 100, [
       this.questGlow, this.questCard, splat, this.questIcon, this.questLabel, this.questG, this.questCount,
@@ -1546,11 +1552,13 @@ export class UIScene extends Phaser.Scene implements Host {
     if (!q) return;
     this.questGlow.setVisible(!!ready);
     this.questIcon.setTexture(ready ? "icon_gift" : QUEST_ICON[q.type]);
-    this.questCard.setTexture(vividCard(this, ready ? 0xffc93a : 0x5fc85a, 400, 112));
-    fitText(this.questLabel.setText(ready ? "CLAIM!" : questTitle(q)), 270);
+    // every icon fits the same spot, whatever its size
+    this.questIcon.setScale(68 / Math.max(this.questIcon.frame.width, this.questIcon.frame.height));
+    this.questCard.setTexture(vividCard(this, ready ? 0xffc93a : 0x5fc85a, QUEST_W, 112));
+    fitText(this.questLabel.setText(ready ? "CLAIM!" : questTitle(q)), QUEST_BAR);
     this.questCount.setText(q.type === "rare" ? `${q.progress}/1` : `${fmt(q.progress)} / ${fmt(q.target)}`);
     this.questG.clear();
-    drawBar(this.questG, -112, 8, 290, 30, q.progress / questGoal(q), ready ? 0xffe066 : 0x7ad651);
+    drawBar(this.questG, QUEST_X, 8, QUEST_BAR, 30, q.progress / questGoal(q), ready ? 0xffe066 : 0x7ad651);
   }
 
   /** Where the minimap sits: top left in a fight, top right (under the quests) while roaming the lobby. */
