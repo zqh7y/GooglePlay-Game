@@ -4,6 +4,7 @@ import {
   starPath, twinkle,
 } from "./draw";
 import { Toon, toon } from "./toon";
+import { WALK_KEYS, WALK_POSES, arms, head, legs, squash, withPose } from "./pose";
 
 const EYE = "#24161e";
 
@@ -140,12 +141,25 @@ export const olFor = (c: number) => rgba(mix(darken(c, 0.65), 0x1a0e18, 0.5));
 export function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, glow?: string): void {
   const { ctx, E, C, paint } = t;
   for (const d of [-1, 1]) {
+    const ex = cx + d * gap;
     if (glow) {
-      paint(radial(ctx, cx + d * gap, cy, 14 * s, [[0, "#ffffff"], [0.35, glow], [1, "rgba(0,0,0,0)"]]), () => C(cx + d * gap, cy, 14 * s));
+      // glowing eyes: a wide bloom, a hot core and a slit
+      paint(radial(ctx, ex, cy, 22 * s, [[0, glow], [0.45, glow.replace(/[\d.]+\)$/, "0.35)")], [1, "rgba(0,0,0,0)"]]), () => C(ex, cy, 22 * s));
+      paint(radial(ctx, ex, cy, 14 * s, [[0, "#ffffff"], [0.35, glow], [1, "rgba(0,0,0,0)"]]), () => C(ex, cy, 14 * s));
+      if (t.pro) paint("rgba(255,255,255,0.95)", () => E(ex, cy, 2.2 * s, 5 * s));
+    } else if (t.pro) {
+      // a shaded eyeball, a coloured iris, a pupil and two glints
+      t.part(() => E(ex, cy, 8.5 * s, 9.5 * s), 0xf4f0ea, undefined, 3 * s);
+      paint(radial(ctx, ex - d * 1.5 * s, cy + 1.5 * s, 5.2 * s, [[0, "#ffb84a"], [0.55, "#e0602a"], [1, "#6a1a12"]]), () => C(ex - d * 1.5 * s, cy + 1.5 * s, 5.2 * s));
+      paint(EYE, () => C(ex - d * 1.5 * s, cy + 1.5 * s, 2.8 * s));
+      paint("#ffffff", () => C(ex - d * 3 * s, cy - 0.8 * s, 1.7 * s));
+      paint("rgba(255,255,255,0.7)", () => C(ex - d * 0.2 * s, cy + 3.2 * s, 0.9 * s));
+      // the upper lid casts a shadow on the eye
+      paint("rgba(40,20,30,0.28)", () => E(ex, cy - 6 * s, 8.5 * s, 3.5 * s));
     } else {
-      t.part(() => E(cx + d * gap, cy, 8 * s, 9 * s), 0xffffff, undefined, 3 * s);
-      paint(EYE, () => C(cx + d * gap - d * 1.5 * s, cy + 1.5 * s, 4.5 * s));
-      paint("#ffffff", () => C(cx + d * gap - d * 2.5 * s, cy - 0.5 * s, 1.5 * s));
+      t.part(() => E(ex, cy, 8 * s, 9 * s), 0xffffff, undefined, 3 * s);
+      paint(EYE, () => C(ex - d * 1.5 * s, cy + 1.5 * s, 4.5 * s));
+      paint("#ffffff", () => C(ex - d * 2.5 * s, cy - 0.5 * s, 1.5 * s));
     }
     ctx.lineWidth = 5 * s;
     ctx.lineCap = "round";
@@ -161,6 +175,11 @@ export function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, g
   ctx.closePath();
   ctx.fillStyle = EYE;
   ctx.fill();
+  if (t.pro) {
+    // a red mouth with a tongue inside
+    paint("#7a1a2a", () => E(cx, cy + 16.5 * s, 7 * s, 3 * s));
+    paint("#e8506a", () => E(cx + 1 * s, cy + 18 * s, 4.5 * s, 2 * s));
+  }
   paint("#ffffff", () => {
     t.poly([[cx - 9 * s, cy + 13.5 * s], [cx - 4 * s, cy + 13.5 * s], [cx - 6.5 * s, cy + 18 * s]], 1);
     t.poly([[cx + 4 * s, cy + 13.5 * s], [cx + 9 * s, cy + 13.5 * s], [cx + 6.5 * s, cy + 18 * s]], 1);
@@ -169,8 +188,9 @@ export function angryFace(t: Toon, cx: number, cy: number, gap: number, s = 1, g
 
 export function slime(color: number, extra = ""): (ctx: Ctx) => void {
   return (ctx) => {
-    const t = toon(ctx, olFor(color), 5);
+    const t = toon(ctx, olFor(color), 5, true);
     t.paint("rgba(30,15,25,0.22)", () => t.E(70, 124, 50, 7));
+    squash(ctx, 70, 122, () => {
     if (extra === "stem") {
       t.tube(() => {
         ctx.moveTo(70, 34);
@@ -208,19 +228,21 @@ export function slime(color: number, extra = ""): (ctx: Ctx) => void {
     }
     t.gloss(46, 52, 10, 6);
     angryFace(t, 72, 78, 17, 1);
+    }, 0.08);
   };
 }
 
 export function mushroom(cap: number, stem: number, glow = false): (ctx: Ctx) => void {
   return (ctx) => {
-    const t = toon(ctx, olFor(cap), 5);
+    const t = toon(ctx, olFor(cap), 5, true);
     t.paint("rgba(30,15,25,0.22)", () => t.E(65, 142, 40, 6));
-    t.part(() => {
+    legs(ctx, 65, () => t.part(() => {
       t.E(46, 140, 12, 6);
       t.E(84, 140, 12, 6);
-    }, darken(stem, 0.2));
+    }, darken(stem, 0.2)), 6);
     t.part(() => t.rect(65, 106, 62, 64, 22), stem);
     angryFace(t, 65, 102, 14, 0.95);
+    head(ctx, 65, 74, () => {
     if (glow) t.paint(radial(ctx, 65, 46, 70, [[0, rgba(cap, 0.45)], [1, rgba(cap, 0)]]), () => t.C(65, 46, 70));
     t.part(() => {
       ctx.moveTo(8, 72);
@@ -233,20 +255,21 @@ export function mushroom(cap: number, stem: number, glow = false): (ctx: Ctx) =>
       }
     });
     t.gloss(36, 34, 12, 5);
+    }, 3, 0.05);
   };
 }
 
 export function bat(color: number, beak = false): (ctx: Ctx) => void {
   return (ctx) => {
-    const t = toon(ctx, olFor(color), 5);
+    const t = toon(ctx, olFor(color), 5, true);
     const wing = (s: number) => {
       const m = (x: number) => (s < 0 ? 170 - x : x);
       t.poly([[m(62), 48], [m(10), 20], [m(14), 54], [m(26), 50], [m(30), 70], [m(44), 62], [m(54), 76], [m(66), 66]], 4);
     };
-    t.part(() => {
+    arms(ctx, 85, 22, 52, 0.4, () => t.part(() => {
       wing(1);
       wing(-1);
-    }, darken(color, 0.15));
+    }, darken(color, 0.15)), true);
     if (beak) {
       t.part(() => t.poly([[66, 86], [104, 86], [85, 104]], 4), 0x2a2a34);
     }
@@ -267,14 +290,16 @@ export function bat(color: number, beak = false): (ctx: Ctx) => void {
 
 export function cactus(ctx: Ctx): void {
   const c = 0x5fb84a;
-  const t = toon(ctx, olFor(c), 5);
+  const t = toon(ctx, olFor(c), 5, true);
   t.paint("rgba(30,15,25,0.22)", () => t.E(65, 152, 40, 6));
-  t.part(() => {
-    t.rect(65, 98, 56, 104, 28);
+  arms(ctx, 65, 26, 104, 0.2, () => t.part(() => {
     t.rect(26, 84, 22, 40, 11);
     t.rect(36, 102, 30, 18, 9);
     t.rect(104, 74, 22, 38, 11);
     t.rect(94, 90, 30, 18, 9);
+  }, darken(c, 0.04)));
+  t.part(() => {
+    t.rect(65, 98, 56, 104, 28);
   }, c, () => {
     ctx.lineWidth = 3;
     ctx.strokeStyle = rgba(darken(c, 0.25));
@@ -295,198 +320,16 @@ export function cactus(ctx: Ctx): void {
     ctx.lineTo(x, y + 4);
     ctx.stroke();
   }
-  t.part(() => {
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2;
-      t.E(65 + Math.cos(a) * 7, 44 + Math.sin(a) * 7, 6, 5, a);
-    }
-  }, 0xff7aa8, undefined, 3);
-  t.paint("#ffe066", () => t.C(65, 44, 4));
-  angryFace(t, 65, 92, 13, 0.9);
-}
-
-/** A rock golem; the ice golem boss is the same body in ice. */
-export function golemOf(c: number, moss: number, eyes: string): (ctx: Ctx) => void {
-  return (ctx) => golemBody(ctx, c, moss, eyes);
-}
-
-function golem(ctx: Ctx): void {
-  golemBody(ctx, 0xa8adb8, 0x6fbf4a, "rgba(255,210,60,0.95)");
-}
-
-function golemBody(ctx: Ctx, c: number, moss: number, eyes: string): void {
-  const t = toon(ctx, "#2a2a36", 6);
-  t.paint("rgba(30,15,25,0.25)", () => t.E(125, 238, 96, 12));
-  t.part(() => {
-    t.rect(84, 214, 44, 40, 14);
-    t.rect(166, 214, 44, 40, 14);
-  }, darken(c, 0.15));
-  t.part(() => {
-    t.C(34, 150, 30);
-    t.C(216, 150, 30);
-  }, darken(c, 0.08));
-  t.part(() => t.rect(125, 130, 170, 150, 44), c, () => {
-    t.paint(rgba(moss), () => {
-      t.E(80, 66, 30, 12, -0.2);
-      t.E(176, 70, 22, 9, 0.2);
-    });
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = rgba(darken(c, 0.3));
-    ctx.beginPath();
-    ctx.moveTo(70, 150);
-    ctx.lineTo(96, 170);
-    ctx.lineTo(90, 196);
-    ctx.moveTo(180, 160);
-    ctx.lineTo(160, 182);
-    ctx.stroke();
-  });
-  t.gloss(78, 80, 20, 8);
-  angryFace(t, 125, 118, 32, 1.6, eyes);
-}
-
-function pumpkinKing(ctx: Ctx): void {
-  const c = 0xff8a2a;
-  const t = toon(ctx, olFor(c), 6);
-  t.paint("rgba(30,15,25,0.25)", () => t.E(125, 238, 96, 12));
-  t.tube(() => {
-    ctx.moveTo(40, 150);
-    ctx.quadraticCurveTo(10, 120, 26, 92);
-    ctx.moveTo(210, 150);
-    ctx.quadraticCurveTo(240, 120, 224, 92);
-  }, 10, 0x4f8a2a);
-  t.part(() => {
-    t.E(125, 150, 100, 84);
-  }, c, () => {
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = rgba(darken(c, 0.2));
-    for (const x of [70, 105, 145, 180]) {
-      ctx.beginPath();
-      ctx.moveTo(x, 72);
-      ctx.quadraticCurveTo(x + (x < 125 ? -26 : 26), 150, x, 230);
-      ctx.stroke();
-    }
-  });
-  t.gloss(80, 100, 22, 10);
-  t.paint(radial(ctx, 125, 150, 70, [[0, "rgba(255,240,120,0.9)"], [1, "rgba(255,160,40,0.2)"]]), () => {
-    t.poly([[78, 116], [110, 126], [92, 140]], 3);
-    t.poly([[172, 116], [140, 126], [158, 140]], 3);
-    t.poly([[74, 168], [92, 160], [108, 176], [125, 160], [142, 176], [158, 160], [176, 168], [160, 196], [90, 196]], 4);
-  });
-  t.tube(() => {
-    ctx.moveTo(125, 70);
-    ctx.lineTo(128, 44);
-  }, 10, 0x4f8a2a);
-  t.part(() => t.poly([[84, 66], [84, 34], [104, 48], [125, 24], [146, 48], [166, 34], [166, 66]], 4), 0xffcf3a, () => {
-    t.paint("#ff4a6a", () => t.C(125, 50, 6));
-  });
-}
-
-function treant(ctx: Ctx): void {
-  const bark = 0x8a5a3a;
-  const t = toon(ctx, "#2a1a14", 6);
-  t.paint("rgba(30,15,25,0.25)", () => t.E(125, 248, 96, 12));
-  t.tube(() => {
-    ctx.moveTo(80, 230);
-    ctx.lineTo(60, 248);
-    ctx.moveTo(170, 230);
-    ctx.lineTo(190, 248);
-  }, 16, darken(bark, 0.15));
-  t.tube(() => {
-    ctx.moveTo(70, 150);
-    ctx.quadraticCurveTo(30, 140, 16, 104);
-    ctx.moveTo(180, 150);
-    ctx.quadraticCurveTo(220, 140, 234, 104);
-  }, 16, bark);
-  t.part(() => t.rect(125, 170, 110, 130, 36), bark, () => {
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = rgba(darken(bark, 0.3));
-    for (const x of [92, 120, 152]) {
-      ctx.beginPath();
-      ctx.moveTo(x, 116);
-      ctx.quadraticCurveTo(x + 6, 170, x - 4, 230);
-      ctx.stroke();
-    }
-  });
-  const leaf = 0x4fae3a;
-  t.part(() => {
-    t.C(80, 80, 46);
-    t.C(125, 56, 54);
-    t.C(172, 82, 46);
-    t.C(125, 104, 50);
-    t.C(20, 98, 18);
-    t.C(232, 98, 18);
-  }, leaf, () => {
-    t.paint(rgba(lighten(leaf, 0.25)), () => {
-      t.C(100, 40, 16);
-      t.C(150, 60, 12);
-      t.C(64, 74, 10);
-    });
-  });
-  angryFace(t, 125, 166, 26, 1.4, "rgba(150,255,120,0.95)");
-}
-
-function scorpion(ctx: Ctx): void {
-  const c = 0xd9a24a;
-  const t = toon(ctx, olFor(c), 6);
-  t.paint("rgba(30,15,25,0.25)", () => t.E(130, 214, 110, 12));
-  t.tube(() => {
-    for (const [x1, x2] of [[90, 70], [110, 100], [150, 160], [170, 190]]) {
-      ctx.moveTo(x1, 190);
-      ctx.lineTo(x2, 212);
-    }
-  }, 7, darken(c, 0.2));
-  // tail arcing over the body
-  t.part(() => {
-    for (const [x, y, r] of [[196, 160, 22], [216, 124, 19], [214, 86, 17], [192, 58, 15]] as [number, number, number][]) t.C(x, y, r);
-  }, c);
-  t.part(() => t.poly([[176, 52], [150, 40], [172, 66]], 4), 0x7a2a3a);
-  // claws
-  for (const s of [-1, 1]) {
-    const x = s < 0 ? 46 : 124;
+  head(ctx, 65, 60, () => {
     t.part(() => {
-      t.E(x, 132, 26, 20);
-      t.poly([[x - 26, 126], [x - 40, 104], [x - 14, 116]], 4);
-      t.poly([[x - 10, 114], [x - 6, 94], [x + 8, 114]], 4);
-    }, darken(c, 0.08));
-  }
-  t.part(() => t.E(130, 168, 72, 40), c, () => {
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = rgba(darken(c, 0.25));
-    for (const x of [110, 140, 168]) {
-      ctx.beginPath();
-      ctx.arc(x, 168, 34, -1.1, 1.1);
-      ctx.stroke();
-    }
-  });
-  t.gloss(100, 146, 18, 7, -0.2);
-  angryFace(t, 104, 162, 18, 1.2);
-}
-
-function yeti(ctx: Ctx): void {
-  const fur = 0xf2f6ff;
-  const t = toon(ctx, "#2a3a5a", 6);
-  t.paint("rgba(30,15,25,0.25)", () => t.E(125, 244, 96, 12));
-  t.part(() => {
-    t.rect(92, 226, 40, 34, 14);
-    t.rect(158, 226, 40, 34, 14);
-  }, darken(fur, 0.08));
-  t.part(() => {
-    t.E(36, 160, 24, 46, 0.2);
-    t.E(214, 160, 24, 46, -0.2);
-  }, darken(fur, 0.05));
-  t.part(() => {
-    t.poly([[70, 64], [56, 20], [92, 52]], 6);
-    t.poly([[158, 52], [194, 20], [180, 64]], 6);
-  }, 0xc9d8f0);
-  t.part(() => {
-    t.E(125, 150, 92, 92);
-    for (let i = 0; i < 9; i++) {
-      const a = Math.PI * (0.15 + (i / 8) * 0.7);
-      t.C(125 + Math.cos(a) * 88, 150 + Math.sin(a) * 88, 12);
-    }
-  }, fur);
-  t.part(() => t.E(125, 132, 58, 48), 0x7aa8e8, () => t.paint("rgba(255,255,255,0.25)", () => t.E(110, 110, 30, 12, -0.3)));
-  angryFace(t, 125, 128, 24, 1.4);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        t.E(65 + Math.cos(a) * 7, 44 + Math.sin(a) * 7, 6, 5, a);
+      }
+    }, 0xff7aa8, undefined, 3);
+    t.paint("#ffe066", () => t.C(65, 44, 4));
+  }, 3, 0.1);
+  angryFace(t, 65, 92, 13, 0.9);
 }
 
 // ───────────────────────── textures ─────────────────────────
@@ -508,18 +351,16 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   e_crow: [170, 110, bat(0x3a3a4a, true)],
   e_vulture: [170, 110, bat(0x9a6a4a, true)],
   e_cactus: [130, 158, cactus],
-  e_golem: [250, 250, golem],
-  e_pumpking: [250, 250, pumpkinKing],
-  e_treant: [250, 256, treant],
-  e_scorpion: [260, 224, scorpion],
-  e_yeti: [250, 262, yeti],
 };
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "hero", HERO_W, HERO_H, (ctx) => drawHero(ctx, 0));
   canvasTexture(scene, "hero_w1", HERO_W, HERO_H, (ctx) => drawHero(ctx, 1));
   canvasTexture(scene, "hero_w2", HERO_W, HERO_H, (ctx) => drawHero(ctx, 2));
-  for (const [key, [w, h, draw]] of Object.entries(MONSTER_ART)) canvasTexture(scene, key, w, h, draw);
+  for (const [key, [w, h, draw]] of Object.entries(MONSTER_ART)) {
+    canvasTexture(scene, key, w, h, draw);
+    walkFrames(scene, key, w, h, draw);
+  }
 
 
   canvasTexture(scene, "orb", 64, 64, (ctx) => {
@@ -584,3 +425,14 @@ export function makeCharacterTextures(scene: Phaser.Scene): void {
     fillOutline(ctx, "#fff27a", 4);
   });
 }
+
+/** The three walk poses of a creature (key_a, key_b, key_c), made once. */
+export function walkFrames(scene: Phaser.Scene, key: string, w: number, h: number, draw: (ctx: Ctx) => void): void {
+  WALK_POSES.forEach((p, i) => {
+    const k = key + ["_a", "_b", "_c"][i];
+    if (!scene.textures.exists(k)) withPose(p, () => canvasTexture(scene, k, w, h, draw));
+  });
+}
+
+/** Which walk frame a creature shows at this moment (it steps faster when it moves faster). */
+export const walkKey = (key: string, time: number, ms: number) => key + WALK_KEYS[Math.floor(time / ms) % WALK_KEYS.length];

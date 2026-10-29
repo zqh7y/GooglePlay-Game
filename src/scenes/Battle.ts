@@ -23,7 +23,8 @@ import { REGIONS, Region, regionForStage } from "../data/regions";
 import { CRYSTAL_SKILLS, SKILLS, SKILL_BY_ID, SKILL_SLOTS, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
-import { makeBossTextures } from "../art/bosses";
+import { bossFrames, makeBossTextures } from "../art/bosses";
+import { walkKey } from "../art/characters";
 import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
@@ -209,6 +210,9 @@ interface Enemy {
   aura?: Phaser.GameObjects.Image;
   /** a boss's move warning (a lane, zone, cone...) */
   tele?: Phaser.GameObjects.Image;
+  /** walk frames: moved this frame, and a time offset so a crowd doesn't step in sync */
+  moving: boolean;
+  seed: number;
   flashUntil: number;
   atkTimer: number;
   /** heading for the crystal right now */
@@ -592,6 +596,8 @@ export class BattleScene extends Phaser.Scene {
     makeGadgetTextures(this);
     makeMutationTextures(this);
     makeBossTextures(this);
+    // ?frames: lets the art preview make any boss's walk frames
+    if (location.search.includes("frames")) (window as unknown as { __bf: (k: string) => void }).__bf = (k) => bossFrames(this, k);
     makeBossFxTextures(this);
     makePlaceTextures(this);
     this.rush = !!data?.rush;
@@ -2341,10 +2347,12 @@ export class BattleScene extends Phaser.Scene {
     const muts = mutate ? rollMutations(stage, elite, !!type.boss) : [];
     const has = (m: MutationId) => muts.includes(m);
     const scale = (type.boss ? 1.3 : elite ? 1.45 : 1) * (has("giant") ? 1.4 : 1) * size;
+    if (type.boss) bossFrames(this, type.tex);
     const img = this.add.image(x, y, type.tex).setOrigin(0.5, type.flying ? 0.5 : 0.94).setDepth(y).setAlpha(0).setScale(0.3);
     this.tweens.add({ targets: img, alpha: 1, scale, duration: 350, ease: "Back.out" });
-    if (type.flying) this.tweens.add({ targets: img, scaleY: scale * 0.85, duration: 160, yoyo: true, repeat: -1, delay: 350 });
-    else this.tweens.add({ targets: img, angle: { from: -5, to: 5 }, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 350 });
+    // their legs, arms and heads move by walk frames (see moveEnemies); a gentle lean on top
+    if (type.flying) this.tweens.add({ targets: img, y: "-=6", duration: 320, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 350 });
+    else this.tweens.add({ targets: img, angle: { from: -2.5, to: 2.5 }, duration: 520, yoyo: true, repeat: -1, ease: "Sine.inOut", delay: 350 });
     const hp = Math.round(monsterHp(type.stats.hp, stage, this.minute) * (elite ? ELITE_MULT : 1) * (has("giant") ? 3 : 1));
     // mutated monsters pay a little more
     const bonus = muts.length ? 1 + 0.5 * muts.length : 1;
@@ -2354,7 +2362,7 @@ export class BattleScene extends Phaser.Scene {
       xp: Math.round((elite ? 8 : type.stats.xp) * bonus),
       dmg: type.stats.dmg * (1 + 0.05 * (stage - 1)) * (1 + 0.2 * this.minute) * (elite ? 1.5 : 1),
       r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
-      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, raider: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0, casts: 0, dashV: 1000, dashMs: 600, dashWind: 750,
+      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, raider: false, attacking: false, moving: false, seed: Math.random() * 1000, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0, casts: 0, dashV: 1000, dashMs: 600, dashWind: 750,
       muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
       blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false, stunUntil: 0,
     };
@@ -3429,6 +3437,13 @@ export class BattleScene extends Phaser.Scene {
    * the shield drops). Everyone keeps a little space.
    */
   private moveEnemies(time: number, delta: number): void {
+    // walk frames: legs step, arms swing, heads bob (faster for quick monsters, idle shuffle when still)
+    for (const e of this.enemies) {
+      const ms = e.type.boss ? 150 : e.type.flying ? 90 : 125;
+      const k = walkKey(e.type.tex, time + e.seed, e.moving ? ms : ms * 2.4);
+      if (e.img.texture.key !== k && e.phase !== "jump" && e.phase !== "burrow") e.img.setTexture(k);
+      e.moving = false;
+    }
     const frozen = time < this.frozenUntil;
     if (!frozen && this.enemies.length && this.enemies[0].img.tintTopLeft === 0x9ae6ff) this.enemies.forEach((e) => e.img.clearTint());
     const [cx, cy] = this.arena.center;
@@ -3504,6 +3519,7 @@ export class BattleScene extends Phaser.Scene {
           }
         }
         e.img.setPosition(clampX(nx), clampY(ny)).setDepth(ny);
+        e.moving = true;
         if (Math.abs(mx) > 0.2) e.img.setFlipX(mx < 0);
       }
       e.atkTimer -= delta;
