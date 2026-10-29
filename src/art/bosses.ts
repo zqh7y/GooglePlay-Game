@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { BOSS_ART } from "./bossart";
 import { Ctx, canvasTexture, radial } from "./draw";
 import { walkFrames } from "./characters";
+import { WALK_POSES, withPose } from "./pose";
 
 /** A glossy white shot with a dark rim: tinted in each boss's colour for its rings, volleys and rain. */
 function orb(ctx: Ctx): void {
@@ -21,6 +22,14 @@ function orb(ctx: Ctx): void {
 export function makeBossTextures(scene: Phaser.Scene): void {
   for (const key of Object.keys(BOSS_ART)) canvasTexture(scene, key, ...padded(key));
   canvasTexture(scene, "b_orb", 68, 68, orb);
+}
+
+/** One of a boss's walk frames (0..2), so they can be made a little at a time ahead of the fight. */
+export function bossFrame(scene: Phaser.Scene, key: string, i: number): void {
+  if (!BOSS_ART[key]) return;
+  const [w, h, draw] = padded(key);
+  const k = key + ["_a", "_b", "_c"][i];
+  if (!scene.textures.exists(k)) withPose(WALK_POSES[i], () => canvasTexture(scene, k, w, h, draw));
 }
 
 /** A boss's walk frames, made the first time it shows up. */

@@ -5,6 +5,7 @@ import { GROUND_SCALE, PATCH_R, makeGround } from "../art/ground";
 import { makeGadgetTextures } from "../art/gadgets";
 import { makeComicTextures } from "../art/comic";
 import { makeModeTextures } from "../art/modes";
+import { makeBeastTextures } from "../art/beast";
 import {
   AIR_EVERY, AIR_PREVIEW, AIR_SECS, BIG_BOSS_HP, BOSS_KIDS, FEEDS, FEED_EVERY, FEED_FIRST, FRIEND_BOSS_HP, HUNGER_MS, KID_HP, MODE_INFO, StageMode, modeForStage,
 } from "../data/modes";
@@ -23,7 +24,7 @@ import { REGIONS, Region, regionForStage } from "../data/regions";
 import { CRYSTAL_SKILLS, SKILLS, SKILL_BY_ID, SKILL_SLOTS, SkillId, skillChoices } from "../data/skills";
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
-import { bossFrames, makeBossTextures } from "../art/bosses";
+import { bossFrame, bossFrames, makeBossTextures } from "../art/bosses";
 import { walkKey } from "../art/characters";
 import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
@@ -298,6 +299,8 @@ interface Bullet {
   burst?: boolean;
   /** color of the glowing trail it leaves */
   trail?: number;
+  /** a soft glow that travels with it */
+  glow?: Phaser.GameObjects.Image;
 }
 
 /** Rocks the boss throws at you. */
@@ -455,7 +458,13 @@ export class BattleScene extends Phaser.Scene {
     img: Phaser.GameObjects.Image; cage: Phaser.GameObjects.Image; bar: Phaser.GameObjects.Graphics; tex: string;
     hunger: number; fed: number; foodAt: number; food: Phaser.GameObjects.Image | null; carried: boolean;
     friend: boolean; escaped: boolean; stompT: number;
+    /** the cage's back half, the rune ring, the glow behind the beast; timers for its moods */
+    back: Phaser.GameObjects.Image; runes: Phaser.GameObjects.Image; aura: Phaser.GameObjects.Image; moodT: number; dustT: number;
   } | null;
+  /** Air Zone poison: two drifting fog layers masked round the zone, and the mask */
+  private fogLayers: Phaser.GameObjects.TileSprite[] = [];
+  private fogMask: Phaser.GameObjects.Graphics | null = null;
+  private coughT = 0;
   private rain!: { t: number; dodged: number; drops: number };
   /** the wooden board where the crystal used to stand in the lobby: next stage and its mode */
   private stageSign: Phaser.GameObjects.Container | null = null;
@@ -516,7 +525,7 @@ export class BattleScene extends Phaser.Scene {
   private puddles: { img: Phaser.GameObjects.Image; x: number; y: number; r: number; until: number; dmg: number; tick: number }[] = [];
   private kite: Phaser.GameObjects.Image | null = null;
   private kiteT = 0;
-  private rangs: { img: Phaser.GameObjects.Image; dx: number; dy: number; speed: number; went: number; max: number; back: boolean; dmg: number; hit: Set<Enemy> }[] = [];
+  private rangs: { img: Phaser.GameObjects.Image; dx: number; dy: number; speed: number; went: number; max: number; back: boolean; dmg: number; hit: Set<Enemy>; glow?: Phaser.GameObjects.Image }[] = [];
   private holes: { img: Phaser.GameObjects.Image; x: number; y: number; r: number; until: number; dmg: number }[] = [];
 
   private pets: Pet[] = [];
@@ -602,6 +611,7 @@ export class BattleScene extends Phaser.Scene {
     makePlaceTextures(this);
     this.rush = !!data?.rush;
     makeModeTextures(this);
+    makeBeastTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     battle.goal = null;
     this.air = { zone: null, next: null, x: 0, y: 0, nx: 0, ny: 0, t: AIR_EVERY, oxygen: 1, choke: 0 };
@@ -611,6 +621,8 @@ export class BattleScene extends Phaser.Scene {
     this.feedSign = null;
     this.fog = null;
     this.fogPuffs = null;
+    this.fogLayers = [];
+    this.fogMask = null;
     this.dizzy = 0;
     this.dizzyCam = false;
     this.dizzyStars = [];
@@ -628,7 +640,7 @@ export class BattleScene extends Phaser.Scene {
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       streak: 0, streakTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
-      roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0,
+      roamDiceT: ROAM_DICE_MS, wander: null, entering: false, hauntT: 0, ghostT: 0, phasingUntil: 0, hauntRing: null, hauntRing2: null, zoomT: 0, lanes: [], coughT: 0,
     });
     this.joy = { ...NO_JOY };
     this.heroMax = heroHpAt(save.stage) * villageHpMult();
@@ -757,6 +769,7 @@ export class BattleScene extends Phaser.Scene {
     const n = save.stage;
     const def = bossForStage(n);
     battle.rushBoss = n;
+    this.prepareBoss(n + 1);
     this.rushLeft = RUSH_MS;
     battle.rushLeft = RUSH_MS;
     const [x, y] = this.randomSpot(450, 600, [this.hero.x, this.hero.y]);
@@ -894,6 +907,8 @@ export class BattleScene extends Phaser.Scene {
     sfx.alarm();
     if (!this.rush) this.game.events.emit("mode-intro", this.stageMode);
     this.modeStart();
+    // this stage's boss: its walk frames are made now, a little at a time, so it lands without a hitch
+    if (!this.rush) this.prepareBoss(save.stage);
     this.time.delayedCall(1500, () => {
       if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
@@ -1600,6 +1615,12 @@ export class BattleScene extends Phaser.Scene {
     this.handImg.setTexture(gadgetKey(this.handKind));
   }
 
+  /** A soft coloured glow that rides along with a shot. */
+  private shotGlow(x: number, y: number, color: number): Phaser.GameObjects.Image | undefined {
+    if (!effectsOn()) return undefined;
+    return this.add.image(x, y, "glow").setTint(color).setScale(0.55).setAlpha(0.75).setDepth(8999).setBlendMode(Phaser.BlendModes.ADD);
+  }
+
   /** A glowing dot behind something thrown (every other frame, so it stays light). */
   private trailAt(x: number, y: number, color: number): void {
     if (this.trailTick & 1) return;
@@ -1627,6 +1648,29 @@ export class BattleScene extends Phaser.Scene {
   /** Spooky Aura hurts monsters close to you; Ghost Phase makes you see-through now and then with a shockwave. */
   private ghostSkills(delta: number): void {
     const haunt = this.lv("haunt");
+    // Spooky Aura: a ghostly ring of wisps turning round you, as wide as its reach
+    if (haunt) {
+      if (!this.hauntRing) {
+        this.hauntRing = this.add.image(0, 0, "bx_whirl").setTint(0x8a5ae8);
+        this.hauntRing2 = this.add.image(0, 0, "bx_dash").setTint(0xb98aff);
+      }
+      const r = this.hauntR();
+      const t = this.time.now;
+      this.hauntRing.setPosition(this.hero.x, this.hero.y - 20).setDisplaySize(r * 2.1, r * 1.5).setRotation(t / 700).setAlpha(0.35 + Math.sin(t / 240) * 0.1).setDepth(6);
+      this.hauntRing2!.setPosition(this.hero.x, this.hero.y - 20).setDisplaySize(r * 2, r * 1.4).setRotation(-t / 900).setAlpha(0.5).setDepth(6);
+    }
+    // Zoomies: dust and speed lines kick up behind you when you run
+    if (this.lv("zoom") && Math.hypot(...this.heroVel) > 250) {
+      this.zoomT -= delta;
+      if (this.zoomT <= 0) {
+        this.zoomT = 90;
+        this.puff.setParticleTint(0xbff0e0);
+        this.puff.explode(2, this.hero.x - Math.sign(this.heroVel[0]) * 30, this.hero.y);
+        const ln = this.add.image(this.hero.x, this.hero.y - 60 + Phaser.Math.Between(-40, 40), "bx_beam").setTint(0x4fd0b0).setDisplaySize(120, 10)
+          .setRotation(Math.atan2(this.heroVel[1], this.heroVel[0])).setAlpha(0.7).setDepth(this.hero.y - 2).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: ln, x: ln.x - this.heroVel[0] * 0.2, y: ln.y - this.heroVel[1] * 0.2, alpha: 0, duration: 260, onComplete: () => ln.destroy() });
+      }
+    }
     if (haunt) {
       this.hauntT -= delta;
       if (this.hauntT <= 0) {
@@ -1643,8 +1687,21 @@ export class BattleScene extends Phaser.Scene {
     this.phasingUntil = this.time.now + 1000;
     this.tweens.add({ targets: this.hero, alpha: 0.4, duration: 120, yoyo: true, hold: 760 });
     this.blast(this.hero.x, this.hero.y - 40, 240 + 20 * phase, this.heroDamage() * 2 * phase, null, 0xb98aff);
+    // a ghostly shockwave and ghost faces flying out
+    const rr = 240 + 20 * phase;
+    const sw = this.add.image(this.hero.x, this.hero.y - 20, "bx_shock").setTint(0xc8a8ff).setScale(0.3, 0.2).setDepth(9000).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: sw, scaleX: rr / 60, scaleY: rr / 90, alpha: 0, duration: 420, ease: "Quad.out", onComplete: () => sw.destroy() });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const gh = this.add.image(this.hero.x, this.hero.y - 80, "gd_wisp").setTint(0xd8c8ff).setScale(0.6).setAlpha(0.9).setDepth(9001);
+      this.tweens.add({ targets: gh, x: gh.x + Math.cos(a) * rr, y: gh.y + Math.sin(a) * rr * 0.7, alpha: 0, scale: 1.1, duration: 480, ease: "Quad.out", onComplete: () => gh.destroy() });
+    }
     sfx.charge(5);
   }
+
+  private hauntRing: Phaser.GameObjects.Image | null = null;
+  private hauntRing2: Phaser.GameObjects.Image | null = null;
+  private zoomT = 0;
 
   private hauntR(): number {
     return 210 + 25 * this.lv("haunt");
@@ -1677,13 +1734,16 @@ export class BattleScene extends Phaser.Scene {
       this.handKick = 1;
       this.sparks.setParticleTint(GADGETS[g.kind].color);
       this.sparks.explode(4, this.handImg.x, this.handImg.y);
+      // a muzzle flash ring at your hand
+      const mz = this.add.image(this.handImg.x, this.handImg.y, "fx_ring").setTint(GADGETS[g.kind].color).setScale(0.15).setDepth(9060).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: mz, scale: 0.6, alpha: 0, duration: 180, onComplete: () => mz.destroy() });
       switch (g.kind) {
         case "shuriken": {
           for (let i = 0; i < st.count; i++) {
             const t = targets[i % targets.length];
             const a = Math.atan2(t.img.y - t.img.displayHeight * 0.4 - hy, t.img.x - hx) + (i >= targets.length ? (Math.random() - 0.5) * 0.4 : 0);
             const img = this.add.image(hx, hy, "gd_shuriken").setDepth(9000).setScale(1.35);
-            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 20, trail: 0x9ad0ff });
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 20, trail: 0x9ad0ff, glow: this.shotGlow(hx, hy, 0x9ad0ff) });
           }
           sfx.shoot(false);
           break;
@@ -1719,7 +1779,7 @@ export class BattleScene extends Phaser.Scene {
           for (let i = 0; i < st.count; i++) {
             const a = off + (i / st.count) * Math.PI * 2;
             const img = this.add.image(hx, hy, "gd_kernel").setDepth(9000).setScale(1.6);
-            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 8, trail: 0xffb347 });
+            this.bullets.push({ img, vx: Math.cos(a) * st.speed, vy: Math.sin(a) * st.speed, life: (st.range / st.speed) * 1000, dmg, pierce: st.pierce, explode: 0, splash: 0, hit: [], spin: 8, trail: 0xffb347, glow: this.shotGlow(hx, hy, 0xffb347) });
           }
           sfx.shoot(false);
           break;
@@ -1729,7 +1789,7 @@ export class BattleScene extends Phaser.Scene {
             const t = targets[0];
             const a = Math.atan2(t.img.y - 40 - hy, t.img.x - hx) + (i - (st.count - 1) / 2) * 0.35;
             const img = this.add.image(hx, hy, "gd_boomerang").setDepth(9000).setScale(1.45);
-            this.rangs.push({ img, dx: Math.cos(a), dy: Math.sin(a), speed: st.speed, went: 0, max: st.range, back: false, dmg, hit: new Set() });
+            this.rangs.push({ img, dx: Math.cos(a), dy: Math.sin(a), speed: st.speed, went: 0, max: st.range, back: false, dmg, hit: new Set(), glow: this.shotGlow(hx, hy, 0xffcf3a) });
           }
           sfx.shoot(false);
           break;
@@ -1755,6 +1815,11 @@ export class BattleScene extends Phaser.Scene {
       },
       onComplete: () => {
         blob.destroy();
+        const sp = this.add.image(tx, ty - 10, "bx_splat").setTint(0xf0f6ff).setScale(0.2).setDepth(ty + 5);
+        this.tweens.add({ targets: sp, scale: r / 120, duration: 140, ease: "Back.out" });
+        this.tweens.add({ targets: sp, alpha: 0, delay: 200, duration: 300, onComplete: () => sp.destroy() });
+        this.puff.setParticleTint(0xf0f6ff);
+        this.puff.explode(8, tx, ty);
         const img = this.add.image(tx, ty, "gd_puddle").setDepth(-600).setScale(0.2).setAlpha(0.95);
         this.tweens.add({ targets: img, scale: r / 100, duration: 220, ease: "Back.out" });
         this.puddles.push({ img, x: tx, y: ty, r, until: this.time.now + 4000, dmg, tick: 0 });
@@ -1775,11 +1840,18 @@ export class BattleScene extends Phaser.Scene {
       const pts: [number, number][] = [[px, py]];
       for (let k = 1; k < 6; k++) pts.push([px + ((x - px) * k) / 6 + (Math.random() - 0.5) * 50, py + ((y - py) * k) / 6 + (Math.random() - 0.5) * 50]);
       pts.push([x, y]);
-      for (const [w, c] of [[16, 0xffe066], [6, 0xffffff]] as [number, number][]) {
-        g.lineStyle(w, c, 0.95).beginPath().moveTo(pts[0][0], pts[0][1]);
+      for (const [w, c, a] of [[34, 0xffe066, 0.25], [16, 0xffe066, 0.95], [6, 0xffffff, 1]] as [number, number, number][]) {
+        g.lineStyle(w, c, a).beginPath().moveTo(pts[0][0], pts[0][1]);
         for (const [qx, qy] of pts.slice(1)) g.lineTo(qx, qy);
         g.strokePath();
       }
+      // little forks crackling off the bolt
+      for (let f = 1; f < pts.length - 1; f += 2) {
+        const [fx, fy] = pts[f];
+        const a = Math.random() * Math.PI * 2;
+        g.lineStyle(4, 0xfff6b0, 0.9).beginPath().moveTo(fx, fy).lineTo(fx + Math.cos(a) * 40, fy + Math.sin(a) * 40).lineTo(fx + Math.cos(a + 0.6) * 70, fy + Math.sin(a + 0.6) * 70).strokePath();
+      }
+      this.hitFx(x, y, 0xffe066, 0.9);
       hit.push(cur);
       this.hit(cur, dmg);
       this.sparks.setParticleTint(0xffe066);
@@ -1787,12 +1859,18 @@ export class BattleScene extends Phaser.Scene {
       [px, py] = [x, y];
       cur = this.nearestEnemies(x, y + 40, 380, 6).find((e) => !hit.includes(e));
     }
-    this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
+    g.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: g, alpha: 0.3, duration: 50, yoyo: true, repeat: 1 });
+    this.tweens.add({ targets: g, alpha: 0, delay: 200, duration: 200, onComplete: () => g.destroy() });
   }
 
   /** A bubble pops: a splash that hurts everything around it. */
   private popBubble(b: { img: Phaser.GameObjects.Image; dmg: number; r: number }): void {
     this.blast(b.img.x, b.img.y + 30, b.r, b.dmg, null, 0xb8e8ff);
+    const ring = this.add.image(b.img.x, b.img.y, "fx_ring").setTint(0xd8f4ff).setScale(0.3).setDepth(9050);
+    this.tweens.add({ targets: ring, scale: b.r / 50, alpha: 0, duration: 260, onComplete: () => ring.destroy() });
+    this.sparks.setParticleTint(0xb8e8ff);
+    this.sparks.explode(12, b.img.x, b.img.y);
     b.img.destroy();
   }
 
@@ -1820,6 +1898,17 @@ export class BattleScene extends Phaser.Scene {
         this.tweens.add({ targets: h, scale: (r / 75) * 1.1, duration: 250, ease: "Back.out" });
         this.tweens.add({ targets: h, angle: -720, duration: 1000 });
         this.holes.push({ img: h, x: tx, y: ty, r: r * 1.5, until: this.time.now + 950, dmg: dmg * 1.6 });
+        // purple sparks spiralling into it, a whirl spinning round it
+        const swirl = this.add.image(tx, ty - 30, "bx_whirl").setTint(0xb98aff).setScale(0.2).setAlpha(0.8).setDepth(ty - 2).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: swirl, scale: (r / 100) * 1.4, angle: -900, duration: 950, onComplete: () => swirl.destroy() });
+        if (effectsOn()) {
+          const suck = this.add.particles(tx, ty - 30, "spark", {
+            lifespan: 450, scale: { start: 0.6, end: 0 }, tint: [0xb98aff, 0xffffff, 0x6a3aff], blendMode: Phaser.BlendModes.ADD, frequency: 20, quantity: 2,
+            emitZone: { type: "edge", source: new Phaser.Geom.Circle(0, 0, r * 1.4), quantity: 24 } as Phaser.Types.GameObjects.Particles.EmitZoneData,
+            moveToX: 0, moveToY: 0,
+          }).setDepth(ty);
+          this.time.delayedCall(950, () => suck.destroy());
+        }
         sfx.thunder();
       },
     });
@@ -1926,17 +2015,20 @@ export class BattleScene extends Phaser.Scene {
         const d = Math.hypot(dx, dy);
         if (d < 50) {
           b.img.destroy();
+          b.glow?.destroy();
           return false;
         }
         b.img.x += (dx / d) * step * 1.1;
         b.img.y += (dy / d) * step * 1.1;
       }
       b.img.rotation += dt * 16;
+      b.glow?.setPosition(b.img.x, b.img.y);
       this.trailAt(b.img.x, b.img.y, 0xffcf3a);
       if (fighting) for (const e of this.near(b.img.x, b.img.y + 40, 70)) {
         if (b.hit.has(e)) continue;
         b.hit.add(e);
         this.hit(e, b.dmg);
+        this.hitFx(b.img.x, b.img.y, 0xffcf3a, 0.6);
       }
       return true;
     });
@@ -1961,6 +2053,7 @@ export class BattleScene extends Phaser.Scene {
   /** Clear thrown things (the boss is coming). */
   private clearThrown(): void {
     [...this.rangs, ...this.bubbles, ...this.puddles, ...this.holes].forEach((b) => b.img.destroy());
+    this.rangs.forEach((b) => b.glow?.destroy());
     this.rangs = [];
     this.bubbles = [];
     this.puddles = [];
@@ -1975,6 +2068,7 @@ export class BattleScene extends Phaser.Scene {
       b.img.y += b.vy * dt;
       if (b.spin) b.img.rotation += b.spin * dt;
       if (b.trail !== undefined) this.trailAt(b.img.x, b.img.y, b.trail);
+      b.glow?.setPosition(b.img.x, b.img.y);
       b.life -= delta;
       let alive = b.life > 0;
       // look for a monster it touches (around where that monster's feet would be)
@@ -1988,6 +2082,7 @@ export class BattleScene extends Phaser.Scene {
             if (Math.hypot(e.img.x - b.img.x, ey - b.img.y) > e.r + 18) continue;
             b.hit.push(e);
             this.hit(e, b.dmg);
+            if (b.trail !== undefined) this.hitFx(b.img.x, b.img.y, b.trail, 0.55);
             if (b.explode) this.blast(b.img.x, b.img.y, b.explode, b.dmg * b.splash, e, b.burst ? b.img.tintTopLeft : 0);
             if (b.pierce-- <= 0) {
               alive = false;
@@ -1998,7 +2093,10 @@ export class BattleScene extends Phaser.Scene {
       }
       // grenades that reach the end of their flight go off anyway
       if (b.life <= 0 && !b.hit.length && b.burst) this.blast(b.img.x, b.img.y, b.explode, b.dmg, null, b.img.tintTopLeft);
-      if (!alive) b.img.destroy();
+      if (!alive) {
+        b.img.destroy();
+        b.glow?.destroy();
+      }
       return alive;
     });
   }
@@ -2348,6 +2446,14 @@ export class BattleScene extends Phaser.Scene {
     const has = (m: MutationId) => muts.includes(m);
     const scale = (type.boss ? 1.3 : elite ? 1.45 : 1) * (has("giant") ? 1.4 : 1) * size;
     if (type.boss) bossFrames(this, type.tex);
+    // elites climb out of a purple portal
+    if (elite && !type.boss && effectsOn()) {
+      const portal = this.add.image(x, y, "bx_warn").setTint(0xb36aff).setScale(0.2, 0.12).setDepth(5);
+      this.tweens.add({ targets: portal, scaleX: 0.8, scaleY: 0.5, duration: 220, ease: "Back.out" });
+      this.tweens.add({ targets: portal, angle: 180, alpha: 0, delay: 600, duration: 400, onComplete: () => portal.destroy() });
+      this.sparks.setParticleTint(0xb36aff);
+      this.sparks.explode(10, x, y - 40);
+    }
     const img = this.add.image(x, y, type.tex).setOrigin(0.5, type.flying ? 0.5 : 0.94).setDepth(y).setAlpha(0).setScale(0.3);
     this.tweens.add({ targets: img, alpha: 1, scale, duration: 350, ease: "Back.out" });
     // their legs, arms and heads move by walk frames (see moveEnemies); a gentle lean on top
@@ -2468,7 +2574,11 @@ export class BattleScene extends Phaser.Scene {
     const fighting = this.fighting;
     const m = this.stageMode;
     if (m === "air" && fighting) this.airTick(delta);
-    if (m === "air") this.dizzyTick(delta, !!this.air.zone && !this.inAir());
+    if (m === "air") {
+      const outside = !!this.air.zone && !this.inAir();
+      this.dizzyTick(delta, outside);
+      this.fogTick(delta, outside);
+    }
     if (m === "feed") this.beastTick(delta, fighting);
     if (m === "dice" && fighting) this.rainTick(delta);
     battle.goal = this.modeGoal();
@@ -2579,6 +2689,32 @@ export class BattleScene extends Phaser.Scene {
       scale: { start: 0.9, end: 0.2 }, alpha: { start: 0.8, end: 0 }, tint: [0xffffff, 0xaef4ff, 0x7affb0], frequency: 40,
     }).setDepth(5));
     fx.push(this.sign(a.x + 230, a.y + 300, "AIR ZONE", "stay inside!", "#7affb0"));
+    if (effectsOn()) {
+      // a wall of toxic clouds billowing round the outside of the zone
+      const n = Math.ceil(AIR_ZONE / 210);
+      for (let side = 0; side < 4; side++) {
+        for (let i = 0; i <= n; i++) {
+          const k = (i / n) * AIR_ZONE;
+          const [px, py] = side === 0 ? [a.x + k, a.y - 70] : side === 1 ? [a.x + AIR_ZONE + 80, a.y + k] : side === 2 ? [a.x + k, a.y + AIR_ZONE + 60] : [a.x - 80, a.y + k];
+          const cl = this.add.image(px, py, (i + side) % 3 ? "toxic_cloud2" : "toxic_cloud").setDepth(14000).setScale(0.7 + Math.random() * 0.4).setAlpha(0).setFlipX(Math.random() < 0.5);
+          this.tweens.add({ targets: cl, alpha: 0.85, duration: 500, delay: i * 30 });
+          this.tweens.add({ targets: cl, scale: cl.scale * 1.15, angle: { from: -4, to: 4 }, duration: 1300 + Math.random() * 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          fx.push(cl);
+        }
+      }
+      // poison puddles bubbling all over the fog
+      for (let i = 0; i < 18; i++) {
+        const [x, y] = [EDGE + Math.random() * (ARENA - EDGE * 2), EDGE + Math.random() * (ARENA - EDGE * 2)];
+        if (x > a.x - 200 && x < a.x + AIR_ZONE + 200 && y > a.y - 200 && y < a.y + AIR_ZONE + 200) continue;
+        const pud = this.add.image(x, y, "toxic_puddle").setDepth(3).setScale(0).setAlpha(0.9);
+        this.tweens.add({ targets: pud, scale: 1.2 + Math.random(), duration: 600, ease: "Back.out" });
+        const bub = this.add.particles(x, y - 10, "toxic_bubble", {
+          lifespan: 900, speedY: { min: -70, max: -30 }, speedX: { min: -15, max: 15 }, scale: { start: 0.3, end: 1 }, alpha: { start: 0.9, end: 0 },
+          frequency: 500, emitZone: { type: "random", source: new Phaser.Geom.Ellipse(0, 0, 160, 50), quantity: 1 } as Phaser.Types.GameObjects.Particles.EmitZoneData,
+        }).setDepth(4);
+        fx.push(pud, bub);
+      }
+    }
     this.airFx = fx;
   }
 
@@ -2645,31 +2781,69 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Purple poison fog over the whole map except the air zone. */
+  /**
+   * Poison fog over the whole map except the air zone: two layers of swirling purple-green clouds
+   * drifting different ways (cut out round the zone by a mask). Toaster mode: a flat tint.
+   */
   private drawFog(): void {
     const a = this.air;
-    if (!this.fog) {
-      this.fog = this.add.graphics().setDepth(14000);
-      if (effectsOn()) this.fogPuffs = this.add.particles(0, 0, "puff", {
-        lifespan: 3000, speedX: { min: -30, max: 30 }, speedY: { min: -20, max: 10 },
-        scale: { start: 3, end: 6 }, alpha: { start: 0.16, end: 0 }, tint: [0x7a3aa8, 0x5a8a3a, 0x9a4ac8], frequency: 90, emitting: false,
-        emitZone: { type: "random", source: new Phaser.Geom.Rectangle(-800, -1000, 1600, 700), quantity: 1 } as Phaser.Types.GameObjects.Particles.EmitZoneData,
-      }).setDepth(14003);
-      this.fogPuffs?.startFollow(this.hero);
-    }
-    const f = this.fog.clear();
     const z = AIR_ZONE;
+    if (effectsOn()) {
+      if (!this.fogLayers.length) {
+        this.fogMask = this.make.graphics({}, false);
+        const mask = this.fogMask.createGeometryMask();
+        mask.setInvertAlpha(true);
+        for (const [key, alpha, scale, depth] of [["toxic_fog", 0.75, 1.6, 13998], ["toxic_fog2", 0.6, 2.4, 13999]] as [string, number, number, number][]) {
+          const layer = this.add.tileSprite(ARENA / 2, ARENA / 2, ARENA / scale, ARENA / scale, key).setScale(scale).setAlpha(alpha).setDepth(depth);
+          layer.setMask(mask);
+          this.fogLayers.push(layer);
+        }
+        this.fogPuffs = this.add.particles(0, 0, "puff", {
+          lifespan: 3000, speedX: { min: -30, max: 30 }, speedY: { min: -20, max: 10 },
+          scale: { start: 3, end: 6 }, alpha: { start: 0.16, end: 0 }, tint: [0x7a3aa8, 0x5a8a3a, 0x9a4ac8], frequency: 90, emitting: false,
+          emitZone: { type: "random", source: new Phaser.Geom.Rectangle(-800, -1000, 1600, 700), quantity: 1 } as Phaser.Types.GameObjects.Particles.EmitZoneData,
+        }).setDepth(14003);
+        this.fogPuffs.startFollow(this.hero);
+      }
+      // the clear hole the zone cuts in the fog, with soft rounded corners
+      this.fogMask!.clear().fillStyle(0xffffff).fillRoundedRect(a.x, a.y, z, z, 40);
+      return;
+    }
+    if (!this.fog) this.fog = this.add.graphics().setDepth(14000);
+    const f = this.fog.clear();
     f.fillStyle(0x3a1a5a, 0.42);
     f.fillRect(0, 0, ARENA, a.y);
     f.fillRect(0, a.y + z, ARENA, ARENA - a.y - z);
     f.fillRect(0, a.y, a.x, z);
     f.fillRect(a.x + z, a.y, ARENA - a.x - z, z);
-    // a softer edge just outside the wall
-    f.fillStyle(0x3a1a5a, 0.18);
-    f.fillRect(a.x - 80, a.y - 80, z + 160, 80);
-    f.fillRect(a.x - 80, a.y + z, z + 160, 80);
-    f.fillRect(a.x - 80, a.y, 80, z);
-    f.fillRect(a.x + z, a.y, 80, z);
+  }
+
+  /** The fog drifts and swirls; outside the zone you cough green puffs and go a little green. */
+  private fogTick(delta: number, outside: boolean): void {
+    const [l1, l2] = this.fogLayers;
+    if (l1) {
+      l1.tilePositionX += delta * 0.012;
+      l1.tilePositionY += delta * 0.006;
+      l2.tilePositionX -= delta * 0.008;
+      l2.tilePositionY += delta * 0.01;
+      l2.setAlpha(0.5 + Math.sin(this.time.now / 1400) * 0.12);
+    }
+    if (!outside || !this.fighting) {
+      if (this.hero.tintTopLeft === 0xb8ff9a) this.hero.clearTint();
+      return;
+    }
+    const choking = this.air.oxygen < 0.35;
+    if (choking && this.time.now % 400 < 200) this.hero.setTint(0xb8ff9a);
+    else if (this.hero.tintTopLeft === 0xb8ff9a) this.hero.clearTint();
+    this.coughT -= delta;
+    if (this.coughT <= 0) {
+      this.coughT = choking ? 450 : 1100;
+      const [x, y] = [this.hero.x + (this.hero.flipX ? -30 : 30), this.hero.y - 120];
+      for (let k = 0; k < (choking ? 3 : 1); k++) {
+        const p = this.add.image(x, y, "toxic_bubble").setScale(0.5).setDepth(14004);
+        this.tweens.add({ targets: p, x: x + Phaser.Math.Between(-60, 60), y: y - 70 - k * 20, scale: 1.1, alpha: 0, duration: 650, delay: k * 90, onComplete: () => p.destroy() });
+      }
+    }
   }
 
   /** Out of air you get dizzy: the hero sways and staggers, stars spin round their head, the screen wobbles. */
@@ -2747,11 +2921,18 @@ export class BattleScene extends Phaser.Scene {
     const tex = petTexture(this, def.id);
     const img = this.add.image(cx, cy + 40, tex).setOrigin(0.5, 0.9).setDepth(cy + 40);
     img.setScale(420 / img.height);
-    this.tweens.add({ targets: img, scaleY: img.scaleY * 1.05, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.add.image(cx, cy + 70, "cage_base").setOrigin(0.5, 80 / 220).setDepth(cy - 5);
-    // the back bars (darker, a bit higher) so the cage looks 3D around the beast
-    const back = this.add.image(cx, cy - 200, "beast_cage").setTint(0x6a7288).setScale(0.92).setDepth(cy + 30);
-    const cage = this.add.image(cx, cy - 170, "beast_cage").setDepth(cy + 41);
+    // it breathes: belly swells and the whole body rises a little
+    this.tweens.add({ targets: img, scaleY: img.scaleY * 1.05, scaleX: img.scaleX * 0.98, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // a round stone platform with a ring of runes that glow and pulse
+    this.add.image(cx, cy + 70, "cage_base2").setOrigin(330 / 660, 90 / 260).setDepth(cy - 6);
+    const runes = this.add.image(cx, cy + 70, "cage_runes").setOrigin(330 / 660, 90 / 200).setTint(0x6ac8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(cy - 5);
+    this.tweens.add({ targets: runes, alpha: 0.45, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // a glow behind the beast: calm blue, turning red as it starves
+    const aura = this.add.image(cx, cy - 140, "glow").setTint(0x6ac8ff).setScale(4.6, 4.2).setAlpha(0.4).setDepth(cy + 20);
+    this.add.ellipse(cx, cy + 46, 300, 70, 0x000000, 0.3).setDepth(cy + 25);
+    // a round iron birdcage in two halves: the back bars behind the beast, the front bars, dome and lock in front
+    const back = this.add.image(cx, cy + 70, "cage_back").setOrigin(0.5, 520 / 620).setDepth(cy + 30);
+    const cage = this.add.image(cx, cy + 70, "cage_front").setOrigin(0.5, 520 / 620).setDepth(cy + 41);
     cage.once("destroy", () => back.destroy());
     const bar = this.add.graphics().setDepth(cy + 42);
     this.feedSign = this.sign(cx + 470, cy + 260, "FEED ME!", `0/${FEEDS} snacks`, "#ffd29a");
@@ -2761,7 +2942,7 @@ export class BattleScene extends Phaser.Scene {
     tg.fillStyle(0xffffff, 1).fillEllipse(0, 0, 170, 130).fillCircle(-60, 90, 18).fillCircle(-84, 124, 10);
     tg.lineStyle(6, 0x111111, 1).strokeEllipse(0, 0, 170, 130).strokeCircle(-60, 90, 18).strokeCircle(-84, 124, 10);
     this.beastThought = this.add.container(cx + 250, cy - 520, [tg, this.add.image(0, 0, "mode_feed").setScale(0.8)]).setDepth(cy + 600).setVisible(false);
-    this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0 };
+    this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0, back, runes, aura, moodT: 2000, dustT: 0 };
   }
 
   private beastTick(delta: number, fighting: boolean): void {
@@ -2811,8 +2992,11 @@ export class BattleScene extends Phaser.Scene {
     }
     // the hunger bar over the cage; a starving beast rattles the bars
     b.bar.clear();
-    drawBar(b.bar, cx - 200, b.cage.y - 300, 400, 30, b.hunger, b.hunger > 0.35 ? 0xffa040 : 0xf26464);
-    b.cage.x = b.hunger < 0.3 && this.time.now % 300 < 150 ? cx + Phaser.Math.Between(-10, 10) : cx;
+    drawBar(b.bar, cx - 200, b.cage.y - 600, 400, 30, b.hunger, b.hunger > 0.35 ? 0xffa040 : 0xf26464);
+    const rattle = b.hunger < 0.3 && this.time.now % 300 < 150 ? Phaser.Math.Between(-10, 10) : 0;
+    b.cage.x = cx + rattle;
+    b.back.x = cx + rattle * 0.6;
+    this.beastMood(delta);
     const th = this.beastThought;
     if (th) {
       th.setVisible(b.hunger < 0.75);
@@ -2831,6 +3015,37 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** The beast's moods: calm and curious when fed, steaming and red with rage when starving. */
+  private beastMood(delta: number): void {
+    const b = this.beast!;
+    const h = b.hunger;
+    // the glow and the runes go from calm blue to angry red
+    const mood = Phaser.Display.Color.Interpolate.ColorWithColor(
+      Phaser.Display.Color.ValueToColor(0xff3a3a), Phaser.Display.Color.ValueToColor(0x6ac8ff), 100, Math.round(Phaser.Math.Clamp(h * 1.4, 0, 1) * 100));
+    const col = Phaser.Display.Color.GetColor(mood.r, mood.g, mood.b);
+    b.aura.setTint(col).setAlpha(0.3 + (h < 0.35 ? 0.25 + Math.sin(this.time.now / 120) * 0.15 : 0.1));
+    b.runes.setTint(col);
+    // starving: its body flushes red in pulses
+    if (h < 0.35 && this.time.now % 500 < 220) b.img.setTint(0xff9a8a);
+    else b.img.clearTint();
+    b.moodT -= delta;
+    if (b.moodT > 0) return;
+    if (h < 0.35) {
+      // angry steam out of its head, and it grabs the bars
+      b.moodT = 380;
+      for (const s of [-1, 1]) {
+        const p = this.add.image(b.img.x + s * 70, b.img.y - b.img.displayHeight * 0.85, "puff").setTint(0xffd0c8).setScale(0.6).setAlpha(0.8).setDepth(b.img.depth + 2);
+        this.tweens.add({ targets: p, x: p.x + s * 60, y: p.y - 120, scale: 1.6, alpha: 0, duration: 700, onComplete: () => p.destroy() });
+      }
+      if (Math.random() < 0.3) this.tweens.add({ targets: [b.cage, b.back], scaleX: 1.04, scaleY: 0.97, duration: 80, yoyo: true });
+    } else {
+      // calm: it looks around, now and then a happy hop
+      b.moodT = 1800 + Math.random() * 1800;
+      b.img.setFlipX(!b.img.flipX);
+      if (Math.random() < 0.4) this.tweens.add({ targets: b.img, y: b.img.y - 30, duration: 160, yoyo: true, ease: "Quad.out" });
+    }
+  }
+
   private feedBeast(): void {
     const b = this.beast!;
     const food = b.food!;
@@ -2839,6 +3054,8 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: food, x: b.img.x, y: b.img.y - 220, scale: 0.3, duration: 300, onComplete: () => food.destroy() });
     b.hunger = 1;
     b.fed++;
+    b.aura.setTint(0xff7ab8).setAlpha(0.9);
+    this.tweens.add({ targets: b.runes, scale: 1.08, duration: 150, yoyo: true });
     this.tweens.add({ targets: b.img, scaleX: b.img.scaleX * 1.15, duration: 120, yoyo: true, repeat: 2 });
     this.sparks.setParticleTint(0xff7ab8);
     this.sparks.explode(30, b.img.x, b.img.y - 250);
@@ -2866,7 +3083,12 @@ export class BattleScene extends Phaser.Scene {
     this.beastThought?.destroy();
     this.beastThought = null;
     const cage = b.cage;
-    this.tweens.add({ targets: cage, y: cage.y - 900, alpha: 0, angle: 25, duration: 900, ease: "Back.in", onComplete: () => cage.destroy() });
+    // the cage unlocks: the lock pops, both halves lift off into the sky
+    this.sparks.setParticleTint(0xffd23f);
+    this.sparks.explode(30, cage.x, cage.y - 160);
+    this.tweens.add({ targets: [cage, b.back], y: cage.y - 1100, alpha: 0, angle: 25, duration: 1000, ease: "Back.in", onComplete: () => cage.destroy() });
+    this.tweens.add({ targets: b.runes, alpha: 0, duration: 800 });
+    b.aura.setTint(0x7aff8a);
     this.tweens.killTweensOf(b.img);
     this.tweens.add({ targets: b.img, scale: (300 / b.img.height), duration: 500, ease: "Back.out" });
     this.banner("BEST FRIENDS!", "green", 1000);
@@ -2889,12 +3111,22 @@ export class BattleScene extends Phaser.Scene {
       img.x += ((tx - img.x) / d) * step;
       img.y += ((ty - img.y) / d) * step;
       img.setFlipX(tx < img.x).setDepth(img.y);
-    }
+      // a heavy waddle and dust kicking up at its feet
+      img.setAngle(Math.sin(this.time.now / 110) * 7);
+      b.dustT -= delta;
+      if (b.dustT <= 0) {
+        b.dustT = 220;
+        this.puff.setParticleTint(0xd8c8a8);
+        this.puff.explode(3, img.x + Phaser.Math.Between(-60, 60), img.y);
+      }
+    } else img.setAngle(0);
+    b.aura.setPosition(img.x, img.y - img.displayHeight * 0.45).setDepth(img.depth - 1).setScale(3.2, 3).setAlpha(0.35 + Math.sin(this.time.now / 300) * 0.1);
     b.stompT -= delta;
     if (target && d < 330 && b.stompT <= 0) {
       b.stompT = 1200;
       this.tweens.add({ targets: img, y: img.y - 60, duration: 140, yoyo: true, ease: "Quad.out" });
       this.cameras.main.shake(100, 0.004);
+      this.time.delayedCall(140, () => this.impact(img.x, img.y, 300, "dust", 0xffa040));
       this.blast(img.x, img.y - 40, 300, this.heroDamage() * 4, null, 0xffa040);
     }
   }
@@ -2910,13 +3142,22 @@ export class BattleScene extends Phaser.Scene {
     b.food = null;
     b.carried = false;
     const cage = b.cage;
-    this.tweens.add({ targets: cage, alpha: 0, scale: 1.4, duration: 400, onComplete: () => cage.destroy() });
-    // the bars fly off in every direction
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      const piece = this.add.rectangle(cage.x, cage.y, 22, 160, 0x9aa4b8).setStrokeStyle(6, 0x111111).setDepth(cage.y + 500).setAngle(i * 40);
-      this.tweens.add({ targets: piece, x: cage.x + Math.cos(a) * 700, y: cage.y + Math.sin(a) * 450 - 200, angle: piece.angle + 720, alpha: 0, duration: 900, ease: "Quad.out", onComplete: () => piece.destroy() });
+    this.tweens.add({ targets: [cage, b.back], alpha: 0, scale: 1.4, duration: 400, onComplete: () => cage.destroy() });
+    this.tweens.add({ targets: b.aura, alpha: 0, duration: 600, onComplete: () => b.aura.destroy() });
+    b.runes.setTint(0xff3a3a);
+    this.tweens.killTweensOf(b.runes);
+    this.tweens.add({ targets: b.runes, alpha: 0, duration: 1200 });
+    // the bars and the padlock fly off in every direction, spinning
+    const [ox, oy] = [cage.x, cage.y - 220];
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const piece = this.add.image(ox, oy, "cage_bar").setDepth(cage.y + 500).setAngle(i * 26).setScale(1.2);
+      const fly = 600 + Math.random() * 400;
+      this.tweens.add({ targets: piece, x: ox + Math.cos(a) * fly, y: oy + Math.sin(a) * fly * 0.65 - 160, angle: piece.angle + 900, duration: 900, ease: "Quad.out" });
+      this.tweens.add({ targets: piece, y: "+=380", alpha: 0, delay: 900, duration: 500, ease: "Quad.in", onComplete: () => piece.destroy() });
     }
+    this.boom(ox, oy, 2.4);
+    this.impact(cage.x, cage.y - 40, 320, "blast", 0xff3a3a);
     this.puff.setParticleTint(0x9aa4b8);
     this.puff.explode(40, cage.x, cage.y);
     this.cameras.main.shake(500, 0.015);
@@ -2927,6 +3168,21 @@ export class BattleScene extends Phaser.Scene {
     b.img.destroy();
     const e = this.addEnemy({ tex: b.tex, stats: { ...BOSS, hp: BOSS.hp * 0.5, speed: 230, dmg: BOSS.dmg * 1.6, xp: 40, cash: 80 }, fx: 0xffa040 }, x, y, true, false, 1.9);
     e.huntHero = true;
+    // enraged: a red glow round it and steam pouring off
+    const rage = this.add.image(x, y - 120, "glow").setTint(0xff2a2a).setScale(3.4, 3).setAlpha(0.55).setDepth(y - 2);
+    this.tweens.add({ targets: rage, alpha: 0.25, duration: 300, yoyo: true, repeat: -1 });
+    const steam = this.time.addEvent({
+      delay: 260, loop: true, callback: () => {
+        if (!e.img.active || !this.enemies.includes(e)) {
+          rage.destroy();
+          steam.remove();
+          return;
+        }
+        rage.setPosition(e.img.x, e.img.y - 120).setDepth(e.img.depth - 1);
+        const p = this.add.image(e.img.x + Phaser.Math.Between(-50, 50), e.img.y - e.img.displayHeight * 0.8, "puff").setTint(0xffb0a8).setScale(0.5).setAlpha(0.7).setDepth(e.img.depth + 2);
+        this.tweens.add({ targets: p, y: p.y - 120, scale: 1.5, alpha: 0, duration: 650, onComplete: () => p.destroy() });
+      },
+    });
   }
 
   // ── 4. Dice Rain
@@ -4075,6 +4331,12 @@ export class BattleScene extends Phaser.Scene {
     if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 1.4) < r) this.hurt(dmg);
   }
 
+  /** Make a stage boss's walk frames in the background (one frame every few hundred ms). */
+  private prepareBoss(stage: number): void {
+    const key = bossForStage(Math.min(MAX_STAGE, Math.max(1, stage))).tex;
+    for (let i = 0; i < 3; i++) this.time.delayedCall(1200 + i * 600, () => bossFrame(this, key, i));
+  }
+
   /** The boss calls a few monsters of this land around it. */
   private summonMinions(e: Enemy): void {
     const stage = this.rush ? battle.rushBoss : save.stage;
@@ -4680,11 +4942,28 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** An explosion: a cartoon fire burst, a flash, a shock ring and (for the big ones) rolling smoke. */
   private boom(x: number, y: number, scale: number): void {
     sfx.boom();
-    const b = this.add.image(x, y, "boom").setDepth(8990).setScale(scale * 0.3).setAngle(Phaser.Math.Between(0, 360));
-    this.tweens.add({ targets: b, scale, duration: 140, ease: "Quad.out" });
-    this.tweens.add({ targets: b, alpha: 0, delay: 120, duration: 260, onComplete: () => b.destroy() });
+    const k = scale * 0.55;
+    const flash = this.add.image(x, y, "glow").setTint(0xfff0b0).setScale(k * 2.2).setDepth(8989).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: flash, alpha: 0, scale: k * 3, duration: 220, onComplete: () => flash.destroy() });
+    const b = this.add.image(x, y, "bx_blast").setDepth(8990).setScale(k * 0.3).setAngle(Phaser.Math.Between(0, 360));
+    this.tweens.add({ targets: b, scale: k, duration: 130, ease: "Quad.out" });
+    this.tweens.add({ targets: b, alpha: 0, angle: b.angle + 50, scale: k * 1.15, delay: 110, duration: 240, onComplete: () => b.destroy() });
+    const ring = this.add.image(x, y + 10, "bx_shock").setTint(0xffd27a).setScale(k * 0.4, k * 0.25).setDepth(8988);
+    this.tweens.add({ targets: ring, scaleX: k * 1.9, scaleY: k * 1.1, alpha: 0, duration: 340, ease: "Quad.out", onComplete: () => ring.destroy() });
+    if (scale < 1 || !effectsOn()) return;
+    for (let i = 0; i < 3; i++) {
+      const sm = this.add.image(x + Phaser.Math.Between(-40, 40) * k, y, "fx_smoke").setScale(k * 0.5).setAlpha(0.8).setTint(0x8a8a9a).setDepth(8987);
+      this.tweens.add({ targets: sm, y: y - 120 * k - i * 30, x: sm.x + Phaser.Math.Between(-50, 50), scale: k * 1.2, alpha: 0, duration: 700 + i * 120, delay: 80, ease: "Quad.out", onComplete: () => sm.destroy() });
+    }
+  }
+
+  /** A hit flash: a sharp star in the attack's colour, spinning out fast. */
+  private hitFx(x: number, y: number, color: number, size = 0.5): void {
+    const st = this.add.image(x, y, "fx_star").setTint(color).setScale(size * 0.3).setAngle(Phaser.Math.Between(0, 90)).setDepth(9050).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: st, scale: size, angle: st.angle + 45, alpha: 0, duration: 200, ease: "Quad.out", onComplete: () => st.destroy() });
   }
 
   private hit(e: Enemy, dmg: number, quiet = false): void {
@@ -4702,7 +4981,10 @@ export class BattleScene extends Phaser.Scene {
       sfx.hit();
       this.sparks.setParticleTint(0xffffff);
       this.sparks.explode(3, e.img.x, hy + 30);
+      this.hitFx(e.img.x + Phaser.Math.Between(-14, 14), hy + 40, crit ? 0xffd23f : 0xffffff, crit ? 0.8 : 0.45);
       if (crit) {
+        const sl = this.add.image(e.img.x, hy + 40, "fx_slash").setTint(0xfff0a0).setScale(0.4).setAngle(Phaser.Math.Between(-40, 40)).setDepth(9051).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: sl, scale: 1, alpha: 0, angle: sl.angle + 60, duration: 220, ease: "Quad.out", onComplete: () => sl.destroy() });
         this.boom(e.img.x, hy + 30, 0.55);
         this.comicBurst(e.img.x, hy - 40, true);
       }
@@ -4793,7 +5075,23 @@ export class BattleScene extends Phaser.Scene {
       if (e.type.boss || e.elite || Math.random() < 0.08) this.comicBurst(e.img.x, cy - 60, e.type.boss || !!e.elite);
     }
     this.tweens.killTweensOf(e.img);
-    this.tweens.add({ targets: e.img, scale: e.type.boss ? 1.6 : 0, alpha: 0, angle: 30, duration: e.type.boss ? 500 : 160, onComplete: () => e.img.destroy() });
+    if (e.type.boss || sweep) {
+      this.tweens.add({ targets: e.img, scale: e.type.boss ? 1.6 : 0, alpha: 0, angle: 30, duration: e.type.boss ? 500 : 160, onComplete: () => e.img.destroy() });
+    } else {
+      // it flashes white, stretches up, then pops into a ring of chunks in its colour
+      e.img.setTintFill(0xffffff);
+      const [sx, sy] = [e.img.scaleX, e.img.scaleY];
+      this.tweens.add({
+        targets: e.img, scaleX: sx * 0.7, scaleY: sy * 1.35, y: e.img.y - 18, duration: 90, ease: "Quad.out",
+        onComplete: () => {
+          this.tweens.add({ targets: e.img, scaleX: sx * 1.6, scaleY: 0, alpha: 0, duration: 110, onComplete: () => e.img.destroy() });
+          const pop = this.add.image(e.img.x, cy, "fx_ring").setTint(e.type.fx).setScale(0.2).setDepth(9040);
+          this.tweens.add({ targets: pop, scale: e.elite ? 1.3 : 0.8, alpha: 0, duration: 260, ease: "Quad.out", onComplete: () => pop.destroy() });
+          this.sparks.setParticleTint(e.type.fx);
+          this.sparks.explode(e.elite ? 14 : 7, e.img.x, cy);
+        },
+      });
+    }
     if (sweep) return;
     // Chain Reaction: the monster bursts (bursts can set off more bursts)
     const chain = this.lv("chain");

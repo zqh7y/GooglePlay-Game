@@ -243,6 +243,18 @@ hour of fishing brings.
   glowing zones that fill up with arrows pointing in, lanes with arrows, and cones; hits land as lightning
   bolts, goo splats, cartoon explosions, ice crystals, or rock and root spikes bursting out of the ground,
   and beams fire with a white-hot core. Charges leave afterimages, breath pours real fire (or frost).
+- **Battle models**: monsters and all 20 bosses are painted with soft "pro" shading: a gradient body, key
+  light, shadow side, bounce light from the ground, a rim light, a little texture and glossy highlights.
+  The bosses were redrawn in much more detail (crowns, horns, fangs, glowing eyes, fur, cracks, auras).
+  **They move while they walk**: every monster and boss has 3 walk frames, so legs step, arms (or wings)
+  swing, heads bob and tilt, tails and tendrils sway and slimes squash. A boss's frames are made in the
+  background a moment after the stage starts (and the next boss's during a Boss Rush) so it lands
+  without a hitch. Elites step out of a purple portal; flyers bob up and down.
+- **Hits and attacks**: hits flash a star (crits a slash), killed monsters stretch and pop in a ring of
+  sparks, explosions have a flash, fireball, shock ring and smoke, gadget shots glow and fire with a
+  muzzle ring, lightning has a glowing core with forks, bubbles pop into droplets, glue lands with a
+  splat, black holes swirl and suck in particles. Skills show too: Spooky Aura is a purple ghost ring,
+  Zoomies kicks up dust and speed lines, Ghost Phase sends out a shockwave and ghost wisps.
 - **Dice Rain event** (the first 14 days): its card in the lobby opens the event screen: dice raining
   behind the title, the time left, your **Rain Drops** and a track of **15 prizes** (dice up to S, gems,
   potions, lucky rolls, a Golden Ticket, and two exclusive pets: **Drizzle Kitty** at 380 and **Rain
@@ -284,10 +296,14 @@ hour of fishing brings.
   Free roam has no crystal: a wooden signboard stands in the middle showing the next stage and its mode,
   and the crystal only drops out of the sky when a Crystal stage starts. Every mode has its own signs and
   effects: the Air Zone is a glowing wall of light with light pillars on its corners and bubbles inside,
-  while the rest of the map is under purple poison fog. Outside it you get dizzy: the hero sways and
-  staggers, stars spin round their head, the screen wobbles and darkens. The beast's cage stands on a
-  stone platform with front and back bars, snacks float with a beam of light, hearts pop when you feed
-  it and the bars fly off if it breaks out. Giant dice are 3D cubes that grow as they fall, squash on
+  while the rest of the map is under thick drifting poison fog (two layers), ringed by toxic clouds (some
+  with skulls) and dotted with bubbling poison puddles. Outside it you get dizzy: the hero sways and
+  staggers, turns green, coughs up toxic bubbles, stars spin round their head, the screen wobbles and
+  darkens. The beast sits in a domed iron jail (bars, rivets, chains and a gold padlock) on a mossy stone
+  drum with a glowing rune ring. Its mood shows: calm it looks around and hops; hungry the runes and aura
+  turn orange; starving they go red, it steams and rattles the bars. Snacks float with a beam of light,
+  hearts pop when you feed it (the runes flash), when freed the jail flies apart and it waddles after you
+  stomping dust, and if it breaks out the bars burst off in a blast. Giant dice are 3D cubes that grow as they fall, squash on
   landing with a shockwave and leave cracks. The boss kids come out of portals and the big boss glows red.
 - **The boss**: at 5:00 every monster runs off, a WARNING flashes, a storm rolls in and the clouds shine a
   beam of light down on the crystal, which melts into sparkles and disappears. The last 5 seconds before
@@ -560,7 +576,10 @@ hour of fishing brings.
 | `src/systems/power.ts` | Damage per second of the hero and team (lobby and My Hero) |
 | `src/ui/mapScreen.ts` | The 100-stage journey map: lands, road, boss portraits, fog, clouds |
 | `src/data/bosses.ts` | The 20 bosses, their three moves and SPECIAL, which stages they guard, and the Boss Rush numbers |
-| `src/art/bosses.ts` | The 15 newer boss pictures (the other 5 are with the monsters) |
+| `src/art/bosses.ts` | Boss textures and their walk frames (made in the background before a boss shows up) |
+| `src/art/bossart.ts` | All 20 boss pictures, with moving legs, arms, heads and tails |
+| `src/art/toon.ts`, `src/art/pose.ts` | The cartoon painter (outlines, pro shading) and the walk poses for heads, arms and legs |
+| `src/art/beast.ts` | The beast's jail and stone base, rune ring, poison fog, toxic clouds, puddles and bubbles |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |
 | `src/art/characters.ts` | The Box Ghost hero, monsters and effects |

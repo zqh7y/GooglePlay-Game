@@ -567,6 +567,59 @@ function icicle(c: Ctx): void {
   }, 4);
 }
 
+// ───────────────────────── hits and attacks ─────────────────────────
+
+/** A sharp white 4-point hit star with a soft glow (tinted per attack). */
+function hitStar(c: Ctx): void {
+  c.translate(64, 64);
+  c.fillStyle = radial(c, 0, 0, 60, [[0, "rgba(255,255,255,0.9)"], [0.35, "rgba(255,255,255,0.35)"], [1, "rgba(255,255,255,0)"]]);
+  c.beginPath();
+  c.arc(0, 0, 60, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const r = i % 2 ? 9 : i % 4 === 0 ? 58 : 34;
+    c.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  c.closePath();
+  c.fill();
+}
+
+/** A crescent slash (white, tinted). */
+function slash(c: Ctx): void {
+  c.translate(80, 80);
+  c.beginPath();
+  c.arc(0, 0, 70, -2.4, 0.6);
+  c.arc(-10, 12, 56, 0.6, -2.4, true);
+  c.closePath();
+  c.fillStyle = linear(c, -70, -40, 60, 40, [[0, "rgba(255,255,255,0)"], [0.6, "rgba(255,255,255,0.9)"], [1, "#ffffff"]]);
+  c.fill();
+}
+
+/** A thin bright ring (white, tinted) for muzzle flashes and pops. */
+function thinRing(c: Ctx): void {
+  c.translate(64, 64);
+  for (const [w, a] of [[14, 0.25], [6, 0.9]] as [number, number][]) {
+    c.beginPath();
+    c.arc(0, 0, 54, 0, Math.PI * 2);
+    c.lineWidth = w;
+    c.strokeStyle = `rgba(255,255,255,${a})`;
+    c.stroke();
+  }
+}
+
+/** A soft round smoke puff with a shaded bottom. */
+function smoke(c: Ctx): void {
+  for (const [x, y, r] of [[48, 56, 30], [76, 50, 34], [100, 60, 26], [70, 72, 30]] as [number, number, number][]) {
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fillStyle = radial(c, x - r * 0.3, y - r * 0.4, r * 1.3, [[0, "rgba(255,255,255,0.95)"], [0.7, "rgba(200,200,210,0.85)"], [1, "rgba(150,150,170,0)"]]);
+    c.fill();
+  }
+}
+
 export function makeBossFxTextures(scene: Phaser.Scene): void {
   const art: [string, number, number, (c: Ctx) => void][] = [
     ["bx_warn", 256, 256, warnDisc],
@@ -598,6 +651,10 @@ export function makeBossFxTextures(scene: Phaser.Scene): void {
     ["bp_snow", 112, 112, snowball],
     ["bp_sand", 72, 72, sand],
     ["bp_icicle", 50, 150, icicle],
+    ["fx_star", 128, 128, hitStar],
+    ["fx_slash", 160, 160, slash],
+    ["fx_ring", 128, 128, thinRing],
+    ["fx_smoke", 140, 110, smoke],
   ];
   for (const [key, w, h, draw] of art) canvasTexture(scene, key, w, h, draw);
   void outline;
