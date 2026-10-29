@@ -1,3 +1,4 @@
+import { TapRush } from "./tapRush";
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
 import { INK_N, lighten, rgba } from "../art/draw";
@@ -195,6 +196,7 @@ export class FishScreen extends Screen {
   private refreshT = 0;
   private lastLuck = -1;
   private lastDeep = -1;
+  private tap!: TapRush;
 
   constructor(scene: Phaser.Scene, host: Host) {
     super(scene, host, null);
@@ -238,7 +240,10 @@ export class FishScreen extends Screen {
     scene.tweens.add({ targets: this.upBadge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.root.add([shellPill, this.upBtn, this.upBadge]);
     scene.game.events.on("fish-caught", this.onCatch, this);
+    // TAP RUSH: circles to tap all over the pond
+    this.tap = new TapRush(scene, this.root, { x: 10, y: top + 70, w: W - 20, h: pondBottom - top - 130 }, W * 0.7, pondBottom - 250);
   }
+
 
   // ───────────────────────── the event ─────────────────────────
 
@@ -1065,6 +1070,7 @@ export class FishScreen extends Screen {
     this.reveal?.destroy();
     this.reveal = null;
     this.queue = [];
+    this.tap.stop();
   }
 
   update(time: number): void {
@@ -1091,6 +1097,7 @@ export class FishScreen extends Screen {
     drawBar(this.bar, 120, this.pondTop + this.pondH + 14 + 24, 900, 40, Phaser.Math.Clamp(f, 0, 1), left < 1000 ? 0xffe066 : 0x5ac8ff);
     this.barText.setText(left < 900 ? "Something's biting...!" : `Next catch in ${Math.ceil(left / 1000)}s`);
     this.animateTiles(time);
+    this.tap.update(time, !!this.reveal);
     // the camera sways a little: far things move less than near ones
     const sway = Math.sin(time / 2600) * 10;
     this.far.x = -sway * 0.5;

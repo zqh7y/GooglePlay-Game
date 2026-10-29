@@ -192,7 +192,7 @@ export const sfx = {
 // ───────────────────────── music ─────────────────────────
 
 /**
- * Little chiptune loops played by a look-ahead sequencer: calm for the menus, upbeat for
+ * Little chiptune loops played by a look-ahead sequencer: a happy tune for the lobby and menus, upbeat for
  * the fight and a faster, darker one for the boss. 16 steps per bar, 4 bars per loop.
  */
 export type Track = "calm" | "battle" | "boss" | "story";
@@ -211,13 +211,44 @@ interface Song {
   arpType: OscillatorType;
   /** melody, one note per 8th (0 = rest), played every other loop */
   lead?: number[];
+  /** or: several melodies (one note per 8th), played by loop as `leadOrder` says (-1 = no melody that loop) */
+  leads?: number[][];
+  leadOrder?: number[];
+  /** steps where the bass jumps to the fifth instead of the root */
+  bassFifth?: number[];
+  /** a held chord pad at the start of each bar */
+  pad?: boolean;
+  /** glockenspiel sparkles: [step, chord note index] per bar */
+  bells?: [number, number][];
 }
 
 const AM_F_C_G: Song["chords"] = [[45, 57, 60, 64], [41, 57, 60, 65], [36, 55, 60, 64], [43, 55, 59, 62]];
 
 const SONGS: Record<Track, Song> = {
   calm: {
-    bpm: 92, chords: AM_F_C_G, kick: [], snare: [], hat: 0, bass: [0, 8], bassType: "triangle", arp: 2, arpType: "triangle",
+    // the lobby: a sunny, bouncy tune in C major (C G Am F) with a sing-along melody, a light beat,
+    // a hopping bass, a warm pad and glockenspiel sparkles, so the village feels friendly and alive
+    bpm: 116,
+    chords: [[48, 60, 64, 67], [43, 59, 62, 67], [45, 60, 64, 69], [41, 60, 65, 69]],
+    kick: [0, 8, 10], snare: [4, 12], hat: 0.01,
+    bass: [0, 3, 6, 8, 11, 14], bassFifth: [6, 14], bassType: "triangle",
+    arp: 2, arpType: "triangle", pad: true,
+    bells: [[2, 2], [7, 1], [10, 2], [15, 0]],
+    leads: [
+      [
+        72, 0, 76, 79, 81, 79, 76, 0,
+        74, 0, 79, 0, 77, 76, 74, 71,
+        72, 0, 76, 0, 81, 0, 79, 76,
+        77, 76, 74, 72, 74, 0, 0, 0,
+      ],
+      [
+        79, 0, 79, 81, 79, 76, 72, 0,
+        74, 76, 77, 0, 79, 0, 74, 0,
+        76, 0, 72, 76, 81, 79, 76, 72,
+        74, 0, 72, 0, 72, 0, 0, 0,
+      ],
+    ],
+    leadOrder: [-1, 0, 1, 0, 1, 0, -1, 1],
   },
   battle: {
     bpm: 128, chords: AM_F_C_G, kick: [0, 4, 8, 12], snare: [4, 12], hat: 0.018, bass: [0, 2, 4, 6, 8, 10, 12, 14], bassType: "square",
@@ -319,7 +350,12 @@ function playStep(song: Song, s: number, t: number, stepDur: number): void {
   if (song.kick.includes(st)) drum(t, "kick", 0.22);
   if (song.snare.includes(st)) drum(t, "snare", 0.09);
   if (song.hat && st % 2 === 1) drum(t, "hat", song.hat * 3);
-  if (song.bass.includes(st)) note(midi(root + (st % 8 === 4 && song.bass.length > 4 ? 12 : 0)), t, stepDur * 1.7, song.bassType, song.bassType === "triangle" ? 0.12 : 0.045);
+  if (song.bass.includes(st)) {
+    const up = song.bassFifth ? (song.bassFifth.includes(st) ? 7 : 0) : st % 8 === 4 && song.bass.length > 4 ? 12 : 0;
+    note(midi(root + up), t, stepDur * 1.7, song.bassType, song.bassType === "triangle" ? 0.12 : 0.045);
+  }
+  if (song.pad && st === 0) for (const n of chord) note(midi(n - 12), t, stepDur * 15, "sine", 0.018);
+  if (song.bells) for (const [bs, ci] of song.bells) if (bs === st) note(midi(chord[ci] + 12), t, stepDur * 4, "sine", 0.03);
   if (song.arp && st % song.arp === 0) {
     const n = chord[(st / song.arp) % chord.length] + (song.arp === 1 && st % 8 >= 4 ? 12 : 0);
     note(midi(n), t, stepDur * (song.arp === 1 ? 0.9 : 3), song.arpType, song.arp === 1 ? 0.022 : 0.04);
@@ -327,6 +363,15 @@ function playStep(song: Song, s: number, t: number, stepDur: number): void {
   if (song.lead && loop % 2 === 1 && st % 2 === 0) {
     const n = song.lead[bar * 8 + st / 2];
     if (n) note(midi(n), t, stepDur * 1.8, "square", 0.03);
+  }
+  if (song.leads && st % 2 === 0) {
+    const which = song.leadOrder ? song.leadOrder[loop % song.leadOrder.length] : loop % song.leads.length;
+    const n = which >= 0 ? song.leads[which][bar * 8 + st / 2] : 0;
+    if (n) {
+      // a soft square lead doubled by a rounder triangle an octave down: cute and singable
+      note(midi(n), t, stepDur * 1.8, "square", 0.022);
+      note(midi(n - 12), t, stepDur * 1.8, "triangle", 0.05);
+    }
   }
 }
 

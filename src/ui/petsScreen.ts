@@ -83,6 +83,9 @@ function stageTexture(scene: Phaser.Scene, w: number, h: number): string {
 export class PetsScreen extends Screen {
   private tab: "pets" | "index" = "pets";
   private sort: Sort = "power";
+  private bestBtn: Phaser.GameObjects.Container | null = null;
+  /** times the team was changed (the tutorial waits for one) */
+  teamChanges = 0;
   private content: Phaser.GameObjects.Container;
   private list: Phaser.GameObjects.Container | null = null;
   private listTop = 0;
@@ -245,7 +248,8 @@ export class PetsScreen extends Screen {
     if (this.power.shown < 0) this.power.shown = target;
     this.countPower(target);
 
-    c.add(button(s, 160, y0 + 66, 250, 90, "blue", "BEST TEAM", () => this.equipBest(), { icon: "icon_star", iconSize: 40, size: 26 }));
+    this.bestBtn = button(s, 160, y0 + 66, 250, 90, "blue", "BEST TEAM", () => this.equipBest(), { icon: "icon_star", iconSize: 40, size: 26 });
+    c.add(this.bestBtn);
     const ready = readyCount();
     c.add(button(s, W - 160, y0 + 66, 250, 90, ready ? "green" : "grey", "LEVEL ALL", () => this.levelAll(), { icon: "icon_fuse", iconSize: 40, size: 26 }));
     if (ready) {
@@ -355,7 +359,16 @@ export class PetsScreen extends Screen {
     this.build();
   }
 
+  /** Where BEST TEAM is on screen (for the tutorial). */
+  bestTeamSpot(): [number, number] | null {
+    const b = this.bestBtn;
+    if (!b || !b.active) return null;
+    const r = b.getBounds();
+    return [r.centerX, r.centerY];
+  }
+
   private equipBest(): void {
+    this.teamChanges++;
     save.equipped = Object.keys(save.pets).sort((a, b) => petScore(b) - petScore(a)).slice(0, petSlots());
     sfx.buy();
     buzz(30);
@@ -472,6 +485,7 @@ export class PetsScreen extends Screen {
           save.equipped = save.equipped.filter((k) => k !== weakest);
         }
         toggleEquip(id, petSlots());
+        this.teamChanges++;
         sfx.buy();
         m.close();
         this.changed();

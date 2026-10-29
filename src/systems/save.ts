@@ -99,6 +99,8 @@ export interface SaveData {
   playtime: { day: number; secs: number; claimed: number[] };
   /** the first-time guide: which step you are on (-1 = done or skipped) */
   tutorial: number;
+  /** the short guide (start, roll, team, Boss Rush) replaced the long one: everyone sees it once */
+  guide2: boolean;
   /** the story intro was shown */
   introSeen: boolean;
   /** save.tree counts steps (older saves stored 1 per bought hexagon) */
@@ -120,6 +122,8 @@ export interface FishingState {
   caught: Record<string, number>;
   /** the fishing event: which round, catches in this round, rewards of this round claimed */
   event: { round: number; points: number; claimed: number };
+  /** TAP RUSH: the longest streak of tapped circles */
+  bestStreak?: number;
 }
 
 /** The Event Shop: what you bought in this rotation of offers and this week's special. */
@@ -194,6 +198,7 @@ function fresh(): SaveData {
     playtime: { day: -1, secs: 0, claimed: [] },
     online: { name: "", named: false },
     tutorial: 0,
+    guide2: true,
     introSeen: false,
     treeSteps: true,
   };
@@ -226,6 +231,10 @@ function load(): SaveData {
       const raw = JSON.parse(raw0) as Partial<SaveData>;
       const veteran = data.bestStage > 1 || data.totalRolls > 0;
       if (raw.tutorial === undefined) data.tutorial = veteran ? -1 : 0;
+      if (!raw.guide2) {
+        data.tutorial = 0;
+        data.guide2 = true;
+      }
       if (raw.introSeen === undefined) data.introSeen = veteran;
       // hexagons bought before they had steps are complete
       if (!raw.treeSteps) {

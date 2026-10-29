@@ -12,17 +12,17 @@ export interface TutorialHost {
   scene: Phaser.Scene;
   tab(): Tab;
   modalOpen(): boolean;
-  pickerOpen(): boolean;
   mapOpen(): boolean;
   /** screen positions of things to point at (null when not on screen) */
   battleButton(): [number, number] | null;
   startButton(): [number, number] | null;
   rollButton(): [number, number] | null;
   tabSpot(tab: Tab): [number, number];
-  /** the fishing event's card in the lobby */
-  eventSpot(): [number, number] | null;
-  /** in a fight: the nearest bones / meat, the crystal, the nearest open seal */
-  spot(kind: "food" | "crystal" | "seal"): [number, number] | null;
+  /** the BOSS RUSH card in the lobby, and BEST TEAM on the Pets screen */
+  rushButton(): [number, number] | null;
+  bestTeamButton(): [number, number] | null;
+  /** times the team was changed (equip, unequip, best team) */
+  teamChanges(): number;
 }
 
 interface Step {
@@ -43,10 +43,11 @@ interface Step {
 }
 
 /**
- * The first-time guide: the little box ghost explains the game step by step with a speech bubble,
- * a pointing hand and a ring around what to tap. Each step waits for the right moment (no popup
- * open, the right screen) and moves on when you have done it. SKIP ends it; players with an older
- * save never see it. Progress is kept in `save.tutorial` (-1 = done).
+ * The first-time guide, kept short: where to start a fight, rolling for pets, putting them in your
+ * team, and the Boss Rush for when you are too strong for your stage. The little box ghost talks in
+ * a speech bubble, with a pointing hand and a ring around what to tap. Each step waits for the
+ * right moment (no popup open, the right screen) and moves on when you have done it. SKIP ends it.
+ * Progress is kept in `save.tutorial` (-1 = done).
  */
 export class Tutorial {
   private root: Phaser.GameObjects.Container;
@@ -57,103 +58,63 @@ export class Tutorial {
   private shownText = "";
   private visibleMs = 0;
   private seen = false;
-  private moved = 0;
   private rollsAtStart = 0;
+  private teamAtStart = -1;
   private steps: Step[];
 
   constructor(private host: TutorialHost) {
     const s = host.scene;
     makeTutorialTextures(s);
+    this.rollsAtStart = save.totalRolls;
     this.ring = s.add.circle(0, 0, 70).setStrokeStyle(10, 0xffe066, 1).setVisible(false);
     s.tweens.add({ targets: this.ring, scale: { from: 0.8, to: 1.25 }, alpha: { from: 1, to: 0.2 }, duration: 800, repeat: -1 });
     this.hand = s.add.image(0, 0, "tut_hand").setOrigin(0.2, 0.25).setVisible(false);
     this.bubble = s.add.container(0, 0);
     this.root = s.add.container(0, 0, [this.ring, this.bubble, this.hand]).setDepth(6800).setVisible(false);
-    const lobby = () => battle.mode === "lobby" && host.tab() === "battle" && !host.mapOpen();
-    const fight = () => battle.mode === "run" && !battle.bossFight;
-    // fight steps are passed over once the fight is over (it ended early)
-    const over = () => battle.mode !== "run";
+    const lobby = () => battle.mode === "lobby" && host.tab() === "battle" && !host.mapOpen() && !host.modalOpen();
+    const calm = () => battle.mode === "lobby" && !host.modalOpen() && !host.mapOpen();
     const tabStep = (tab: Tab, str: string): Step => ({
-      when: () => battle.mode === "lobby" && host.tab() !== tab && !host.modalOpen() && !host.mapOpen(),
+      when: () => calm() && host.tab() !== tab,
       text: () => str,
       target: () => host.tabSpot(tab),
       done: () => host.tab() === tab,
     });
-    const onTab = (tab: Tab, str: string): Step => ({ when: () => host.tab() === tab && !host.modalOpen(), text: () => str, ok: true });
+    // a short guide: start a fight, roll for pets, put them in your team, and the Boss Rush
     this.steps = [
       {
-        when: () => lobby() && !host.modalOpen(),
-        text: () => "Hi! I'm a little ghost who lives in a box. Monsters stole the light of the crystals... let's get it back together!",
-        ok: true,
-      },
-      {
-        when: lobby,
+        when: () => battle.mode === "lobby" && host.tab() === "battle" && !host.mapOpen(),
         text: () => (host.modalOpen() ? "Tap START!" : "Tap BATTLE to start your first fight!"),
         target: () => (host.modalOpen() ? host.startButton() : host.battleButton()),
         done: () => battle.mode === "run",
       },
-      {
-        when: () => fight() && !host.pickerOpen(),
-        text: () => "Drag anywhere to walk. Your gadgets shoot all by themselves!",
-        swipe: true,
-        done: () => this.moved > 1500,
-        timeout: 9000,
-        skip: over,
-      },
-      {
-        when: () => fight() && !host.pickerOpen(),
-        text: () => "Monsters drop bones and meat. Walk over them to level up!",
-        target: () => host.spot("food"),
-        done: () => battle.level >= 2,
-        skip: over,
-      },
-      {
-        when: () => host.pickerOpen() && battle.mode === "run",
-        text: () => "LEVEL UP! Every level, pick a new gadget or make one stronger.",
-        done: () => !host.pickerOpen(),
-        skip: over,
-      },
-      {
-        when: () => fight() && !battle.shielded && battle.time > 40000 && !host.pickerOpen(),
-        text: () => "The crystal's shield is down! Monsters will bite it now. Stay close and protect it!",
-        target: () => host.spot("crystal"),
-        timeout: 7000,
-        skip: over,
-      },
-      {
-        when: () => battle.mode === "run" && battle.bossFight && battle.sealsTotal > 0 && battle.bossFrac >= 0 && !host.pickerOpen(),
-        text: () => "The BOSS heals itself! Stand on a glowing seal for 3 seconds to stop it.",
-        target: () => host.spot("seal"),
-        timeout: 9000,
-        skip: over,
-      },
-      { ...tabStep("roll", "You found dice in the fight! Open Roll to roll for pets."), skip: () => save.totalRolls > 0 },
+      tabStep("roll", "Nice fight! Your dice give you PETS. Open ROLL!"),
       {
         when: () => host.tab() === "roll" && !host.modalOpen(),
-        text: () => "Tap ROLL! Every roll uses one die. Rarer dice bring rarer pets.",
+        text: () => "Tap ROLL! Each roll uses 1 die. Rarer dice = rarer pets!",
         target: () => host.rollButton(),
         done: () => save.totalRolls > this.rollsAtStart,
       },
-      tabStep("pets", "Your pets fight next to you! Open Pets to see them."),
-      onTab("pets", "Tap a pet to see its power and equip it. Extra copies level it up!"),
-      tabStep("upgrades", "Money from fights buys upgrades: luck, damage, more pets..."),
-      onTab("upgrades", "The glowing hexagons are the ones you can buy right now."),
+      tabStep("pets", "You got a pet! Open PETS to put it in your team."),
       {
-        when: () => lobby() && !host.modalOpen(),
-        text: () => "One more thing: the FISHING EVENT! Your hero fishes all the time, even while you're away.",
-        target: () => host.eventSpot(),
-        done: () => host.tab() === "fish",
+        when: () => host.tab() === "pets" && !host.modalOpen(),
+        text: () => "Tap BEST TEAM to equip your strongest pets. They fight next to you!",
+        target: () => host.bestTeamButton(),
+        done: () => host.teamChanges() > this.teamAtStart,
+        timeout: 20000,
       },
-      onTab("fish", "Every catch fills the EVENT bar. Claim its rewards: dice, gems, potions and more!"),
+      tabStep("battle", "Back to BATTLE!"),
       {
-        when: () => !host.modalOpen(),
-        text: () => "That's everything! Clear stages, roll rare pets and reach STAGE 100. Good luck!",
+        when: lobby,
+        text: () => "Too strong for your stage? Tap BOSS RUSH: beat bosses fast and clear stages in a row!",
+        target: () => host.rushButton(),
         ok: true,
+        done: () => battle.mode === "run",
       },
     ];
   }
 
   get active(): boolean {
+    if (this.teamAtStart < 0) this.teamAtStart = this.host.teamChanges();
     return save.tutorial >= 0 && save.tutorial < this.steps.length;
   }
 
@@ -165,6 +126,7 @@ export class Tutorial {
     this.seen = false;
     this.visibleMs = 0;
     this.rollsAtStart = save.totalRolls;
+    this.teamAtStart = this.host.teamChanges();
   }
 
   private end(): void {
@@ -183,7 +145,6 @@ export class Tutorial {
       this.next();
       return;
     }
-    if (battle.mode === "run" && battle.hp > 0) this.moved += this.host.scene.input.activePointer.isDown ? delta : 0;
     if (this.seen && step.done?.()) {
       sfx.lucky();
       this.next();

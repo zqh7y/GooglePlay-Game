@@ -39,6 +39,7 @@ import {
 import { heroMaxHp, teamDps } from "../systems/power";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
+import { GoalPins } from "../ui/goalPins";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
 import { GIFT_EVERY, RollScreen, SUPER_MULT, superEvery } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
@@ -134,6 +135,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private mini!: Phaser.GameObjects.Image;
   private petals!: Phaser.GameObjects.Particles.ParticleEmitter;
   private overlayTimer = 0;
+  private goalPins!: GoalPins;
   private shieldText!: Phaser.GameObjects.Text;
   /** the gadget panel: one slot per gadget you carry */
   private gunPanel!: Phaser.GameObjects.Container;
@@ -188,6 +190,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private openModal: Modal | null = null;
   private tutorial!: Tutorial;
   private goBtn!: Phaser.GameObjects.Container;
+  private rushBtn!: Phaser.GameObjects.Container;
   /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
   private rushHint!: Phaser.GameObjects.Container;
   private battleSub!: Phaser.GameObjects.Text;
@@ -269,17 +272,17 @@ export class UIScene extends Phaser.Scene implements Host {
       scene: this,
       tab: () => this.tab,
       modalOpen: () => !!this.openModal,
-      pickerOpen: () => !!this.picker,
       mapOpen: () => this.mapOpen,
       battleButton: () => (this.lobby.visible ? spotOf(this.goBtn) : null),
       startButton: () => spotOf(this.startBtn),
       rollButton: () => this.rollScreen.rollButtonSpot(),
-      eventSpot: () => this.eventSpot(),
       tabSpot: (tab) => {
         const p = this.tabPos(tab);
         return [p.x, p.y];
       },
-      spot: (kind) => this.battleScene.spot(kind),
+      rushButton: () => (this.lobby.visible ? spotOf(this.rushBtn) : null),
+      bestTeamButton: () => (this.screens.pets as PetsScreen).bestTeamSpot(),
+      teamChanges: () => (this.screens.pets as PetsScreen).teamChanges,
     });
     if (!this.offlineEarnings() && dailyDay() >= 0) this.time.delayedCall(900, () => this.showDaily());
     // the loading screen waits for this
@@ -410,8 +413,9 @@ export class UIScene extends Phaser.Scene implements Host {
           const [mx, my] = this.miniSpot();
           b.drawOverlay(this.overlay, mx, my, 180, this.L.hudBottom + 30, this.H - 140);
         }
-      }
-    }
+        this.goalPins.update(b.goals(), this.L.hudBottom + 30, this.H - 140, time);
+      } else this.goalPins.hide();
+    } else this.goalPins.hide();
     this.fishing();
     tickPlaytime(delta);
     this.rollScreen.setReadyAt(this.rollReadyAt);
@@ -643,7 +647,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: fire, angle: 360, duration: 4000, repeat: -1 });
     this.rushFace = this.add.image(0, -22, "e_golem");
     this.rushNum = text(this, 0, 76, "", 24, "#ffd0d0", { stroke: 6 });
-    const rush = cardButton(this, W - 196, bottom - 172, 340, 210, 0xb01e3a, [
+    const rush = this.rushBtn = cardButton(this, W - 196, bottom - 172, 340, 210, 0xb01e3a, [
       fire, this.add.circle(0, -22, 56, 0x2a0a14).setStrokeStyle(6, 0x111111), this.rushFace,
       this.add.image(-128, -70, "icon_skull").setScale(0.55), this.add.image(128, -70, "icon_clock").setScale(0.55),
       text(this, 0, 44, "BOSS RUSH", 42, "#ffe066", { stroke: 10 }), this.rushNum,
@@ -763,6 +767,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.overlay = this.add.graphics();
     this.joyG = this.add.graphics();
     this.hud.add([this.mini, this.overlay, this.joyG]);
+    this.goalPins = new GoalPins(this, 11);
     this.countText = text(this, W / 2, H * 0.36, "", 260, "#ffe066").setStroke("#1a1030", 26).setDepth(7400).setVisible(false);
   }
 
@@ -979,11 +984,6 @@ export class UIScene extends Phaser.Scene implements Host {
       m.close();
       this.time.delayedCall(150, () => this.confirmStart("event"));
     }, { size: 48 }));
-  }
-
-  /** Where the event card is (the tutorial points at it). */
-  private eventSpot(): [number, number] | null {
-    return battle.mode === "lobby" && this.tab === "battle" && !this.mapOpen ? [this.eventCard.x, this.eventCard.y] : null;
   }
 
   /** The last five seconds before the boss arrives (or a Boss Rush boss escapes): big numbers. */

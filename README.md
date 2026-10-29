@@ -50,6 +50,9 @@ hour of fishing brings.
   clouds and drinks every Crystal's light; the lands go dark... until a pair of eyes lights up in an old
   cardboard box; the flaps burst open, three lucky dice fall and pop into the first friends; dawn breaks
   over the dark lands ahead and the title comes up: **TAP TO PLAY**. Then the tutorial takes over.
+- **The tutorial** is short: the box ghost points at BATTLE (and START), then after the fight at ROLL to
+  get pets, at PETS and BEST TEAM to put them in your team, and at BOSS RUSH for when you are too strong
+  for your stage. SKIP ends it. Everyone sees this new guide once (it replaced a long one).
 
 - **Rolling costs one die.** Dice are found in battle (on the map, in chests, on elites and from the boss)
   or bought with gems in the Shop. Dice come in tiers **A, B, C, D, E, S, SSS, uSSS**; which tiers drop
@@ -239,6 +242,11 @@ hour of fishing brings.
   (rings of roots with gaps), Curse Cross (beams through you), Quicksand, Needle Spiral (bullet hell),
   Tail Snipe (locks on, then fires), Belly Slide, Icicle Grid (a checkerboard, then the other half),
   Avalanche and Frost Nova (a beam sweeping all the way around).
+- **When a boss falls** every warning, beam and shot it left on the map fades away, and moves it had
+  queued up never fire.
+- **Goal markers**: in the Air Zone and Feed the Beast a big round marker shows where to go (GET AIR!,
+  NEXT ZONE, SNACK!, FEED IT!): over the goal when it is on screen, stuck to the edge of the screen with
+  an arrow and the distance when it is not. A trail of arrows on the ground marches from you toward it.
 - **Boss attack art**: everything bosses throw is drawn (goo, spores, flapping bats, crows, hay bales,
   pumpkins with lit fuses, boulders, thorns, stingers, snowballs, icicles, glowing orbs). Warnings are
   glowing zones that fill up with arrows pointing in, lanes with arrows, and cones; hits land as lightning
@@ -510,8 +518,17 @@ hour of fishing brings.
   - Coming back after a while shows **GONE FISHING**: how long the line fished and everything it caught.
     Rare catches made while you are on another screen pop up as a note. The event card gets a "!" when a
     reward is ready or an upgrade is affordable, and there are fishing quests.
+  - **TAP RUSH**: while the fishing screen is open, glowing circles pop up all over the pond, each for 2
+    seconds (a ring around it runs out, green to red). Tap one and the next catch comes sooner (6% of the
+    catch time, at least 0.25 s) and your **streak** grows: every tap in a row adds +4% luck to your catches
+    (up to x5). Miss one and the streak is gone. Golden circles count x3. The circles come faster the longer
+    the streak; streak milestones shout NICE!, GREAT!, AMAZING!, ON FIRE!, UNSTOPPABLE!, LEGENDARY!,
+    GODLIKE!!... and your best streak is saved. Leaving the screen ends the streak (Golden Tickets ignore
+    the streak's luck).
 - **Pets** walk and run with a stepping animation (floating pets bob). Every pet card shows its odds at the top.
-- **Music**: little synthesized chiptune loops (calm, battle and boss); Music and Sound toggles in Settings.
+- **Music**: little synthesized chiptune loops; Music and Sound toggles in Settings. The lobby has a sunny,
+  bouncy tune in C major (a sing-along melody, light drums, a hopping bass, a warm pad and glockenspiel
+  sparkles); fights, bosses and the story have their own.
 - **Settings**: a cyan header with coloured tabs on the left and ON/OFF rows on the right.
   - **Audio**: Music, Sound, Vibration.
   - **Graphics**: Toaster mode (fewer ground patches and scenery, no zone effects), Zone effects (fog,
@@ -580,6 +597,8 @@ hour of fishing brings.
 | `src/art/bosses.ts` | Boss textures and their walk frames (made in the background before a boss shows up) |
 | `src/art/bossart.ts` | All 20 boss pictures, with moving legs, arms, heads and tails |
 | `src/art/toon.ts`, `src/art/pose.ts` | The cartoon painter (outlines, pro shading) and the walk poses for heads, arms and legs |
+| `src/ui/goalPins.ts` | The big goal markers (air zone, snack, cage) |
+| `src/ui/tapRush.ts` | TAP RUSH on the fishing screen: circles, streak, luck and shouts |
 | `src/art/beast.ts` | The beast's jail and stone base, rune ring, poison fog, toxic clouds, puddles and bubbles |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |

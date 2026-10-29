@@ -33,7 +33,14 @@ export interface Catch {
 
 export const fishLv = (id: FishUpId) => save.fishing.lv[id] ?? 0;
 export const catchMs = () => catchSecs(fishLv("speed")) * 1000 * (hasPass("fish") ? 0.5 : 1);
-export const currentLuck = () => fishLuck(fishLv("luck"));
+/** Extra luck from a TAP RUSH streak on the fishing screen (1 = none). */
+let tapBoost = 1;
+export const setTapLuck = (k: number) => (tapBoost = k);
+export const currentLuck = () => fishLuck(fishLv("luck")) * tapBoost;
+/** A tapped circle brings the next catch closer. */
+export const tapCut = (ms: number) => {
+  if (save.fishing.nextAt) save.fishing.nextAt -= ms;
+};
 export const currentDeep = () => deepMult(fishLv("pond"));
 /** Catches left until the next SUPER catch (1 = the next one). */
 export const superIn = () => Math.max(1, superEvery(fishLv("super")) - save.fishing.superCount);
@@ -116,7 +123,7 @@ export function fishOnce(): Catch[] {
   if (Math.random() < doubleChance(fishLv("hook"))) out.push(land(rollPrize(luck, deep), isSuper, true));
   out.forEach(pay);
   // once in a very long while, a Golden Ticket is on the hook too
-  if (Math.random() < ticketChance(currentLuck(), isSuper)) {
+  if (Math.random() < ticketChance(fishLuck(fishLv("luck")), isSuper)) {
     save.tickets++;
     out[0].ticket = true;
   }

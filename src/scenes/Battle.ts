@@ -44,6 +44,7 @@ import { rarityRank } from "../data/rarity";
 import { fmt, oneIn } from "../ui/format";
 import { classText } from "../ui/classText";
 import { drawBar, fitText, text } from "../ui/widgets";
+import type { Goal } from "../ui/goalPins";
 
 /** The camera shows 1.66x more of the field during a fight (a bit closer in the lobby). */
 const ZOOM = 1 / 1.66;
@@ -806,8 +807,7 @@ export class BattleScene extends Phaser.Scene {
     const secs = (RUSH_MS - this.rushLeft) / 1000;
     this.rushBeaten++;
     for (const e of [...this.enemies]) if (!e.type.boss) this.kill(e, true);
-    this.strikes = [];
-    this.lanes = [];
+    this.clearBossAttacks();
     save.stage = Math.min(MAX_STAGE, n + 1);
     save.bestStage = Math.max(save.bestStage, save.stage);
     save.bossRushBest = Math.max(save.bossRushBest, n);
@@ -923,20 +923,6 @@ export class BattleScene extends Phaser.Scene {
 
   private toast(str: string, color = "#ffffff"): void {
     this.game.events.emit("toast", str, color);
-  }
-
-  /** For the tutorial: where (on screen) the nearest bones or meat, the crystal or the nearest open seal is. */
-  spot(kind: "food" | "crystal" | "seal"): [number, number] | null {
-    const near = <T>(list: T[], pos: (o: T) => [number, number]) =>
-      list.map((o) => pos(o)).sort((a, b) => Math.hypot(a[0] - this.hero.x, a[1] - this.hero.y) - Math.hypot(b[0] - this.hero.x, b[1] - this.hero.y))[0];
-    let at: [number, number] | undefined;
-    if (kind === "food") at = near(this.food, (f) => [f.img.x, f.img.y]);
-    else if (kind === "seal") at = near(this.seals.filter((s) => !s.done), (s) => [s.x, s.y]);
-    else if (this.crystal?.visible) at = [this.crystal.x, this.crystal.y - 60];
-    if (!at) return null;
-    const [x, y] = this.toScreen(at[0], at[1]);
-    const W = this.scale.width;
-    return x < 30 || x > W - 30 || y < 200 || y > this.scale.height - 120 ? null : [x, y];
   }
 
   /** World position to screen position (for things the UI scene draws). */
@@ -2730,15 +2716,25 @@ export class BattleScene extends Phaser.Scene {
       g.lineStyle(20, 0x111111, 0.45).strokeCircle(hx, hy, 150);
       g.lineStyle(12, c, 0.95).beginPath().arc(hx, hy, 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * o).strokePath();
     }
-    const b = this.beast;
-    if (b?.carried && !b.friend && !b.escaped) {
-      // a dotted trail from you to the cage
-      const [cx, cy] = this.arena.center;
-      const d = Math.hypot(cx - this.hero.x, cy - this.hero.y);
-      const n = Math.floor(d / 70);
-      for (let i = 1; i < n; i++) {
-        const k = (i + ((t / 200) % 1)) / n;
-        g.fillStyle(0xffa040, 0.85).fillCircle(this.hero.x + (cx - this.hero.x) * k, this.hero.y + (cy - this.hero.y) * k, 11);
+    // a trail of arrows on the ground from you toward the main goal, marching the way to go
+    const goal = this.goalSpots()[0];
+    if (goal) {
+      const [hx, hy] = [this.hero.x, this.hero.y];
+      const d = Math.hypot(goal.x - hx, goal.y - hy);
+      const a = Math.atan2(goal.y - hy, goal.x - hx);
+      const [ux, uy] = [Math.cos(a), Math.sin(a)];
+      const steps = Math.min(9, Math.floor((d - 140) / 110));
+      for (let i = 0; i < steps; i++) {
+        const k = 150 + (i + ((t / 450) % 1)) * 110;
+        const [px, py] = [hx + ux * k, hy + uy * k];
+        const fade = Math.min(1, (steps - i) / 3) * 0.9;
+        const tri = (s: number) => [px + ux * 34 * s, py + uy * 34 * s, px - ux * 20 * s - uy * 30 * s, py - uy * 20 * s + ux * 30 * s, px - ux * 20 * s + uy * 30 * s, py - uy * 20 * s - ux * 30 * s] as const;
+        const o = tri(1.75);
+        g.fillStyle(0x2a1a12, fade).fillTriangle(o[0], o[1], o[2], o[3], o[4], o[5]);
+        const w = tri(1.5);
+        g.fillStyle(0xffffff, fade).fillTriangle(w[0], w[1], w[2], w[3], w[4], w[5]);
+        const c = tri(1.2);
+        g.fillStyle(goal.color, fade).fillTriangle(c[0], c[1], c[2], c[3], c[4], c[5]);
       }
     }
   }
@@ -3523,9 +3519,7 @@ export class BattleScene extends Phaser.Scene {
     music.play("calm");
     // the crystal floats back down from the sky
     const [hx, hy] = this.crystalHome;
-    this.rocks.forEach((r) => this.dropRock(r));
-    this.rocks = [];
-    this.lanes = [];
+    this.clearBossAttacks();
     this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1500 });
     if (this.stageMode === "crystal") this.crystal.setVisible(true).setScale(1).setAlpha(1).clearTint().setPosition(hx, hy - 1600).setDepth(hy);
     this.tweens.add({ targets: this.crystal, y: hy, duration: 1600, delay: 600, ease: "Bounce.out" });
@@ -4199,6 +4193,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** A danger zone on the ground that fills up, then hits in its own way (`style`). */
   private addStrike(x: number, y: number, r: number, ms: number, dmg: number, style: StrikeStyle = "slam", orb?: number): void {
+    if (!this.bossUp()) return;
     const [sx, sy] = [clampX(x), clampY(y)];
     const look = STRIKE_LOOK[style];
     // the zone is always a bright warning colour; `orb` colours what falls on it
@@ -4598,6 +4593,7 @@ export class BattleScene extends Phaser.Scene {
     x: number, y: number, a: number, speed: number, dmg: number,
     o: { tex?: string; tint?: number; scale?: number; r?: number; home?: number; wait?: number; track?: boolean; bounce?: boolean; life?: number; face?: boolean; spin?: number; frames?: string[]; glow?: number } = {},
   ): void {
+    if (!this.bossUp()) return;
     const tex = o.tex ?? "b_orb";
     const img = this.add.image(x, y, tex).setScale(o.scale ?? 1).setDepth(9000);
     if (o.tint !== undefined) img.setTint(o.tint);
@@ -4623,6 +4619,27 @@ export class BattleScene extends Phaser.Scene {
     else this.hazardShot(e.img.x, e.img.y - 100, a, speed, dmg, { tex: orbTexture(this, e.type.fx), scale: 1.1, glow: e.type.fx, r: 50 });
   }
 
+  /** Only a boss that is still standing throws things (moves queued up before it fell are dropped). */
+  private bossUp(): boolean {
+    return this.enemies.some((o) => o.type.boss && o.hp > 0);
+  }
+
+  /** The boss is gone: every warning, beam and shot it left on the map fades away. */
+  private clearBossAttacks(): void {
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    for (const s of this.strikes) objs.push(...s.objs);
+    for (const l of this.lanes) objs.push(l.obj);
+    for (const r of this.rocks) objs.push(...[r.img, r.glow, r.aim].filter((o): o is Phaser.GameObjects.Image => !!o));
+    this.strikes = [];
+    this.lanes = [];
+    this.rocks = [];
+    for (const o of objs) {
+      this.tweens.killTweensOf(o);
+      if (o instanceof Phaser.GameObjects.Container) this.tweens.killTweensOf(o.list);
+      this.tweens.add({ targets: o, alpha: 0, duration: 350, onComplete: () => o.destroy() });
+    }
+  }
+
   private dropRock(r: Rock): void {
     r.img.destroy();
     r.glow?.destroy();
@@ -4631,6 +4648,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** A beam lane: shown first (a lane with arrows that fills up), then it fires along its whole length. */
   private addLane(x1: number, y1: number, x2: number, y2: number, w: number, ms: number, dmg: number, color = 0xffffff): void {
+    if (!this.bossUp()) return;
     const len = Math.hypot(x2 - x1, y2 - y1);
     const a = Math.atan2(y2 - y1, x2 - x1);
     const warn = this.add.image(0, 0, "bx_lane").setOrigin(0, 0.5).setTint(color).setDisplaySize(len, w);
@@ -5265,18 +5283,33 @@ export class BattleScene extends Phaser.Scene {
       if (p.kind === "dice" && tierIndex(p.tier!) >= 3) arrow(p.x, p.y - 40, TIER_INFO[p.tier!].color);
     }
     for (const e of this.enemies) if (e.type.boss) arrow(e.img.x, e.img.y, 0xf26464);
-    // the mode's goal: the air zone, the snack, the beast's cage
+    // the mode's goals (air zone, snack, cage) get big markers from the UI scene: see goals()
+    if (this.state === "boss") for (const sl of this.seals) if (!sl.done) arrow(sl.x, sl.y, 0xd8b8ff);
+  }
+
+  /** World spots the mode wants you to get to, most important first. */
+  private goalSpots(): { x: number; y: number; icon: string; label: string; color: number }[] {
+    if (battle.mode !== "run") return [];
+    const out: { x: number; y: number; icon: string; label: string; color: number }[] = [];
     if (this.stageMode === "air" && this.air.zone) {
       const z = AIR_ZONE / 2;
-      if (!this.inAir()) arrow(this.air.x + z, this.air.y + z, 0x5aff8a);
-      if (this.air.next) arrow(this.air.nx + z, this.air.ny + z, 0xffe066);
+      if (!this.inAir()) out.push({ x: this.air.x + z, y: this.air.y + z, icon: "mode_air", label: "GET AIR!", color: 0x5aff8a });
+      if (this.air.next) out.push({ x: this.air.nx + z, y: this.air.ny + z, icon: "mode_air", label: "NEXT ZONE", color: 0xffe066 });
     }
     const b = this.beast;
     if (b && !b.friend && !b.escaped) {
-      if (b.food && !b.carried) arrow(b.food.x, b.food.y, 0xffa040);
-      if (b.carried) arrow(b.cage.x, b.cage.y + 150, 0xffa040);
+      if (b.food && !b.carried) out.push({ x: b.food.x, y: b.food.y, icon: "mode_feed", label: "SNACK!", color: 0xffa040 });
+      if (b.carried) out.push({ x: b.cage.x, y: b.cage.y - 120, icon: b.tex, label: "FEED IT!", color: 0xffa040 });
     }
-    if (this.state === "boss") for (const sl of this.seals) if (!sl.done) arrow(sl.x, sl.y, 0xd8b8ff);
+    return out;
+  }
+
+  /** The mode's goals on the screen, for the UI scene's big markers. */
+  goals(): Goal[] {
+    return this.goalSpots().map((g) => {
+      const [sx, sy] = this.toScreen(g.x, g.y);
+      return { sx, sy, icon: g.icon, label: g.label, color: g.color, m: Math.hypot(g.x - this.hero.x, g.y - this.hero.y) / 100 };
+    });
   }
 
   /** DPS readout, money per second (for offline earnings) and autosave. */
