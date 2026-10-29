@@ -248,7 +248,7 @@ hour of fishing brings.
   potions, lucky rolls, a Golden Ticket, and two exclusive pets: **Drizzle Kitty** at 380 and **Rain
   Dragon**, 120% of your best pet's damage, at 2,600). PLAY starts the Dice Rain fight: every die you dodge
   gives drops (rarer dice give more), surviving 5:00 adds 50, and drops you earned count even if you fall.
-- **Pet cards** (the "Dark Gem" style, picked from 10 ideas): a dark card with the pet glowing in its class
+- **Pet cards** (the "Dark Gem" style, picked from 10 ideas): a card in a dark shade of its class colour, the pet glowing in its class
   colour, a gem with the class letter, a thin bar of copies toward the next level, a green "+" when it can
   level up and a check when it is on your team. No more name, odds and numbers on the card (the pet's
   popup still shows everything). Pets you haven't found yet are dark silhouettes.

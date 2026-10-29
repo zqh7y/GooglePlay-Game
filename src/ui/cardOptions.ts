@@ -165,14 +165,15 @@ export function cardOption(scene: Phaser.Scene, x: number, y: number, id: string
     }
     case 4: {
       // dark card, the pet glowing in its class colour, a gem with the class, a thin bar
+      // the card is its class colour, just dark (grey drawn, then tinted)
       parts.push(scene.add.image(0, 0, canvasTexture(scene, "co_dark", W + 8, H + 8, (c) => {
         rr(c, 4, 4, W, H, 26);
-        c.fillStyle = linear(c, 0, 0, 0, H, [[0, "#2a3256"], [1, "#151a30"]]);
+        c.fillStyle = linear(c, 0, 0, 0, H, [[0, "#ffffff"], [1, "#8c8c8c"]]);
         c.fill();
         c.lineWidth = 5;
-        c.strokeStyle = "#0a0d1a";
+        c.strokeStyle = "#000000";
         c.stroke();
-      })));
+      })).setTint(darken(col, st.locked ? 0.78 : 0.62)));
       const glow = scene.add.image(0, -12, "glow").setTint(col).setScale(1.5).setAlpha(0.75);
       scene.tweens.add({ targets: glow, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
       if (st.locked) {
