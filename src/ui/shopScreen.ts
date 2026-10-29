@@ -208,7 +208,7 @@ const shellPrize = () => Math.max(500, FISH_UPGRADES.filter((u) => fishLv(u.id) 
 
 /** The weekly specials take turns. */
 const SPECIALS: Offer[] = [
-  { id: "usss", name: "uSSS Die", icon: "die_uSSS", price: 16, desc: () => `The rarest die: x${fmt(DICE_LUCK.uSSS)} luck on one roll`, rewards: () => [diceReward("uSSS", 1)] },
+  { id: "usss", name: "uSSS Die", icon: "die_uSSS", price: 8, desc: () => `The rarest die: x${fmt(DICE_LUCK.uSSS)} luck on one roll`, rewards: () => [diceReward("uSSS", 1)] },
   { id: "mythic", name: "Mythic Egg", icon: "icon_egg", price: 5, desc: () => `A pet of class ${className(bestClass() + 1)} or ${className(bestClass() + 2)}`, rewards: (sc) => eggReward(sc, 1, 2) },
 ];
 
@@ -504,6 +504,8 @@ export class ShopScreen extends Screen {
   private drag = { on: false, y: 0, oy: 0, moved: 0, x: 0, ox: 0, axis: "" as "" | "x" | "y", strip: false };
   /** the Classic Pack's sideways strip, and how far it can scroll */
   private packStrip: Phaser.GameObjects.Container | null = null;
+  /** Each pack strip piece and the x of the step it belongs to (a step fades as one). */
+  private packX = new Map<object, number>();
   private packMin = 0;
   private packBox = { y0: 0, y1: 0 };
   private refreshers: (() => void)[] = [];
@@ -934,6 +936,7 @@ export class ShopScreen extends Screen {
     const y = this.list.y;
     this.list.removeAll(true);
     this.packStrip = null;
+    this.packX.clear();
     this.refreshers = [];
     this.ticking = [];
     this.build();
@@ -1060,6 +1063,7 @@ export class ShopScreen extends Screen {
         s.tweens.add({ targets: glow, angle: 360, duration: 5000, repeat: -1 });
         parts.unshift(glow);
       }
+      for (const o of parts) this.packX.set(o, x);
       if (i < PACK_STEPS - 1) parts.push(s.add.triangle(x + step / 2, sy - 50, 0, 0, 0, 26, 18, 13, 0xffe066).setStrokeStyle(4, 0x111111));
       const btn = this.priceButton(x - 2, sy + 102, 170, 80, () => {
         const done = save.pack.step > i;
@@ -1076,6 +1080,7 @@ export class ShopScreen extends Screen {
         return true;
       });
       parts.push(btn);
+      this.packX.set(btn, x);
       strip.add(parts);
     }
     this.list.add(strip);
@@ -1091,12 +1096,13 @@ export class ShopScreen extends Screen {
     strip.x = Phaser.Math.Clamp(x, this.packMin, 0);
     const W = this.scene.scale.width;
     for (const o of strip.list as unknown as (Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.Components.Visible & { x: number })[]) {
-      const sx = o.x + strip.x;
-      // the card's inside runs from 50 to W-50 and a step is ~170 wide: a step is fully gone
-      // before any part of it reaches the border
+      // a whole step (box, item, price) fades as one piece, from its centre, and is fully gone
+      // before any part of it reaches the card's border (inside: 50 to W-50, a step is ~170 wide)
+      const sx = (this.packX.get(o) ?? o.x) + strip.x;
       const edge = Math.min(sx - 140, W - 140 - sx);
-      o.setVisible(edge > 0);
-      o.setAlpha(Phaser.Math.Clamp(edge / 70, 0, 1));
+      const a = Phaser.Math.Clamp(edge / 110, 0, 1);
+      o.setVisible(a > 0);
+      o.setAlpha(a * a * (3 - 2 * a));
     }
   }
 
@@ -1407,10 +1413,17 @@ export class ShopScreen extends Screen {
     // three offers for 8 hours
     const offers = offersNow();
     const oh = 400;
-    const otimer = text(s, W / 2, y + 16, "", 28, "#4a2f1d");
-    this.ticking.push(() => otimer.setText(`New offers in ${clock((slotNow() + 1) * ROTATION_MS - Date.now())}`));
-    this.list.add(otimer);
-    y += 44;
+    // the countdown on a dark gold-rimmed pill so it reads on the striped background
+    const otimer = text(s, 24, -2, "", 36, "#ffe066", { stroke: 8 });
+    const opill = s.add.graphics();
+    opill.fillStyle(0x000000, 0.3).fillRoundedRect(-250, -30, 500, 68, 34);
+    opill.fillStyle(0x3a1f5a, 0.95).fillRoundedRect(-250, -36, 500, 68, 34);
+    opill.lineStyle(5, 0xffd23f, 1).strokeRoundedRect(-250, -36, 500, 68, 34);
+    const oclock = s.add.image(-200, -2, "icon_clock").setScale(0.5);
+    this.list.add(s.add.container(W / 2, y + 34, [opill, oclock, otimer]));
+    this.ticking.push(() => fitText(otimer.setText(`New offers in ${clock((slotNow() + 1) * ROTATION_MS - Date.now())}`), 380));
+    s.tweens.add({ targets: oclock, angle: { from: -12, to: 12 }, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    y += 90;
     offers.forEach((o, i) => {
       const x = W / 2 + (i - 1) * 345;
       const btn = this.priceButton(0, 0, 270, 88, this.ticketPrice(o.price, () => shopState().bought.includes(o.id)), () => {
