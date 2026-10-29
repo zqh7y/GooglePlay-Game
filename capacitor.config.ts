@@ -10,6 +10,9 @@ const config: CapacitorConfig = {
   webDir: "dist",
   android: { backgroundColor: "#4a2f1d" },
   plugins: {
+    // keep the game between the phone's status bar (time, battery) and its navigation bar: the page
+    // doesn't ask for viewport-fit=cover, so the webview is padded to the safe area (light icons on brown)
+    SystemBars: { insetsHandling: "native", initialViewportFitValueHint: "contain", style: "DARK" },
     FirebaseAuthentication: {
       // sign in natively; Google Play Games is the only provider (guests use anonymous accounts)
       skipNativeAuth: false,

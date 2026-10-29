@@ -195,8 +195,8 @@ hour of fishing brings.
 - **Lobby**: small round shortcuts (Map, Quests, Daily, Hero, AFK), your **total DPS** (hero plus pets) and
   your luck. Tapping DPS or Hero opens **My Hero**: your character up close, total damage per second
   split between the hero and each pet, health, speed and crits.
-- **Free roam**: outside a fight the lobby is a field you can walk around with the joystick (the minimap is
-  top right). Six dice are lying around when you get there, and another turns up every 15 s (up to 15 at
+- **Free roam**: outside a fight the lobby is a field you can walk around with the joystick (the minimap only
+  shows in fights). Six dice are lying around when you get there, and another turns up every 15 s (up to 15 at
   once); walk over them to pick them up.
   **AFK** puts your hero on autopilot: it walks to the nearest die by itself and strolls around when there
   are none.
@@ -528,7 +528,7 @@ hour of fishing brings.
   - **TAP RUSH**: while the fishing screen is open, glowing circles pop up all over the pond, each for 2
     seconds (a ring around it runs out, green to red). Tap one and the next catch comes sooner (6% of the
     catch time, at least 0.25 s) and your **streak** grows: every tap in a row adds +4% luck to your catches
-    (up to x5). Miss one and the streak is gone. Golden circles count x3. The circles come faster the longer
+    (up to x5). Circles only come up on the water, never over the prize icons. Miss one and the streak is gone. Golden circles count x3. The circles come faster the longer
     the streak; streak milestones shout NICE!, GREAT!, AMAZING!, ON FIRE!, UNSTOPPABLE!, LEGENDARY!,
     GODLIKE!!... and your best streak is saved. Leaving the screen ends the streak (Golden Tickets ignore
     the streak's luck).
@@ -632,7 +632,7 @@ hour of fishing brings.
 | `src/online/config.ts` | Where the Firebase config comes from (never from the code: `.env.local` or Android's google-services.json) |
 | `src/ui/leaderboard.ts` | The leaderboard popup and the name box |
 | `firestore.rules` | Who may read and write what online (tested by `dev/online/rules.test.mjs`) |
-| `capacitor.config.ts`, `android/` | The Android app (package name, Play Games sign-in) |
+| `capacitor.config.ts`, `android/` | The Android app (package name, Play Games sign-in; the game stays between the phone's status bar and navigation bar) |
 
 All art is drawn with code on a canvas, so there are no image files yet.
 To use real artwork later, load images under the same texture keys.

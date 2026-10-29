@@ -241,7 +241,9 @@ export class FishScreen extends Screen {
     this.root.add([shellPill, this.upBtn, this.upBadge]);
     scene.game.events.on("fish-caught", this.onCatch, this);
     // TAP RUSH: circles to tap all over the pond
-    this.tap = new TapRush(scene, this.root, { x: 10, y: top + 70, w: W - 20, h: pondBottom - top - 130 }, W * 0.7, pondBottom - 250);
+    // circles only come up on the water (never over the prize icons), the streak sits on the horizon
+    const waterTop = this.skyH + 110;
+    this.tap = new TapRush(scene, this.root, { x: 10, y: waterTop, w: W - 20, h: pondBottom - waterTop - 20 }, W / 2, this.skyH + 40);
   }
 
 

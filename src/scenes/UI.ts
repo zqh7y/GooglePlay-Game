@@ -360,7 +360,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.navBar.setVisible(lobby);
     this.gear.setVisible(lobby || this.tab !== "battle");
     this.placeTopBar(!lobby);
-    this.mini.setVisible(true);
+    // the minimap is only for fights, not the lobby
+    this.mini.setVisible(!lobby);
     this.mini.setPosition(...this.miniSpot());
     this.overlay.clear();
     if (lobby) this.refreshLobby();
@@ -411,7 +412,8 @@ export class UIScene extends Phaser.Scene implements Host {
         if (this.overlayTimer <= 0) {
           this.overlayTimer = 100;
           const [mx, my] = this.miniSpot();
-          b.drawOverlay(this.overlay, mx, my, 180, this.L.hudBottom + 30, this.H - 140);
+          if (battle.mode === "run") b.drawOverlay(this.overlay, mx, my, 180, this.L.hudBottom + 30, this.H - 140);
+          else this.overlay.clear();
         }
         this.goalPins.update(b.goals(), this.L.hudBottom + 30, this.H - 140, time);
       } else this.goalPins.hide();
