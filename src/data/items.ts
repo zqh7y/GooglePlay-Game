@@ -176,13 +176,15 @@ export interface PremiumPet {
   share: number;
 }
 
-export const PREMIUM: PremiumPet[] = PREMIUM_ROWS.map(([name, species, color, accent, accs, pattern, eyes, chance, share], i) => {
+/** An exclusive pet (no class): it hits for `share` of your best pet's damage. */
+function exclusivePet(row: [string, Species, string, string, string, string, string], index: number, share: number, rank: number, from: string): ItemDef {
+  const [name, species, color, accent, accs, pattern, eyes] = row;
   const def: ItemDef = {
     id: `px_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
-    index: 1000 + i,
+    index,
     name,
-    oneIn: Math.max(1, Math.round(1 / chance)),
-    rarity: RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, 3 + i)],
+    oneIn: 1,
+    rarity: RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, 3 + rank)],
     cls: "S",
     species,
     color,
@@ -190,18 +192,30 @@ export const PREMIUM: PremiumPet[] = PREMIUM_ROWS.map(([name, species, color, ac
     accs: accs.split(","),
     pattern,
     eyes,
-    kind: i >= 3 ? "zap" : "shot",
+    kind: rank >= 3 ? "zap" : "shot",
     fx: 0xb36aff,
     damage: 0,
-    cooldown: i >= 3 ? 1400 : 1000,
-    count: 1 + Math.floor(i / 2),
-    description: `Exclusive: ${Math.round(share * 100)}% of your best pet's damage`,
+    cooldown: rank >= 3 ? 1400 : 1000,
+    count: 1 + Math.floor(rank / 2),
+    description: `${from} exclusive: ${Math.round(share * 100)}% of your best pet's damage`,
   };
   // its damage follows your best pet
   Object.defineProperty(def, "damage", { get: () => Math.max(1, Math.round(bestPetDamage() * share)) });
   ITEMS[def.id] = def;
+  return def;
+}
+
+export const PREMIUM: PremiumPet[] = PREMIUM_ROWS.map(([name, species, color, accent, accs, pattern, eyes, chance, share], i) => {
+  const def = exclusivePet([name, species, color, accent, accs, pattern, eyes], 1000 + i, share, i, "Premium Egg");
+  def.oneIn = Math.max(1, Math.round(1 / chance));
   return { def, chance, share };
 });
+
+/** The two pets of the Dice Rain beginner event (from its reward track). */
+export const RAIN_PETS = {
+  drizzle: exclusivePet(["Drizzle Kitty", "cat", "#5ab8ff", "#e8f6ff", "bow", "spots", ""], 1100, 0.5, 1, "Dice Rain"),
+  dragon: exclusivePet(["Rain Dragon", "dragon", "#2a6ad8", "#9ae6ff", "crown,wings", "galaxy", "glow"], 1101, 1.2, 4, "Dice Rain"),
+};
 
 /** Is this one of the Premium Egg pets? */
 export const isPremium = (id: string) => id.startsWith("px_");

@@ -144,7 +144,7 @@ export class Tutorial {
         target: () => host.eventSpot(),
         done: () => host.tab() === "fish",
       },
-      onTab("fish", "Every catch fills the EVENT bar. Claim its rewards: dice, gems and boosts for your next fights!"),
+      onTab("fish", "Every catch fills the EVENT bar. Claim its rewards: dice, gems, potions and more!"),
       {
         when: () => !host.modalOpen(),
         text: () => "That's everything! Clear stages, roll rare pets and reach STAGE 100. Good luck!",

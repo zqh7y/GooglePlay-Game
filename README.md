@@ -132,7 +132,7 @@ hour of fishing brings.
   titles, chunky green price buttons, and every item sitting on a paint splat. Rewards (chests, rolls,
   fishing) show on paint splats too, like an inventory.
   - **Classic Pack** (FEATURED): a 50-step chain you swipe through sideways. Every 5th step costs gems
-    (60, 120, 200 ... 2000) and the 4 after it are FREE, in order; the last step is **5 uSSS dice**.
+    (60, 120, 200 ... 2000) and the 4 after it are FREE, in order; the last step is **5 uSSS dice** for 1,500 gems.
     Progress is kept until you finish, then it starts over.
   - Gem prices are 3x what they were (gems are worth more), and the **Gems & Potions** branch of the
     upgrade tree is bought with gems. **Free Gifts** pile up (one every 30 min, up to 8): one tap opens them all.
@@ -141,7 +141,7 @@ hour of fishing brings.
     ROLL every 30 rolls instead of 50, **Fast Fisher** catches twice as fast, **Gem Hunter** double boss gems.
   - **Traveling Merchant**: a striped market stall with 6 slots that restock every 30 minutes (everyone sees
     the same wares). Each slot rolls a rarity (Common 48%, Uncommon 28%, Rare 15%, Epic 7%, Legendary 2%)
-    and a ware of that rarity with 1-3 in stock: dice of your stage's tier and better, potions, boosts,
+    and a ware of that rarity with 1-3 in stock: dice of your stage's tier and better, potions,
     chests, shells... Legendary slots can hold a Legendary Die, a Lucky Egg or even a Golden Ticket (for
     gems). Don't like them? REROLL for 15 gems.
   - **Playtime Gifts**: 12 gifts that open after 1, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50 and 60 minutes of play
@@ -151,26 +151,18 @@ hour of fishing brings.
     one (about 1 in 20,000 at first, a bit better with Lucky Bait, x3 on a SUPER catch), and each event
     round's big prize has a 1 in 5 chance of one. The simulator finds about a dozen in a whole game (the
     first around hour 9). Finding one takes over the screen: **GOLDEN TICKET!** spinning in over golden rays.
-    - **Legendary special** of the week: a **uSSS Die** (16 tickets) or a **Mythic Egg** (5: a pet one or two
+    - **Legendary special** of the week: a **uSSS Die** (8 tickets) or a **Mythic Egg** (5: a pet one or two
       classes above your best), with a countdown.
     - **Three offers** that change every 8 hours (everyone sees the same ones), one of each per player: Lucky
-      Egg (a pet of your best class or one better), 2 SSS Dice, 3 S Dice, Mega Potion (60 min), Boost Crate
-      (3 of every Battle Boost), Gem Hoard (150 gems), 50 Lucky Rolls, Golden Vault (3 hours of money) or
+      Egg (a pet of your best class or one better), 2 SSS Dice, 3 S Dice, Mega Potion (60 min), Gem Hoard (150 gems), 50 Lucky Rolls, Golden Vault (3 hours of money) or
       Pearl Treasure (shells for every next fishing upgrade). 1 to 3 tickets each.
   - **Deal of the Day**: a different bundle every day at about half price. It can be bought once and shows a
     countdown to midnight.
-  - **Free**: a gift every 10 minutes (gems, dice and money) and the daily reward.
+  - **Free**: a gift every 10 minutes (dice and money) and the daily reward.
   - **Lucky Wheel**: one free spin every 4 hours, then 8 gems a spin. Prizes are dice, money, gems, a
     potion, or the rare MEGA jackpot.
   - **Treasure Chests**: Wooden (money), Silver and Golden (gems). Each one shakes, pops open and throws out
     dice rolled for your stage plus bonus gems, money and potions.
-  - **Battle Boosts**, bought with money and used up by your next fight:
-    - Golden Start: an extra C-tier gadget.
-    - Second Chance: a free revive.
-    - Head Start: 2 skills right away.
-    - Crystal Armor: +50% crystal health.
-
-    Boosts you own are shown above the BATTLE button.
   - **Shelves**: dice, potions, money and gems (real-money gems are "coming soon").
 - **Monster mutations**: from stage 2 on, some monsters spawn mutated, with a badge over their head.
   Deeper stages have more mutated monsters, and they can stack 2 or 3 mutations.
@@ -214,7 +206,7 @@ hour of fishing brings.
   breaks, the run is over: revive once for gems, try again, or go back to the lobby.
 - **Stage modes** (`src/data/modes.ts`): stages cycle through 5 modes, 1-2-3-4-5-1-2-3... up to 100. The
   lobby button, the START popup and the map card show which one is next.
-  1. **Air Zone**: a green zone covering 10% of the map is the only place with air. Every 30 s it moves
+  1. **Air Zone**: a small green square (a third as wide as it used to be) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.
   2. **Crystal**: the classic mode below (guard the crystal for 5:00).
@@ -222,7 +214,7 @@ hour of fishing brings.
      up 6 times (from 0:20, every 45 s): grab it and carry it to the cage (each feed also drops a die).
      Feed all 6 and the cage flies off: the beast follows you and stomps monsters and the boss, but the
      boss gets 1.8x health. If it ever starves, it breaks out, huge and angry, and hunts you.
-  4. **Dice Rain**: giant dice of every tier fall from the sky all game (A common ... uSSS very rare). The
+  4. **Dice Rain** (only in the beginners' Dice Rain event now; stage 4 of the cycle is Crystal again): giant dice of every tier fall from the sky all game (A common ... uSSS very rare). The
      rarer the die, the bigger its hit area and damage, the faster it falls and the bigger its show (spark
      trails, flashes, several shockwaves). A shadow and a ring show where; tier E and better leave a real
      die, some small ones keep rolling after they land, and old dice lie half buried all over the field.
@@ -237,6 +229,31 @@ hour of fishing brings.
   for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
   the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
 - **Boss Rush** is slower: your hero and the bosses move 1.5x slower than in a stage.
+- **Hardcore bosses**: bosses keep up with you, rest less between moves, and every boss has its own
+  **SPECIAL** that reaches you anywhere on the map (every third move, and every move while you keep far
+  away). Each one warns first, then you must dodge: Goo Storm (Slime King), Spore Burst, Bat Swarm (bats
+  that follow you), Earthquake (cracks racing at you), Crow Dive, Thunder Chase (lightning where you
+  stand), Hay Rollers (find the empty row), Pumpkin Bombs (thrown where you are going), Toxic Ring (get
+  out through the gap), Shadow Pounce (4 fast pounces), Boulder Roll (bouncing boulders), Root Burst
+  (rings of roots with gaps), Curse Cross (beams through you), Quicksand, Needle Spiral (bullet hell),
+  Tail Snipe (locks on, then fires), Belly Slide, Icicle Grid (a checkerboard, then the other half),
+  Avalanche and Frost Nova (a beam sweeping all the way around).
+- **Boss attack art**: everything bosses throw is drawn (goo, spores, flapping bats, crows, hay bales,
+  pumpkins with lit fuses, boulders, thorns, stingers, snowballs, icicles, glowing orbs). Warnings are
+  glowing zones that fill up with arrows pointing in, lanes with arrows, and cones; hits land as lightning
+  bolts, goo splats, cartoon explosions, ice crystals, or rock and root spikes bursting out of the ground,
+  and beams fire with a white-hot core. Charges leave afterimages, breath pours real fire (or frost).
+- **Dice Rain event** (the first 14 days): its card in the lobby opens the event screen: dice raining
+  behind the title, the time left, your **Rain Drops** and a track of **15 prizes** (dice up to S, gems,
+  potions, lucky rolls, a Golden Ticket, and two exclusive pets: **Drizzle Kitty** at 380 and **Rain
+  Dragon**, 120% of your best pet's damage, at 2,600). PLAY starts the Dice Rain fight: every die you dodge
+  gives drops (rarer dice give more), surviving 5:00 adds 50, and drops you earned count even if you fall.
+- **Pet cards** (the "Dark Gem" style, picked from 10 ideas): a dark card with the pet glowing in its class
+  colour, a gem with the class letter, a thin bar of copies toward the next level, a green "+" when it can
+  level up and a check when it is on your team. No more name, odds and numbers on the card (the pet's
+  popup still shows everything). Pets you haven't found yet are dark silhouettes.
+- **Gems are harder to get**: roll gifts give a gem only sometimes, the free gift gives none, chests,
+  quests, playtime gifts, fishing oysters and fishing event rounds give far fewer.
 - **Performance**: nothing visual was removed. Monsters, XP food and pickups far off screen are not drawn
   (they still move and fight), mode decorations (dice graveyard, torches, bowls) are culled with the
   scenery, text objects only redraw when their words, colour, size or outline really change, and the game
@@ -250,8 +267,7 @@ hour of fishing brings.
   "OP REWARDS!" day 7 panel. Days give potions, dice, gems and money; day 7 gives D dice, gems and a potion.
 - **Gamepasses**: big bright cards with the name huge on top, the art on a spinning sunburst, a few big
   words for what it does and a chunky green price button.
-- The luck potion shows as a big glowing potion with its timer under it in the lobby. The "Second
-  Chance" boost (free revive) is gone; the Super Magnet boost replaced it.
+- The luck potion shows as a big glowing potion with its timer under it in the lobby. Battle Boosts are gone.
 - **Developer mode**: tap the "YOUR WORLDS" title of the map 5 times. Every stage can then be played from the map.
 - **Roll reveal**: the class letters on each card spin like a slot machine and slow down (about 1.2 s),
   land on your class with a pop in its colours (1 s, better classes shake and flash), then the card flips
@@ -362,7 +378,9 @@ hour of fishing brings.
   | Popcorn Pop | Pops a ring of hot kernels in every direction |
   | Grenade | Lobbed into crowds; at S tier and up it becomes a Black Hole that pulls monsters in, then bursts |
 
-  **Gadgets come from levelling up.** Every level up freezes the fight and three cards fly in:
+  **Gadgets come from levelling up.** Level-ups (and skill orbs and crates) are **saved up**, and once a
+  minute a "LEVEL UP xN!" window opens and you pick them all in a row (so cards don't pop up every few
+  seconds). The bar at the top shows what is saved and when the next window opens. Each pick has three cards:
   - **NEW!**: a gadget you don't have (while a slot is free there is always one), in a tier rolled for how
     long you have survived.
   - **Lv 2 → 3**: the next level of one you carry (up to 5, +20% damage each).
@@ -382,7 +400,7 @@ hour of fishing brings.
   stages 1-20, B on 21-40, C on 41-60, D on 61-80 and E on 81-100.
 - **Numbers**: A = thousand, B = million, C = billion and so on (1.5A = 1,500).
 - **Skills come from drops**: airdrops (a gold beam and "SKILL DROP!"), skill orbs on the map, and elites
-  (half of them drop an orb). Each one freezes the fight with three skill cards. Monsters still drop bones
+  (half of them drop an orb). Each one is saved for the next minute's pick window (three skill cards). Monsters still drop bones
   and meat (XP), which level you up for gadgets. You carry at most **4 different skills** per stage, each up
   to level 5; they reset every stage and sit as medals along the bottom. Each has a big picture icon and a
   badge colour (red hits harder, yellow faster, blue keeps you alive, green helps, purple is spooky):
@@ -419,13 +437,13 @@ hour of fishing brings.
   Cooler Box is full).
   - **Event rewards, for your next fights**: every catch (offline ones too) fills the EVENT bar under the
     pond. Each round has **10 rewards** at 5, 12, 20, 30, 42, 56, 72, 90, 110 and 135 catches: shells, dice
-    of your stage's tier, gems, a Battle Boost, a luck potion, more shells, more dice, lucky rolls, two
-    Battle Boosts, and a **BIG PRIZE** (a die one tier better plus gems). Tap the bar to claim what is ready
+    of your stage's tier, gems, lucky rolls, a luck potion, more shells, more dice, lucky rolls, better
+    dice, and a **BIG PRIZE** (a die one tier better plus gems). Tap the bar to claim what is ready
     (they pop up big), or to see the whole round. Then the next round starts, asking 1.5x more catches each
     time (up to round 12) with more shells and gems. With the event, the simulator reaches stage 100 at
     about 98 h and the Titan Forge at about 114 h.
-  - **One catch every 60 s** at first, down to **every 5 s**. Every catch also brings **shells**, which buy
-    the fishing upgrades.
+  - **One catch every 60 s** at first, down to **every 5 s**. Every catch also brings **shells** (shown over it), more
+    the rarer the catch (2, 6, 20, 80 and 400 for junk to legends), which buy the fishing upgrades.
   - **The prizes**, 4 per row and 5 rows, from junk to legends. **Every prize can bite from the start**:
     the deep rows just have microscopic chances that grow with Lucky Bait and Deeper Water.
 
@@ -434,7 +452,7 @@ hour of fishing brings.
     | Common | Old Boot (shells), Sardine (money), Soggy Die (A), Coin Pouch (money) |
     | Good | Puffer Die (B), Pearl Oyster (gem), Luck Potion, Fat Salmon (money) |
     | Rare | Speed Potion, Coral Die (C), Sunken Chest (money), Sea Clover (lucky rolls) |
-    | Epic | Message Bottle (a Battle Boost), Swordfish Die (D), Golden Koi (money), Mermaid Crown (gems) |
+    | Epic | Message Bottle (10 lucky rolls), Swordfish Die (D), Golden Koi (money), Mermaid Crown (gems) |
     | Legend | Sun Die (E), Kraken Die (S), Titan Trident (SSS die), Leviathan Heart (uSSS die + 100 gems) |
 
     Money prizes are worth what fighting earns you in about 4 s (Sardine) up to 10 minutes (Golden Koi)
@@ -529,12 +547,15 @@ hour of fishing brings.
 | `src/ui/rollScreen.ts` | The Roll screen: lucky ring, SUPER ROLL and gift meters, hot streak, x1/x3/x10, the full-screen reveal and its 3 s showcase, next-to-find |
 | `src/ui/classText.ts` | Pet class badges and the animated class colours |
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
-| `src/ui/shopScreen.ts` | The Shop: deal of the day, free gifts, lucky wheel, chests and their opening show, boosts, shelves |
-| `src/data/boosts.ts` | The four Battle Boosts |
+| `src/ui/shopScreen.ts` | The Shop: Premium Egg, deal of the day, free gifts, lucky wheel, chests and their opening show, shelves |
+| `src/data/boosts.ts` | Old Battle Boost ids (only for old saves) |
+| `src/data/diceEvent.ts` | The Dice Rain event: Rain Drops and its 15-prize track |
+| `src/art/bossfx.ts` | Boss attack art: projectiles, warnings, beams, bolts, splats, blasts and spikes |
+| `src/ui/cardOptions.ts` | Ten pet card ideas to choose from (open the game with `?cards`) |
 | `src/data/mutations.ts` | Monster mutations and how often they appear per stage |
 | `src/systems/power.ts` | Damage per second of the hero and team (lobby and My Hero) |
 | `src/ui/mapScreen.ts` | The 100-stage journey map: lands, road, boss portraits, fog, clouds |
-| `src/data/bosses.ts` | The 20 bosses, their three moves, which stages they guard, and the Boss Rush numbers |
+| `src/data/bosses.ts` | The 20 bosses, their three moves and SPECIAL, which stages they guard, and the Boss Rush numbers |
 | `src/art/bosses.ts` | The 15 newer boss pictures (the other 5 are with the monsters) |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |
 | `src/art/pets.ts` | Draws every pet (20 species + accessories + patterns) |

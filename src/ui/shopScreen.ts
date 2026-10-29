@@ -6,7 +6,6 @@ import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
 import { BtnColor, btnTexture, panelTexture } from "../art/ui";
 import { itemSplash, vividCard } from "../art/ps";
-import { BOOSTS } from "../data/boosts";
 import { PASSES } from "../data/passes";
 import { FISH_UPGRADES, upgradeCost } from "../data/fishing";
 import { ITEMS, ItemDef, PET_LIST, PREMIUM, rollPremium } from "../data/items";
@@ -43,7 +42,7 @@ const clock = (ms: number) => {
 };
 
 /** Something you get: shown with an icon and an amount, then added to the save. */
-interface Reward {
+export interface Reward {
   icon: string;
   amount: string;
   give: () => void;
@@ -120,7 +119,6 @@ interface Deal {
 const DEALS: Deal[] = [
   { title: "MEGA DICE BOX", desc: "20 A dice + 8 B dice + 2 C dice", icons: ["die_A", "die_B", "die_C"], was: 420, gems: 165, rewards: () => [diceReward("A", 20), diceReward("B", 8), diceReward("C", 2)] },
   { title: "LUCKY BUNDLE", desc: "3 Luck Potions + 5 B dice", icons: ["icon_potion", "icon_clover", "die_B"], was: 180, gems: 75, rewards: () => [potionReward(potionMinutes() * 3), diceReward("B", 5)] },
-  { title: "BOOST PACK", desc: "2 of every Battle Boost", icons: ["gd_bubble", "pk_heart", "skill_orb"], was: 270, gems: 105, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x2", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 2) })) },
   { title: "RARE ROLLER", desc: "4 C dice + 1 D die", icons: ["die_C", "die_D", "die_C"], was: 360, gems: 150, rewards: () => [diceReward("C", 4), diceReward("D", 1)] },
   { title: "TREASURE TRIO", desc: "3 Silver Chests in one", icons: ["chest_silver", "chest_silver", "chest_silver"], was: 225, gems: 105, rewards: () => [0, 1, 2].flatMap(() => CHESTS[1].rewards()) },
 ];
@@ -193,7 +191,6 @@ const OFFERS: Offer[] = [
   { id: "sss", name: "2 SSS Dice", icon: "die_SSS", price: 3, desc: () => `x${fmt(DICE_LUCK.SSS)} luck per roll`, rewards: () => [diceReward("SSS", 2)] },
   { id: "s", name: "3 S Dice", icon: "die_S", price: 2, desc: () => `x${fmt(DICE_LUCK.S)} luck per roll`, rewards: () => [diceReward("S", 3)] },
   { id: "potion", name: "Mega Potion", icon: "icon_potion", price: 1, desc: () => `x${potionMult()} luck for 60 min`, rewards: () => [potionReward(60)] },
-  { id: "boosts", name: "Boost Crate", icon: "skill_orb", price: 1, desc: () => "3 of every Battle Boost", rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x3", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 3) })) },
   { id: "gems", name: "Gem Hoard", icon: "icon_gem", price: 2, desc: () => "150 gems", rewards: () => [gemReward(150)] },
   { id: "lucky", name: "50 Lucky Rolls", icon: "icon_clover", price: 1, desc: () => "Your next 50 rolls are Lucky", rewards: () => [{ icon: "icon_clover", amount: "x50", give: () => (save.luckyBoost += 50) }] },
   { id: "vault", name: "Golden Vault", icon: "chest_gold", price: 1, desc: () => `${fmt(income(180))} money (3 hours)`, rewards: () => [cashReward(income(180))] },
@@ -257,10 +254,6 @@ interface Ware {
   rewards: (scene: Phaser.Scene) => Reward[];
 }
 
-const boostPack = (n: number): Reward[] => {
-  const b = BOOSTS[Math.floor(Math.random() * BOOSTS.length)];
-  return [{ icon: b.icon, amount: `x${n}`, give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + n) }];
-};
 const stageTierPlus = (k: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), Math.floor((save.stage - 1) / 20) + k)];
 
 /** Wares by rarity (common to legendary). Dice follow your stage's tier. */
@@ -274,12 +267,11 @@ const WARES: Ware[][] = [
   [
     { id: "dice1", name: "Better Dice", icon: "die_B", gems: 36, rewards: () => [diceReward(stageTierPlus(1), 4)] },
     { id: "potion1", name: "Luck Potion", icon: "icon_potion", gems: 24, rewards: () => [potionReward(10)] },
-    { id: "boost1", name: "Battle Boost", icon: "skill_orb", minutes: 12, rewards: () => boostPack(1) },
+    { id: "shell1", name: "Shell Sack", icon: "fish_shell", minutes: 12, rewards: () => [{ icon: "fish_shell", amount: "x150", give: () => (save.fishing.shells += 150) }] },
     { id: "lucky1", name: "Lucky Rolls", icon: "icon_clover", gems: 30, rewards: () => [{ icon: "icon_clover", amount: "x10", give: () => (save.luckyBoost += 10) }] },
   ],
   [
     { id: "dice2", name: "Rare Dice", icon: "die_C", gems: 105, rewards: () => [diceReward(stageTierPlus(2), 3)] },
-    { id: "boost2", name: "Boost Bundle", icon: "pk_heart", gems: 75, rewards: () => BOOSTS.map((b) => ({ icon: b.icon, amount: "x1", give: () => (save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1) })) },
     { id: "chest2", name: "Silver Chest", icon: "chest_silver", gems: 60, rewards: () => CHESTS[1].rewards() },
   ],
   [
@@ -351,11 +343,11 @@ export const playGiftReady = () => {
 
 function playGiftRewards(i: number): Reward[] {
   const big = i === PLAY_GIFTS.length - 1;
-  if (big) return [diceReward(stageTierPlus(2), 3), gemReward(15), potionReward(15)];
+  if (big) return [diceReward(stageTierPlus(2), 3), gemReward(8), potionReward(15)];
   switch (i % 4) {
     case 0: return [diceReward(stageTierPlus(Math.floor(i / 4)), 3 + i)];
-    case 1: return [gemReward(2 + Math.floor(i / 2))];
-    case 2: return [cashReward(income(5 + i * 2)), ...(i >= 6 ? boostPack(1) : [])];
+    case 1: return [gemReward(1 + Math.floor(i / 4))];
+    case 2: return [cashReward(income(5 + i * 2))];
     default: return [potionReward(3 + i), { icon: "fish_shell", amount: `x${20 + i * 10}`, give: () => (save.fishing.shells += 20 + i * 10) }];
   }
 }
@@ -383,7 +375,7 @@ const SPLASH = [0x7fd8ff, 0xffe066, 0xff9ad0, 0x9cf07a, 0xc9a0ff, 0xffb070];
 /** The daily pack chain: the first step costs gems, then every next one is free. */
 /**
  * The Classic Pack: a long chain. Every 5th step costs gems (more each time), the 4 after it are
- * FREE, 10 times over, and the very last step is 5 uSSS dice. Progress is kept until you finish.
+ * FREE, 10 times over, and the very last step is 5 uSSS dice for gems. Progress is kept until you finish.
  */
 const PACK_PAID = [60, 120, 200, 300, 450, 650, 900, 1200, 1600, 2000];
 const PACK_STEPS = PACK_PAID.length * 5;
@@ -391,7 +383,7 @@ const packTier = (t: number): Tier => DICE_TIERS[Math.min(6, Math.floor(t * 0.7)
 function packStep(i: number): { gems: number; rewards: () => Reward[] } {
   const t = Math.floor(i / 5);
   const k = i % 5;
-  if (i === PACK_STEPS - 1) return { gems: 0, rewards: () => [diceReward("uSSS", 5)] };
+  if (i === PACK_STEPS - 1) return { gems: 1500, rewards: () => [diceReward("uSSS", 5)] };
   if (k === 0) return { gems: PACK_PAID[t], rewards: () => [diceReward(DICE_TIERS[Math.min(6, Math.floor(t * 0.7) + 1)], 5)] };
   if (k === 1) return { gems: 0, rewards: () => [gemReward(5 + 5 * t)] };
   if (k === 2) return { gems: 0, rewards: () => [potionReward(10 + 5 * t)] };
@@ -764,9 +756,7 @@ export class ShopScreen extends Screen {
         return { label: n ? `OPEN x${n}` : clock(save.freeGiftAt - Date.now()), color: n ? "green" : "grey", ok: n > 0 };
       }, () => {
         const n = freeGifts();
-        let gems = 0;
-        for (let i = 0; i < n; i++) gems += 1 + Math.floor(Math.random() * 2);
-        const r = [gemReward(gems), diceReward("A", 3 * n), cashReward(income(5 * n))];
+        const r = [diceReward("A", 3 * n), cashReward(income(5 * n))];
         r.forEach((x) => x.give());
         save.freeGiftAt = Date.now() + FREE_GIFT_MS;
         this.rewardShow(n > 1 ? `${n} FREE GIFTS!` : "FREE GIFT", null, r);
@@ -804,22 +794,6 @@ export class ShopScreen extends Screen {
         this.tile(x, y + ch / 2, 325, ch, c.color, c.tex, 190, c.name, () => c.hint, btn);
       });
       y += ch + 40;
-
-      // ── battle boosts (bought with money)
-      y = this.header(y, "BATTLE BOOSTS", "blue");
-      const bh = 390;
-      BOOSTS.forEach((b, i) => {
-        const x = W / 2 + (i % 2 ? 255 : -255);
-        const by = y + Math.floor(i / 2) * (bh + 30) + bh / 2;
-        const btn = this.priceButton(0, 0, 280, 88, this.cashPrice(() => income(b.minutes), "blue"), () => {
-          save.cash -= income(b.minutes);
-          save.boosts[b.id] = (save.boosts[b.id] ?? 0) + 1;
-          this.host.toast(`${b.name} ready for your next fight!`, "#9ae6ff");
-          return true;
-        });
-        this.tile(x, by, 490, bh, "blue", b.icon, 130, b.name, () => `${b.desc}${save.boosts[b.id] ? `  (you have ${save.boosts[b.id]})` : ""}`, btn);
-      });
-      y += 2 * (bh + 30) + 10;
 
       // ── dice
       y = this.header(y, "DICE", "purple");
@@ -1057,7 +1031,7 @@ export class ShopScreen extends Screen {
       const r = p.rewards()[0];
       const item = itemSplash(s, r.icon, 112, SPLASH[i % SPLASH.length], r.amount, last || paid).setPosition(x - 2, sy - 50);
       const parts: Phaser.GameObjects.GameObject[] = [slot, item];
-      if (paid) parts.push(text(s, x - 2, sy - 150, `TIER ${Math.floor(i / 5) + 1}`, 24, "#ffffff", { stroke: 6 }));
+      if (paid) parts.push(text(s, x - 2, sy - 150, last ? "FINAL" : `TIER ${Math.floor(i / 5) + 1}`, 24, last ? "#ffe066" : "#ffffff", { stroke: 6 }));
       if (last) {
         const glow = s.add.image(x - 2, sy - 50, "rays").setTint(0xffe066).setScale(0.45).setAlpha(0.8);
         s.tweens.add({ targets: glow, angle: 360, duration: 5000, repeat: -1 });
@@ -1323,9 +1297,7 @@ export class ShopScreen extends Screen {
     });
     const n = freeGifts();
     if (n) {
-      let gems = 0;
-      for (let i = 0; i < n; i++) gems += 1 + Math.floor(Math.random() * 2);
-      got.push(gemReward(gems), diceReward("A", 3 * n), cashReward(income(5 * n)));
+      got.push(diceReward("A", 3 * n), cashReward(income(5 * n)));
       save.freeGiftAt = Date.now() + FREE_GIFT_MS;
     }
     got.forEach((r) => r.give());
@@ -1477,7 +1449,7 @@ export class ShopScreen extends Screen {
   // ───────────────────────── opening things ─────────────────────────
 
   /** Full-screen reveal: a chest shakes and pops open (or a gift bursts), then the rewards fly out. */
-  private rewardShow(title: string, chest: string | null, rewards: Reward[]): void {
+  rewardShow(title: string, chest: string | null, rewards: Reward[]): void {
     const s = this.scene;
     const W = s.scale.width;
     const H = s.scale.height;

@@ -13,7 +13,11 @@ import { MAX_PETS, dmgMult, petSlots } from "../systems/stats";
 import { fmt, oneIn } from "./format";
 import { classBadge, classText } from "./classText";
 import { Host, Screen } from "./screens";
-import { Modal, button, drawBar, fitText, label, lockedCard, modal, petCard, text } from "./widgets";
+import { Modal, button, drawBar, fitText, label, modal, text } from "./widgets";
+import { gemCard } from "./cardOptions";
+
+/** The Dark Gem card is 200 x 250; grow it to fill the old card's space. */
+const CARD_SCALE = Math.min(CARD_W / 200, CARD_H / 250);
 
 const KIND_LABEL = { shot: "Shooter", pierce: "Star thrower", splash: "Bomber", zap: "Pouncer", buff: "Support" };
 
@@ -198,8 +202,8 @@ export class PetsScreen extends Screen {
         list.add(s.add.image(x, y, "glow").setTint(TIER_INFO[ITEMS[id].cls].color).setScale(scale * 1.4, scale * 1.8).setAlpha(0.55));
       }
       const card = owned
-        ? petCard(s, x, y, id, { level: true, equipped: save.equipped.includes(id), isNew: save.newPets.includes(id) }).setScale(scale)
-        : lockedCard(s, x, y, id).setScale(scale);
+        ? gemCard(s, x, y, id, { equipped: save.equipped.includes(id), isNew: save.newPets.includes(id) }).setScale(scale * CARD_SCALE)
+        : gemCard(s, x, y, id).setScale(scale * CARD_SCALE);
       list.add(card);
       if (owned) this.items.push({ obj: card, onTap: () => this.openPet(id) });
       else if (this.tab === "pets") {
@@ -409,7 +413,7 @@ export class PetsScreen extends Screen {
       const rays = s.add.image(0, -330, "rays").setTint(TIER_INFO[def.cls].color).setAlpha(0.45).setScale(0.75);
       s.tweens.add({ targets: rays, angle: 360, duration: 14000, repeat: -1 });
       const glow = s.add.image(0, -330, "glow").setTint(TIER_INFO[def.cls].color).setScale(1.9).setAlpha(0.7);
-      const card = petCard(s, 0, -330, id, { level: true }).setScale(1.1);
+      const card = gemCard(s, 0, -330, id).setScale(1.1 * CARD_SCALE);
       content.add([rays, glow, card]);
       s.tweens.add({ targets: card, y: -338, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       // Premium Egg pets have no class: they hit for a share of your best pet

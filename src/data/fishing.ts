@@ -1,4 +1,4 @@
-import { BOOSTS, BoostId } from "./boosts";
+import type { BoostId } from "./boosts";
 import { DICE_TIERS, Tier } from "./tiers";
 
 /**
@@ -39,7 +39,7 @@ export const PRIZES: Prize[] = [
   { id: "pouch", name: "Coin Pouch", kind: "cash", amount: 12, weight: 12, pow: 0, row: 0 },
   // row 1: good catches
   { id: "puffer", name: "Puffer Die", kind: "dice", amount: 1, tier: "B", weight: 3, pow: 0.25, row: 1 },
-  { id: "oyster", name: "Pearl Oyster", kind: "gems", amount: 1, weight: 0.6, pow: 0.15, row: 1 },
+  { id: "oyster", name: "Pearl Oyster", kind: "gems", amount: 1, weight: 0.12, pow: 0.15, row: 1 },
   { id: "luckPotion", name: "Luck Potion", kind: "luckPotion", amount: 1, weight: 1.4, pow: 0.15, row: 1 },
   { id: "salmon", name: "Fat Salmon", kind: "cash", amount: 25, weight: 3, pow: 0.25, row: 1 },
   // row 2: rare catches (from here down: tiny chances at first that luck lifts a lot)
@@ -48,7 +48,7 @@ export const PRIZES: Prize[] = [
   { id: "chest", name: "Sunken Chest", kind: "cash", amount: 100, weight: 0.27, pow: 0.6, row: 2 },
   { id: "clover", name: "Sea Clover", kind: "lucky", amount: 3, weight: 0.15, pow: 0.6, row: 2 },
   // row 3: epic catches
-  { id: "bottle", name: "Message Bottle", kind: "boost", amount: 1, weight: 0.05, pow: 0.9, row: 3 },
+  { id: "bottle", name: "Message Bottle", kind: "lucky", amount: 10, weight: 0.05, pow: 0.9, row: 3 },
   { id: "swordfish", name: "Swordfish Die", kind: "dice", amount: 1, tier: "D", weight: 0.025, pow: 0.9, row: 3 },
   { id: "koi", name: "Golden Koi", kind: "cash", amount: 600, weight: 0.01, pow: 0.9, row: 3 },
   { id: "crown", name: "Mermaid Crown", kind: "gems", amount: 10, weight: 0.0015, pow: 0.9, row: 3 },
@@ -66,7 +66,7 @@ export const ROW_COLORS = [0xb8c2cc, 0x6fd25a, 0x4fa8ff, 0xb36aff, 0xff4fd8];
 export const ROW_NAMES = ["Common", "Good", "Rare", "Epic", "Legend"];
 
 /** Shells that come with every catch, by row (then times the Golden Line). */
-export const ROW_SHELLS = [1, 2, 5, 15, 60];
+export const ROW_SHELLS = [2, 6, 20, 80, 400];
 /** The first catch of each prize brings this many times its row's shells. */
 export const FIRST_CATCH_SHELLS = 25;
 
@@ -190,7 +190,7 @@ export function expectedCatch(lv: Record<FishUpId, number>): Haul {
 
 /**
  * The fishing event (its card is in the battle lobby): every catch fills the event bar, and each
- * round has 10 rewards for your next fights: dice, gems, battle boosts, luck potions, lucky rolls,
+ * round has 10 rewards: dice, gems, luck potions, lucky rolls,
  * shells, and a big prize at the end. Then the next round starts, with bigger goals and rewards.
  */
 export type EventRewardKind = "shells" | "dice" | "gems" | "boost" | "luckPotion" | "lucky" | "grand";
@@ -220,18 +220,17 @@ export function eventReward(round: number, k: number, stage: number): EventRewar
   const g = Math.min(8, roundScale(round));
   const tier = stageDiceTier(stage);
   const up = DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), DICE_TIERS.indexOf(tier) + 1)];
-  const boost = (n: number) => BOOSTS[(round + n) % BOOSTS.length].id;
   switch (k) {
     case 0: return { kind: "shells", amount: Math.round(15 * g) };
     case 1: return { kind: "dice", amount: 2, tier };
-    case 2: return { kind: "gems", amount: 2 + Math.min(round, 6) };
-    case 3: return { kind: "boost", amount: 1, boost: boost(0) };
+    case 2: return { kind: "gems", amount: 1 + Math.min(round, 3) };
+    case 3: return { kind: "lucky", amount: 2 };
     case 4: return { kind: "luckPotion", amount: Math.min(15, 4 + round) };
     case 5: return { kind: "shells", amount: Math.round(40 * g) };
     case 6: return { kind: "dice", amount: 3, tier };
     case 7: return { kind: "lucky", amount: 3 };
-    case 8: return { kind: "boost", amount: 2, boost: boost(2) };
-    default: return { kind: "grand", amount: 1, tier: up, gems: 5 + Math.min(round, 10) };
+    case 8: return { kind: "dice", amount: 2, tier: up };
+    default: return { kind: "grand", amount: 1, tier: up, gems: 2 + Math.min(round, 4) };
   }
 }
 

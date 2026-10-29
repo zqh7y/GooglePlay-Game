@@ -4,7 +4,6 @@ import { petTexture } from "../art/pets";
 import { btnTexture, panelTexture } from "../art/ui";
 import { crystalKey } from "../art/world";
 import { MAX_STAGE, MINUTES, STAGE_MS, recommendedDps } from "../data/balance";
-import { BOOSTS, BoostDef } from "../data/boosts";
 import { GADGETS, GADGET_SLOTS, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetIcon, gadgetName, gadgetStats } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
@@ -29,9 +28,11 @@ import { makeOnlineTextures } from "../art/online";
 import { canUsePlayGames, online, onlineEnabled, onlineTick, ownersOf, playerName, signInWithPlay, startOnline, syncSoon } from "../online/online";
 import { askName, showLeaderboard } from "../ui/leaderboard";
 import { Tutorial } from "../ui/tutorial";
-import { lastSeenAtLoad, persist, resetSave, save, totalDice, stageCap, diceEventLeft } from "../systems/save";
+import { addPet, lastSeenAtLoad, persist, resetSave, save, totalDice, stageCap, diceEventLeft } from "../systems/save";
+import { RAIN_TRACK, RAIN_WIN_DROPS, RainReward } from "../data/diceEvent";
 import { buzz, isMuted, music, setMuted, sfx, unlockAudio } from "../systems/sound";
 import { applySettings } from "../systems/settings";
+import { cardShowcase } from "../ui/cardOptions";
 import {
   autoUnlocked, canBuy, critChance, critDamage, dicePerRoll, gemsPerBoss, luck, luckyEvery, luckyMult, moveSpeedMult, offlineRate, petSlots, potionActive, potionMult, rollTime,
 } from "../systems/stats";
@@ -41,7 +42,7 @@ import { MapScreen } from "../ui/mapScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
 import { GIFT_EVERY, RollScreen, SUPER_MULT, superEvery } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
-import { ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/shopScreen";
+import { Reward, ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "../ui/shopScreen";
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
@@ -149,8 +150,6 @@ export class UIScene extends Phaser.Scene implements Host {
   private rushFace!: Phaser.GameObjects.Image;
   private rushNum!: Phaser.GameObjects.Text;
   /** Battle Boosts waiting for the next fight */
-  private boostRow!: Phaser.GameObjects.Container;
-  private boostKey = "";
   /** the luck potion: a big glowing icon with its timer under it */
   private potionBadge!: Phaser.GameObjects.Container;
   private potionTime!: Phaser.GameObjects.Text;
@@ -173,6 +172,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private eventCard!: Phaser.GameObjects.Container;
   private diceEventCard!: Phaser.GameObjects.Container;
   private diceEventTime!: Phaser.GameObjects.Text;
+  private diceEventBadge?: Phaser.GameObjects.Container;
   private eventBar!: Phaser.GameObjects.Graphics;
   private eventText!: Phaser.GameObjects.Text;
   private eventGlow!: Phaser.GameObjects.Image;
@@ -208,6 +208,8 @@ export class UIScene extends Phaser.Scene implements Host {
 
   create(): void {
     applySettings(this.game);
+    // ?cards: the pet card ideas, for choosing a new look
+    if (new URLSearchParams(location.search).has("cards")) (window as unknown as { cardShowcase: (n: number) => void }).cardShowcase = (n) => cardShowcase(this, n);
     this.H = this.scale.height;
     this.L = layoutFor(this.H);
     Object.assign(this, { openModal: null, celebrating: false, picker: null, badges: [], tab: "battle", mapOpen: false, nav: {}, mode: "" });
@@ -245,6 +247,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["mode-intro", this.modeIntro],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
+      ["rain-drops", (n: number) => this.toast(`+${n} Rain Drops for the Dice Rain event!`, "#9ae6ff")],
     ];
     for (const [ev, fn] of on) this.game.events.on(ev, fn, this);
     this.events.once("shutdown", () => {
@@ -663,8 +666,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.stagePrev = arrowButton(this, 0, 178, -1, () => this.pickStage(save.stage - 1));
     this.stageNext = arrowButton(this, 0, 178, 1, () => this.pickStage(save.stage + 1));
     this.lobby.add([this.stagePrev, this.stageNext]);
-    this.boostRow = this.add.container(W / 2, bottom - 510);
-    this.lobby.add([this.dpsPill, this.luckPill, this.potionBadge, this.boostRow, go]);
+    this.lobby.add([this.dpsPill, this.luckPill, this.potionBadge, go]);
     this.lobby.bringToTop(this.rushHint);
     // quest tracker
     // a vivid card: the quest's icon on a paint splat, a short name, a bar with the numbers on it
@@ -847,8 +849,12 @@ export class UIScene extends Phaser.Scene implements Host {
       c.setScale(1);
       unlockAudio();
       sfx.click();
-      this.confirmStart("event");
+      this.showDiceEvent();
     });
+    // a red "!" when prizes are waiting
+    this.diceEventBadge = this.add.container(92, -112, [this.add.circle(0, 0, 22, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(this, 0, -1, "!", 30, "#ffffff", { stroke: 5 })]);
+    this.tweens.add({ targets: this.diceEventBadge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    c.add(this.diceEventBadge);
     this.diceEventCard = c;
     this.lobby.add(c);
   }
@@ -857,6 +863,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const left = diceEventLeft();
     this.diceEventCard?.setVisible(left > 0);
     if (left > 0) this.diceEventTime?.setText(dhm(left));
+    this.diceEventBadge?.setVisible(this.rainReady() > 0);
     const e = save.fishing.event;
     const ready = eventReady();
     const n = eventNext();
@@ -866,6 +873,112 @@ export class UIScene extends Phaser.Scene implements Host {
     this.eventText.setText(ready ? "CLAIM!" : `${fmt(e.points)}/${fmt(n.goal)}`).setColor(ready ? "#ffe066" : "#ffffff");
     fitText(this.eventText, 176);
     this.eventGlow.setVisible(ready > 0);
+  }
+
+  /** A Dice Rain track prize as a reward to show and give. */
+  private rainReward(r: RainReward): Reward {
+    switch (r.kind) {
+      case "dice": return { icon: `die_${r.tier}`, amount: `x${r.amount}`, give: () => (save.dice[r.tier!] += r.amount) };
+      case "gems": return { icon: "icon_gem", amount: `x${r.amount}`, give: () => (save.gems += r.amount) };
+      case "potion": return { icon: "icon_potion", amount: `${r.amount}m`, give: () => (save.potionUntil = Math.max(Date.now(), save.potionUntil) + r.amount * 60000) };
+      case "lucky": return { icon: "icon_clover", amount: `x${r.amount}`, give: () => (save.luckyBoost += r.amount) };
+      case "ticket": return { icon: "icon_ticket", amount: `x${r.amount}`, give: () => (save.tickets += r.amount) };
+      case "pet": return { icon: petTexture(this, r.pet!), amount: "NEW!", give: () => addPet(r.pet!) };
+    }
+  }
+
+  /** Track prizes reached but not claimed yet. */
+  private rainReady(): number {
+    let n = 0;
+    while (save.rain.claimed + n < RAIN_TRACK.length && save.rain.drops >= RAIN_TRACK[save.rain.claimed + n].goal) n++;
+    return n;
+  }
+
+  /**
+   * The Dice Rain event: a big blue card with dice raining down, your Rain Drops, the 15 prizes
+   * of its track (two exclusive pets on it), CLAIM ALL and PLAY.
+   */
+  private showDiceEvent(): void {
+    const W = 1000;
+    const H = 1560;
+    const top = -H / 2;
+    const m = this.showModal(modal(this, W, H, "", "blue", () => (this.openModal = null), undefined, true));
+    const b = m.body;
+    b.add(this.add.image(0, 0, vividCard(this, 0x3a8ae0, W, H)));
+    // dice keep raining down behind the title
+    for (let k = 0; k < 9; k++) {
+      const tier = DICE_TIERS[k % 6];
+      const x = -W / 2 + 80 + k * ((W - 160) / 8);
+      const d = this.add.image(x, top + 40, `die_${tier}`).setScale(0.55).setAlpha(0);
+      this.tweens.add({ targets: d, y: top + 300, alpha: { from: 0.9, to: 0 }, angle: 200, duration: 1600, delay: k * 230, repeat: -1, ease: "Quad.in" });
+      b.add(d);
+    }
+    b.add([
+      text(this, 0, top + 120, "DICE RAIN", 110, "#ffffff", { stroke: 16 }),
+      this.add.image(0, top + 228, panelTexture(this, "glass", 640, 70)),
+      text(this, 0, top + 226, `BEGINNER EVENT  •  ends in ${dhm(diceEventLeft())}`, 32, "#ffe066", { stroke: 7 }),
+    ]);
+    // your drops and the bar to the next prize
+    const next = RAIN_TRACK[save.rain.claimed + this.rainReady()];
+    const prev = save.rain.claimed + this.rainReady() > 0 ? RAIN_TRACK[save.rain.claimed + this.rainReady() - 1].goal : 0;
+    const bar = this.add.graphics();
+    drawBar(bar, -380, top + 360, 760, 40, next ? (save.rain.drops - prev) / (next.goal - prev) : 1, 0x5ac8ff);
+    b.add([
+      this.add.image(-300, top + 306, "die_C").setScale(0.62),
+      text(this, -250, top + 304, `${save.rain.drops.toLocaleString("en-US")} Rain Drops`, 46, "#ffffff", { stroke: 9 }).setOrigin(0, 0.5),
+      bar,
+      text(this, 0, top + 380, next ? `next prize at ${next.goal.toLocaleString("en-US")}` : "TRACK COMPLETE!", 26, "#ffffff", { stroke: 6 }),
+    ]);
+    // the 15 prizes
+    const TW = 172;
+    const TH = 214;
+    const g = this.add.graphics();
+    b.add(g);
+    RAIN_TRACK.forEach((t, i) => {
+      const x = -2 * (TW + 12) + (i % 5) * (TW + 12);
+      const y = top + 560 + Math.floor(i / 5) * (TH + 18);
+      const claimed = i < save.rain.claimed;
+      const ready = !claimed && save.rain.drops >= t.goal;
+      const pet = t.reward.kind === "pet";
+      const fill = claimed ? 0x7ad651 : ready ? 0xffd23f : pet ? 0xc9a0ff : 0xf2f6ff;
+      g.fillStyle(0x000000, 0.25).fillRoundedRect(x - TW / 2 + 4, y - TH / 2 + 8, TW, TH, 22);
+      g.fillStyle(pet ? 0x6a2ab0 : 0x1a3a6a, 1).fillRoundedRect(x - TW / 2, y - TH / 2, TW, TH, 22);
+      g.fillStyle(fill, 1).fillRoundedRect(x - TW / 2 + 6, y - TH / 2 + 6, TW - 12, TH - 12, 18);
+      const rw = this.rainReward(t.reward);
+      const parts: Phaser.GameObjects.GameObject[] = [];
+      if (ready || pet) {
+        const rays = this.add.image(x, y - 22, "rays").setTint(ready ? 0xffffff : 0xffe066).setScale(0.32).setAlpha(0.7);
+        this.tweens.add({ targets: rays, angle: 360, duration: 5000, repeat: -1 });
+        parts.push(rays);
+      }
+      const icon = this.add.image(x, y - 22, rw.icon);
+      icon.setScale((pet ? 120 : 92) / Math.max(icon.width, icon.height)).setAlpha(claimed ? 0.5 : 1);
+      if (ready) this.tweens.add({ targets: icon, scale: icon.scale * 1.12, duration: 400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      parts.push(icon, text(this, x + 40, y + 30, rw.amount, 30, "#ffffff", { stroke: 7 }));
+      parts.push(text(this, x, y + 78, claimed ? "CLAIMED" : t.goal.toLocaleString("en-US"), 28, claimed ? "#ffffff" : ready ? "#4a2f1d" : "#3a5a80", { stroke: claimed ? 6 : false }));
+      if (claimed) parts.push(this.add.image(x + 52, y - 70, "icon_check").setScale(0.5));
+      if (pet && !claimed) parts.push(text(this, x, y - TH / 2 + 4, "EXCLUSIVE", 22, "#ffe066", { stroke: 6 }));
+      b.add(parts);
+    });
+    b.add(label(this, 0, top + 1250, `Dodge the falling dice in the Dice Rain fight: every die = drops\n(rare dice give more). Survive 5:00 for +${RAIN_WIN_DROPS}. Rarest pets at the end!`, 28, "#ffffff"));
+    // CLAIM ALL and PLAY
+    const ready = this.rainReady();
+    const by = H / 2 - 120;
+    if (ready) {
+      b.add(button(this, -230, by, 400, 120, "gold", `CLAIM ${ready}`, () => {
+        const got: Reward[] = [];
+        for (let k = 0; k < ready; k++) got.push(this.rainReward(RAIN_TRACK[save.rain.claimed++].reward));
+        got.forEach((r) => r.give());
+        persist();
+        this.petsChanged();
+        m.close();
+        (this.screens.shop as ShopScreen).rewardShow("DICE RAIN!", null, got);
+      }, { size: 40 }));
+    }
+    b.add(button(this, ready ? 230 : 0, by, ready ? 400 : 520, 120, "green", "PLAY", () => {
+      m.close();
+      this.time.delayedCall(150, () => this.confirmStart("event"));
+    }, { size: 48 }));
   }
 
   /** Where the event card is (the tutorial points at it). */
@@ -903,24 +1016,6 @@ export class UIScene extends Phaser.Scene implements Host {
     this.badges.push({ obj, show });
   }
 
-  /** "Boosts: [gun] x1 [heart] x2" above the BATTLE button; tap it to buy more in the shop. */
-  private drawBoostRow(owned: BoostDef[]): void {
-    const row = this.boostRow;
-    row.removeAll(true);
-    if (!owned.length) return;
-    const w = 190 + owned.length * 150;
-    row.add([this.add.image(0, 0, panelTexture(this, "glass", w, 92)), text(this, -w / 2 + 90, 0, "BOOSTS", 28, "#9ae6ff")]);
-    owned.forEach((b, i) => {
-      const x = -w / 2 + 230 + i * 150;
-      const icon = this.add.image(x - 22, 0, b.icon);
-      icon.setScale(62 / Math.max(icon.width, icon.height));
-      row.add([icon, text(this, x + 36, 4, `x${save.boosts[b.id]}`, 30)]);
-    });
-    row.setSize(w, 92).setInteractive({ useHandCursor: true }).off("pointerup").on("pointerup", () => this.setTab("shop"));
-    row.setScale(0.6);
-    this.tweens.add({ targets: row, scale: 1, duration: 300, ease: "Back.out" });
-  }
-
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(luck())}`);
@@ -931,12 +1026,6 @@ export class UIScene extends Phaser.Scene implements Host {
       this.dpsPill.value.setColor(dps >= rec ? "#b6ff8a" : "#ffb0a0");
       // way stronger than this stage: Boss Rush is calling
       this.rushHint.setVisible(dps >= rec * 1.5);
-      const owned = BOOSTS.filter((b) => save.boosts[b.id]);
-      const key = owned.map((b) => `${b.id}${save.boosts[b.id]}`).join();
-      if (key !== this.boostKey) {
-        this.boostKey = key;
-        this.drawBoostRow(owned);
-      }
       const active = potionActive();
       this.potionBadge.setVisible(active);
       if (active) {
@@ -975,7 +1064,9 @@ export class UIScene extends Phaser.Scene implements Host {
       this.stageText.setText(`Boss Rush  •  best: boss ${save.bossRushBest}`);
     } else {
       drawBar(g, 220, 130, 480, 24, battle.xp, 0x5ac8ff);
-      this.levelText.setText(`Lv ${battle.level}`).setColor("#ffffff");
+      // saved-up picks wait for the once-a-minute window
+      const picks = battle.picks ? `  •  ${battle.picks} pick${battle.picks > 1 ? "s" : ""} in ${Math.ceil(battle.pickIn / 1000)}s` : "";
+      this.levelText.setText(`Lv ${battle.level}${picks}`).setColor(battle.picks ? "#ffe066" : "#ffffff");
       this.stageText.setText(`Stage ${save.stage}  •  ${regionForStage(save.stage).name}`);
     }
     fitText(this.stageText, 480);
@@ -1538,7 +1629,7 @@ export class UIScene extends Phaser.Scene implements Host {
       : [
         [modeForStage(save.stage) === "boss" ? "mode_boss" : "icon_clock", modeForStage(save.stage) === "boss" ? "x4" : "5:00", "#ffffff"],
         ["icon_sword", `${fmt(dps)}/${fmt(rec)}`, dps >= rec ? "#b6ff8a" : "#ffb0a0"],
-        ["icon_gem", ev ? "+20" : `+${gemsPerBoss()}`, "#9ae6ff"],
+        ev ? ["die_C", "DROPS", "#9ae6ff"] : ["icon_gem", `+${gemsPerBoss()}`, "#9ae6ff"],
       ];
     const cy = top + 900;
     chips.forEach(([icon, val, css], i) => {
@@ -1607,7 +1698,7 @@ export class UIScene extends Phaser.Scene implements Host {
       save.totalRolls++;
       if (++save.giftCount >= GIFT_EVERY) {
         save.giftCount = 0;
-        const gift = { tier: rollDiceTier(save.stage + 10), dice: 3, gems: 2 };
+        const gift = { tier: rollDiceTier(save.stage + 10), dice: 3, gems: Math.random() < 0.2 ? 1 : 0 };
         save.dice[gift.tier] += gift.dice;
         save.gems += gift.gems;
         gifts.push(gift);
@@ -1637,7 +1728,7 @@ export class UIScene extends Phaser.Scene implements Host {
       if (anyNew) this.time.delayedCall(2400, () => this.indexMilestone());
       this.miniReveal(results);
       this.sideReveal(results, record);
-      for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice, +${g.gems} gems!`, "#ffe066");
+      for (const g of gifts) this.toast(`Roll gift: +${g.dice} ${g.tier} dice${g.gems ? `, +${g.gems} gem` : ""}!`, "#ffe066");
     }
   }
 

@@ -80,6 +80,8 @@ export interface SaveData {
   firstPlay: number;
   /** Dice Rain event runs won */
   diceWins: number;
+  /** the Dice Rain event: Rain Drops earned and how many track prizes are claimed */
+  rain: { drops: number; claimed: number };
   /** the settings screen's switches */
   settings: { vibrate: boolean; toaster: boolean; effects: boolean; shake: boolean; dmgNumbers: boolean; hpNumbers: boolean };
   /** developer mode: every stage can be played from the map */
@@ -185,6 +187,7 @@ function fresh(): SaveData {
     settings: { vibrate: true, toaster: false, effects: true, shake: true, dmgNumbers: true, hpNumbers: true },
     firstPlay: Date.now(),
     diceWins: 0,
+    rain: { drops: 0, claimed: 0 },
     pack: { day: -1, step: 0 },
     eventShop: { slot: -1, bought: [], week: -1, special: false },
     merchant: { cycle: -1, shift: 0, bought: [] },
@@ -217,6 +220,7 @@ function load(): SaveData {
       data.newPets = data.newPets.filter((id) => data.pets[id]);
       data.fishing = { ...freshFishing(), ...data.fishing };
       data.settings = { ...fresh().settings, ...data.settings };
+      data.rain = { ...fresh().rain, ...data.rain };
       data.online = { ...{ name: "", named: false }, ...(data.online as Partial<SaveData["online"]> | undefined) };
       // players from before the tutorial and the intro don't need them
       const raw = JSON.parse(raw0) as Partial<SaveData>;

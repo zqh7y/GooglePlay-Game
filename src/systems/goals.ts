@@ -89,7 +89,7 @@ export function questEvent(type: QuestType, amount = 1): void {
 }
 
 export function questReward(): { gems: number; cash: number } {
-  return { gems: 3 + Math.floor(save.questTier / 2), cash: Math.max(300, save.cashPerSec * 150) };
+  return { gems: 1 + Math.floor(save.questTier / 4), cash: Math.max(300, save.cashPerSec * 150) };
 }
 
 export function claimQuest(i: number): { gems: number; cash: number } | null {

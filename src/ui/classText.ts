@@ -19,6 +19,9 @@ const PALETTE: Record<Tier, number[]> = {
   SSS: [0xff4fd8, 0xb36aff, 0x4fa8ff, 0xffe066],
   uSSS: [],
 };
+/** A class's main colour (uSSS: pink, it is a rainbow when animated). */
+export const classColor = (cls: Tier): number => (cls === "uSSS" ? 0xff4fd8 : PALETTE[cls][0]);
+
 /** Milliseconds for one colour cycle (0 = still). */
 const PERIOD: Record<Tier, number> = { A: 0, B: 1800, C: 1500, D: 1200, E: 1000, S: 750, SSS: 650, uSSS: 420 };
 

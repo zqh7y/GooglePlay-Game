@@ -1005,7 +1005,8 @@ export class RollScreen extends Screen {
       buzz(60);
       this.burst.setParticleTint(0xffcf3a);
       this.burst.explode(40, W / 2, cy);
-      const items: [string, string, number][] = [[`die_${tier}`, `+${dice}`, TOP_ROW.dice], ["icon_gem", `+${gems}`, TOP_ROW.gems]];
+      const items: [string, string, number][] = [[`die_${tier}`, `+${dice}`, TOP_ROW.dice]];
+      if (gems) items.push(["icon_gem", `+${gems}`, TOP_ROW.gems]);
       items.forEach(([icon, str, tx], i) => {
         const img = s.add.image(0, 0, icon);
         img.setScale(110 / Math.max(img.width, img.height));

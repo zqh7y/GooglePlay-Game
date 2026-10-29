@@ -15,7 +15,6 @@ import {
   AIRDROP_FIRST_MS, AIRDROP_MS, BATTLE_BOSS_MULT, BOSS, BOSS_HEAL, CRYSTAL_DIE_MS, HEALING_BOSS_HP, SEALS, SEAL_MS, CRYSTAL_HP, ELITE_MULT, crystalHpAt, raiderShare, FLYER, HERO_BASE_DMG, HERO_HP, HERO_TEAM_SHARE, heroHpAt,
   MAX_MONSTERS, MAX_STAGE, MINUTES, MonsterStats, SHIELD_MS, STAGE_MS, WALKER_A, WALKER_B, monsterCash, monsterHp, spawnGap, xpFor,
 } from "../data/balance";
-import { BOOSTS, BoostDef } from "../data/boosts";
 import {
   GADGETS, GADGET_KINDS, GADGET_SLOTS, GadgetBase, GadgetKind, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetKey, gadgetName, gadgetStats,
 } from "../data/gadgets";
@@ -25,11 +24,13 @@ import { CRYSTAL_SKILLS, SKILLS, SKILL_BY_ID, SKILL_SLOTS, SkillId, skillChoices
 import { MUTATION_BY_ID, MutationId, rollMutations } from "../data/mutations";
 import { makeMutationTextures } from "../art/mutations";
 import { makeBossTextures } from "../art/bosses";
+import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
-import { BOSS_EVERY, BOSS_MOVES, BossMoveId, RUSH_MS, bossForStage, rushBossHp } from "../data/bosses";
+import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, EDGE, clampX, clampY, getArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
+import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
 import { hasPass, persist, save, stageCap } from "../systems/save";
 import { buzz, music, sfx } from "../systems/sound";
@@ -58,7 +59,10 @@ const pickWeighted = <T,>(list: [T, number][]): T => {
   return list[0][0];
 };
 /** the Air Zone covers 10% of the map */
-const AIR_ZONE = Math.round(ARENA * Math.sqrt(0.1));
+/** The safe air square: a third as wide as it used to be, so you have to stay sharp. */
+/** How often the saved-up level-ups and skills can be picked. */
+const PICK_MS = 60000;
+const AIR_ZONE = Math.round((ARENA * Math.sqrt(0.1)) / 3);
 const PICK_R = 210;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;
@@ -123,6 +127,9 @@ export const battle = {
   streak: 0,
   /** a level-up skill choice is open */
   choosing: false,
+  /** level-ups and skills saved up for the next pick window, and the ms until it opens */
+  picks: 0,
+  pickIn: 0,
   shielded: false,
   /** ms until the shield goes up or down */
   shieldLeft: SHIELD_MS,
@@ -190,6 +197,8 @@ interface EnemyType {
   fx: number;
   /** a boss's three special moves */
   moves?: BossMoveId[];
+  /** its own SPECIAL that reaches you anywhere (main bosses only) */
+  special?: SpecialId;
 }
 
 interface Enemy {
@@ -203,6 +212,8 @@ interface Enemy {
   r: number;
   elite: boolean;
   aura?: Phaser.GameObjects.Image;
+  /** a boss's move warning (a lane, zone, cone...) */
+  tele?: Phaser.GameObjects.Image;
   flashUntil: number;
   atkTimer: number;
   /** heading for the crystal right now */
@@ -213,10 +224,15 @@ interface Enemy {
   raider: boolean;
   attacking: boolean;
   /** what a boss is doing: walking, or one of its moves (see bossMove) */
-  phase: "walk" | "windup" | "dash" | "stomp" | "throw" | "ring" | "volley" | "summon" | "spin" | "rain" | "jump" | "blink" | "burrow" | "rise" | "breath";
+  phase: "walk" | "windup" | "dash" | "stomp" | "throw" | "ring" | "volley" | "summon" | "spin" | "rain" | "jump" | "blink" | "burrow" | "rise" | "breath" | "cast";
   phaseT: number;
-  /** shots left in a ring or volley */
+  /** shots left in a ring or volley (or dashes left in a chain) */
   shots: number;
+  /** moves done so far (every third one is the special), and the current dash's speed, length and wind-up */
+  casts: number;
+  dashV: number;
+  dashMs: number;
+  dashWind: number;
   tickT: number;
   dashX: number;
   dashY: number;
@@ -286,7 +302,23 @@ interface Bullet {
 }
 
 /** Rocks the boss throws at you. */
-/** A red circle on the ground that blows up when its time comes. */
+/** How a danger zone hits: what (if anything) falls on it, and what it looks like when it lands. */
+type StrikeStyle = "slam" | "goo" | "thunder" | "pumpkin" | "ice" | "rock" | "root" | "toxic" | "sand" | "magic";
+type ImpactKind = "dust" | "splat" | "bolt" | "blast" | "ice" | "rock" | "root";
+const STRIKE_LOOK: Record<StrikeStyle, { color: number; fall?: string; impact: ImpactKind }> = {
+  slam: { color: 0xff4a3a, impact: "dust" },
+  goo: { color: 0x7fd35a, fall: "bp_goo", impact: "splat" },
+  thunder: { color: 0xffd23f, impact: "bolt" },
+  pumpkin: { color: 0xff8a2a, fall: "bp_pumpkin", impact: "blast" },
+  ice: { color: 0x8fd8ff, fall: "bp_icicle", impact: "ice" },
+  rock: { color: 0xff7a3a, impact: "rock" },
+  root: { color: 0x7ad651, impact: "root" },
+  toxic: { color: 0xb04aff, impact: "splat" },
+  sand: { color: 0xe8b060, impact: "rock" },
+  magic: { color: 0xd04aff, fall: "orb", impact: "blast" },
+};
+
+/** A danger zone on the ground that hits when its time comes. */
 interface Strike {
   x: number;
   y: number;
@@ -294,6 +326,10 @@ interface Strike {
   at: number;
   ms: number;
   dmg: number;
+  style: StrikeStyle;
+  color: number;
+  /** its warning (and whatever is falling on it) */
+  objs: Phaser.GameObjects.GameObject[];
 }
 
 interface Rock {
@@ -302,6 +338,37 @@ interface Rock {
   vy: number;
   life: number;
   dmg: number;
+  /** hit radius (default 60) */
+  r?: number;
+  /** turns toward you this many radians a second */
+  home?: number;
+  /** ms it waits (showing its aim line) before it flies; `track` keeps aiming at you while it waits */
+  wait?: number;
+  track?: boolean;
+  bounce?: boolean;
+  speed?: number;
+  /** turned to where it flies (else it spins `spin` per second) */
+  face?: boolean;
+  spin?: number;
+  /** flapping: textures it cycles through */
+  frames?: string[];
+  glow?: Phaser.GameObjects.Image;
+  /** the red lane it shows while it waits */
+  aim?: Phaser.GameObjects.Image;
+}
+
+/** A beam lane: red first, then it fires along its whole length. */
+interface Lane {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  w: number;
+  at: number;
+  ms: number;
+  dmg: number;
+  color: number;
+  obj: Phaser.GameObjects.Container;
 }
 
 type PickKind = "dice" | "heart" | "magnet" | "bomb" | "freeze" | "orb" | "chest" | "airdrop";
@@ -390,7 +457,7 @@ export class BattleScene extends Phaser.Scene {
     hunger: number; fed: number; foodAt: number; food: Phaser.GameObjects.Image | null; carried: boolean;
     friend: boolean; escaped: boolean; stompT: number;
   } | null;
-  private rain!: { t: number; dodged: number };
+  private rain!: { t: number; dodged: number; drops: number };
   /** the wooden board where the crystal used to stand in the lobby: next stage and its mode */
   private stageSign: Phaser.GameObjects.Container | null = null;
   /** mode props (signs, pillars, bubbles) to clear when the zone moves */
@@ -429,14 +496,14 @@ export class BattleScene extends Phaser.Scene {
   private level = 1;
   private xp = 0;
   private pendingLevels = 0;
+  /** picks only open once a minute (PICK_MS), all of them in a row, so they don't pop up every few seconds */
+  private pickClock = 0;
+  private pickOpen = false;
   /** skill picks waiting (from skill orbs, airdrops and elites) */
   private pendingSkills = 0;
   private gadgetOpts: GadgetOption[] = [];
   private skills: Partial<Record<SkillId, number>> = {};
   private revived = false;
-  /** a Second Chance boost: get back up once without gems */
-  /** the Super Magnet boost doubles how far XP is pulled in this fight */
-  private magnetBoost = false;
   /** Boss Rush mode, the time left on the current boss, and this run's haul */
   private rush = false;
   private rushLeft = 0;
@@ -461,6 +528,10 @@ export class BattleScene extends Phaser.Scene {
   private shots: Shot[] = [];
   private bullets: Bullet[] = [];
   private rocks: Rock[] = [];
+  private lanes: Lane[] = [];
+  /** your speed (smoothed), so bosses can aim where you are going */
+  private heroVel: [number, number] = [0, 0];
+  private heroPrev: [number, number] = [0, 0];
   private strikes: Strike[] = [];
   private pickups: Pickup[] = [];
   private food: Food[] = [];
@@ -529,6 +600,7 @@ export class BattleScene extends Phaser.Scene {
     makeGadgetTextures(this);
     makeMutationTextures(this);
     makeBossTextures(this);
+    makeBossFxTextures(this);
     makePlaceTextures(this);
     this.rush = !!data?.rush;
     makeModeTextures(this);
@@ -536,7 +608,7 @@ export class BattleScene extends Phaser.Scene {
     battle.goal = null;
     this.air = { zone: null, next: null, x: 0, y: 0, nx: 0, ny: 0, t: AIR_EVERY, oxygen: 1, choke: 0 };
     this.beast = null;
-    this.rain = { t: 2500, dodged: 0 };
+    this.rain = { t: 2500, dodged: 0, drops: 0 };
     this.airFx = [];
     this.feedSign = null;
     this.fog = null;
@@ -553,8 +625,8 @@ export class BattleScene extends Phaser.Scene {
     this.arena = getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
-      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
-      revived: false, magnetBoost: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
+      state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, pickClock: 0, pickOpen: false, gadgetOpts: [], skills: {},
+      revived: false, rushLeft: 0, rushBeaten: 0, rushGems: 0, stats: freshStats(), frozenUntil: 0, warnedAt: 0,
       gadgets: [{ kind: STARTER_GADGET, tier: "A", level: 1, timer: 300 }], wisps: [], bubbles: [], puddles: [], kite: null, kiteT: 0, rangs: [], holes: [],
       spawnTimer: 0, eliteTimer: 25000, chestTimer: 50000 + Math.random() * 20000, dropTimer: AIRDROP_FIRST_MS, shardTimer: 0, crystalDieAt: CRYSTAL_DIE_MS,
       streak: 0, streakTimer: 0, buckets: new Map(), shown: new Set(), grid: new Map(), seals: [], healPopT: 0, strikes: [],
@@ -699,13 +771,13 @@ export class BattleScene extends Phaser.Scene {
         this.cameras.main.shake(400, 0.015);
         buzz(150);
         this.boom(x, y - 60, 2.2);
-        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves }, x, y, false, false, 1, n);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves, special: def.special }, x, y, false, false, 1, n);
         boss.hp = boss.maxHp = rushBossHp(n);
         // the clock is the real danger here: rush bosses hit softer
         boss.dmg *= 0.5;
         boss.huntHero = true;
         boss.phaseT = 1500;
-        this.toast(`${def.name}: ${def.moves.map((m) => BOSS_MOVES[m]).join(", ")}`, rgba(lighten(def.color, 0.3)));
+        this.toast(`${def.name}: SPECIAL ${BOSS_SPECIALS[def.special]}! Dodge it`, rgba(lighten(def.color, 0.3)));
         this.state = "boss";
       },
     });
@@ -725,6 +797,7 @@ export class BattleScene extends Phaser.Scene {
     this.rushBeaten++;
     for (const e of [...this.enemies]) if (!e.type.boss) this.kill(e, true);
     this.strikes = [];
+    this.lanes = [];
     save.stage = Math.min(MAX_STAGE, n + 1);
     save.bestStage = Math.max(save.bestStage, save.stage);
     save.bossRushBest = Math.max(save.bossRushBest, n);
@@ -822,7 +895,6 @@ export class BattleScene extends Phaser.Scene {
     this.placePickups();
     sfx.alarm();
     if (!this.rush) this.game.events.emit("mode-intro", this.stageMode);
-    const boosts = this.useBoosts();
     this.modeStart();
     this.time.delayedCall(1500, () => {
       if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
@@ -830,33 +902,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.stageMode === "boss") this.time.delayedCall(900, () => this.state === "fight" && this.bossCutscene());
       music.play("battle");
       this.game.events.emit("stage-start");
-      if (boosts.length) this.toast(`Boosts on: ${boosts.map((b) => b.name).join(", ")}`, "#9ae6ff");
-      if (boosts.some((b) => b.id === "start")) {
-        this.pendingSkills += 2;
-        this.time.delayedCall(1400, () => this.offerChoice());
-      }
     });
-  }
-
-  /** Battle Boosts bought in the shop: each owned one is used up by this fight. */
-  private useBoosts(): BoostDef[] {
-    const used: BoostDef[] = [];
-    for (const b of BOOSTS) {
-      if (!save.boosts[b.id]) continue;
-      save.boosts[b.id]--;
-      used.push(b);
-      if (b.id === "gun") {
-        const kinds = GADGET_KINDS.filter((k) => k !== STARTER_GADGET);
-        this.addGadget(kinds[Math.floor(Math.random() * kinds.length)], GADGET_TIERS[Math.min(2, gadgetTierCap())]);
-      } else if (b.id === "magnet") {
-        this.magnetBoost = true;
-      } else if (b.id === "armor") {
-        this.crystalMax *= 1.5;
-        this.crystalHp = this.crystalMax;
-      }
-    }
-    if (used.length) persist();
-    return used;
   }
 
   private banner(str: string, color: string, ms: number): void {
@@ -1285,7 +1331,7 @@ export class BattleScene extends Phaser.Scene {
         break;
       case "orb":
         sfx.fanfare();
-        this.toast("Skill orb! Pick a skill", "#ffe066");
+        this.toast("Skill orb! Saved for the next level up", "#ffe066");
         this.pendingSkills++;
         this.offerChoice();
         break;
@@ -1313,7 +1359,7 @@ export class BattleScene extends Phaser.Scene {
     this.puff.explode(24, p.x, p.y - 50);
     this.tweens.add({ targets: p.img, scaleX: 1.3, scaleY: 0.7, alpha: 0, duration: 260, onComplete: () => p.img.destroy() });
     this.pendingSkills++;
-    this.offerChoice();
+    this.toast("Skill crate! Saved for the next level up", "#ffe066");
   }
 
   private addDice(tier: Tier, n: number): void {
@@ -1331,7 +1377,7 @@ export class BattleScene extends Phaser.Scene {
 
   private openChest(c: Pickup): void {
     const cash = Math.max(300, save.cashPerSec * 30, monsterCash(40, save.stage)) * chestMult();
-    const gems = Math.random() < 0.35 ? 2 + Math.floor(Math.random() * 4) : 0;
+    const gems = Math.random() < 0.1 ? 1 + Math.floor(Math.random() * 2) : 0;
     save.cash += cash;
     save.gems += gems;
     this.stats.earned += cash;
@@ -1402,9 +1448,23 @@ export class BattleScene extends Phaser.Scene {
     if (this.pendingLevels) this.offerChoice();
   }
 
+  /** Once a minute: everything saved up (level-ups, skill orbs, airdrops) is picked in one go. */
+  private pickTick(delta: number): void {
+    battle.picks = this.pendingLevels + this.pendingSkills;
+    if (battle.choosing) return;
+    this.pickClock += delta;
+    battle.pickIn = Math.max(0, PICK_MS - this.pickClock);
+    if (this.pickClock < PICK_MS) return;
+    this.pickClock = 0;
+    if (!battle.picks) return;
+    this.pickOpen = true;
+    this.banner(`LEVEL UP x${battle.picks}!`, "blue", 700);
+    this.time.delayedCall(700, () => this.offerChoice());
+  }
+
   /** Level-ups offer gadgets; skill orbs, airdrops and elites offer skills. Gadgets go first. */
   private offerChoice(): void {
-    if (battle.choosing || !this.fighting) return;
+    if (battle.choosing || !this.fighting || !this.pickOpen) return;
     if (this.pendingLevels > 0) {
       const options = this.gadgetChoices();
       if (options.length) {
@@ -1420,11 +1480,15 @@ export class BattleScene extends Phaser.Scene {
       const choices = skillChoices(this.skills, 3, this.stageMode !== "crystal");
       if (!choices.length) {
         this.pendingSkills = 0;
+        this.pickOpen = false;
         this.heal(0.2);
         return;
       }
       this.openChoice("skill-choice", { choices, levels: { ...this.skills }, level: this.level });
+      return;
     }
+    // all picked: the window shuts until next minute
+    this.pickOpen = false;
   }
 
   private openChoice(event: string, info: object): void {
@@ -1514,7 +1578,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private magnetMult(): number {
-    return (1 + 0.5 * this.lv("vacuum")) * (this.magnetBoost ? 2 : 1);
+    return (1 + 0.5 * this.lv("vacuum"));
   }
 
   private heal(frac: number): void {
@@ -2203,6 +2267,7 @@ export class BattleScene extends Phaser.Scene {
 
   private tick(delta: number): void {
     if (!this.fighting) return;
+    this.pickTick(delta);
     if (this.rush) {
       this.rushTick(delta);
       return;
@@ -2316,7 +2381,7 @@ export class BattleScene extends Phaser.Scene {
       xp: Math.round((elite ? 8 : type.stats.xp) * bonus),
       dmg: type.stats.dmg * (1 + 0.05 * (stage - 1)) * (1 + 0.2 * this.minute) * (elite ? 1.5 : 1),
       r: (type.boss ? 90 : elite ? 48 : type.flying ? 30 : 34) * (has("giant") ? 1.3 : 1) * size,
-      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, raider: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0,
+      flashUntil: 0, atkTimer: 0, toCrystal: false, huntHero: false, raider: false, attacking: false, phase: "walk", phaseT: 3000, dashX: 0, dashY: 0, shots: 0, tickT: 0, casts: 0, dashV: 1000, dashMs: 600, dashWind: 750,
       muts, speedMult: (has("swift") ? 1.6 : 1) * (has("giant") ? 0.8 : 1), lives: has("lives") ? 1 : 0,
       blinkT: 1500 + Math.random() * 2500, ghostT: Math.random() * 4500, phased: false, stunUntil: 0,
     };
@@ -2444,7 +2509,7 @@ export class BattleScene extends Phaser.Scene {
       const what = b.carried ? "bring it to the cage!" : b.food ? "grab the snack!" : "hunger";
       return { frac: b.hunger, text: `FED ${b.fed}/${FEEDS}  •  ${what}`, color: b.hunger > 0.35 ? 0xffa040 : 0xf26464, icon: "mode_feed", alarm: b.hunger < 0.3 };
     }
-    if (m === "dice") return { frac: 1, text: `DICE DODGED: ${this.rain.dodged}`, color: 0xffe066, icon: "mode_dice", alarm: false };
+    if (m === "dice") return { frac: 1, text: this.eventRun ? `DODGED ${this.rain.dodged}  •  ${this.rain.drops} DROPS` : `DICE DODGED: ${this.rain.dodged}`, color: 0xffe066, icon: "mode_dice", alarm: false };
     if (m === "boss") {
       const left = this.enemies.filter((e) => e.type.boss).length;
       return { frac: Math.max(0, battle.bossFrac), text: left ? `BOSSES LEFT: ${left}` : "Get ready...", color: 0xf26464, icon: "mode_boss", alarm: false };
@@ -2491,7 +2556,8 @@ export class BattleScene extends Phaser.Scene {
     for (let k = 0; k < 20; k++) {
       x = lo + Math.random() * (hi - lo);
       y = lo + Math.random() * (hi - lo);
-      if (Math.hypot(x - this.air.x, y - this.air.y) > AIR_ZONE * 0.8) break;
+      const d = Math.hypot(x - this.air.x, y - this.air.y);
+      if (d > AIR_ZONE * 1.5 && d < 2400) break;
     }
     return [x, y];
   }
@@ -2965,7 +3031,10 @@ export class BattleScene extends Phaser.Scene {
         if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
           this.hurt(dmg);
           this.callout(rank >= 5 ? `${tier} SMASH!` : "SQUASHED!", "#ff8a8a");
-        } else this.rain.dodged++;
+        } else {
+          this.rain.dodged++;
+          if (this.eventRun) this.rain.drops += dodgeDrops(rank);
+        }
         // monsters under it get squashed too
         for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * (0.6 + rank * 0.2) + this.heroDamage() * (3 + rank));
         // the rare ones leave a real die behind
@@ -3169,7 +3238,7 @@ export class BattleScene extends Phaser.Scene {
         this.boom(x, y - 60, 3);
         this.puff.setParticleTint(0xd8c8a8);
         this.puff.explode(40, x, y);
-        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves }, x, y);
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves, special: def.special }, x, y);
         // Battle bosses are twice as tough as in Boss Rush
         boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, MINUTES) * HEALING_BOSS_HP * BATTLE_BOSS_MULT);
         boss.huntHero = true;
@@ -3181,7 +3250,7 @@ export class BattleScene extends Phaser.Scene {
         if (this.stageMode === "boss") this.bossKids(boss, x, y);
         else this.placeSeals();
         music.play("boss");
-        this.game.events.emit("boss-intro", { name: this.stageMode === "boss" ? `${def.name} & ${BOSS_KIDS} kids` : def.name, tex: def.tex, moves: def.moves.map((m) => BOSS_MOVES[m]) });
+        this.game.events.emit("boss-intro", { name: this.stageMode === "boss" ? `${def.name} & ${BOSS_KIDS} kids` : def.name, tex: def.tex, moves: [`${BOSS_SPECIALS[def.special]}!`, ...def.moves.map((m) => BOSS_MOVES[m])] });
         this.time.delayedCall(1800, () => {
           if (this.state !== "cutscene") return;
           this.state = "boss";
@@ -3203,10 +3272,9 @@ export class BattleScene extends Phaser.Scene {
     for (let i = 0; i < 5; i++) this.addDice(rollDiceTier(save.stage + 15), 1);
     const cleared = save.stage;
     if (this.eventRun) {
-      // the event prize: good dice and gems; your stage stays where it was
+      // the event: Rain Drops for every dodge plus a bonus for surviving; your stage stays where it was
       save.diceWins++;
-      save.gems += 20;
-      this.addDice(rollDiceTier(save.stage + 12), 6);
+      this.bankRain(RAIN_WIN_DROPS);
     } else if (save.stage < MAX_STAGE) save.stage++;
     save.bestStage = Math.max(save.bestStage, save.stage);
     persist();
@@ -3219,8 +3287,9 @@ export class BattleScene extends Phaser.Scene {
     music.play("calm");
     // the crystal floats back down from the sky
     const [hx, hy] = this.crystalHome;
-    this.rocks.forEach((r) => r.img.destroy());
+    this.rocks.forEach((r) => this.dropRock(r));
     this.rocks = [];
+    this.lanes = [];
     this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1500 });
     if (this.stageMode === "crystal") this.crystal.setVisible(true).setScale(1).setAlpha(1).clearTint().setPosition(hx, hy - 1600).setDepth(hy);
     this.tweens.add({ targets: this.crystal, y: hy, duration: 1600, delay: 600, ease: "Bounce.out" });
@@ -3239,6 +3308,16 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** Puts this event fight's Rain Drops (and a bonus) on the event track. */
+  private bankRain(bonus: number): void {
+    const n = this.rain.drops + bonus;
+    this.rain.drops = 0;
+    if (n <= 0) return;
+    save.rain.drops += n;
+    persist();
+    this.game.events.emit("rain-drops", n);
+  }
+
   private stageLost(reason: "hero" | "crystal" | "quit"): void {
     if (this.rush) {
       this.rushOver(reason === "quit" ? "quit" : "hero");
@@ -3249,6 +3328,8 @@ export class BattleScene extends Phaser.Scene {
     this.state = "lost";
     battle.mode = "over";
     this.joy = { ...NO_JOY };
+    // the Rain Drops you earned are yours even if you fall
+    if (this.eventRun) this.bankRain(0);
     sfx.error();
     buzz(300);
     music.play("calm");
@@ -3352,6 +3433,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.moveRocks(delta);
     this.strikesTick();
+    this.lanesTick();
     this.moveBullets(delta);
     this.moveGadgets(time, delta);
     this.moveShots(delta);
@@ -3501,12 +3583,19 @@ export class BattleScene extends Phaser.Scene {
   private bossMove(e: Enemy, delta: number, ux: number, uy: number): number {
     e.phaseT -= delta;
     if (this.state !== "boss") return 0;
-    const walk = e.type.stats.speed * 1.3;
+    // bosses keep up with you: running away doesn't work
+    const walk = Math.max(e.type.stats.speed * 1.3, HERO_SPEED * moveSpeedMult() * 0.85);
     switch (e.phase) {
       case "walk": {
         if (e.phaseT > 0) return walk;
         const moves = e.type.moves ?? ["charge", "stomp", "rocks"];
-        const far = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y) > 650;
+        const dist = Math.hypot(this.hero.x - e.img.x, this.hero.y - e.img.y);
+        const far = dist > 650;
+        // every third move is its SPECIAL (and every move while you keep far away)
+        if (e.type.special && (++e.casts % 3 === 0 || dist > 1000)) {
+          this.bossSpecial(e, ux, uy);
+          return 0;
+        }
         // stomps and breath only reach you up close
         const ok = moves.filter((m) => !far || (m !== "stomp" && m !== "breath"));
         this.startBossMove(e, ok.length ? ok[Math.floor(Math.random() * ok.length)] : "charge", ux, uy);
@@ -3515,13 +3604,39 @@ export class BattleScene extends Phaser.Scene {
       case "windup":
         if (e.phaseT <= 0) {
           e.phase = "dash";
-          e.phaseT = 600;
+          e.phaseT = e.dashMs;
           this.cameras.main.shake(200, 0.006);
         }
         return 0;
       case "dash":
+        // afterimages and dust behind it
+        e.tickT -= delta;
+        if (e.tickT <= 0) {
+          e.tickT = 45;
+          const ghost = this.add.image(e.img.x, e.img.y, e.img.texture.key).setOrigin(e.img.originX, e.img.originY)
+            .setScale(e.img.scaleX, e.img.scaleY).setFlipX(e.img.flipX).setAngle(e.img.angle).setTintFill(e.type.fx).setAlpha(0.55).setDepth(e.img.depth - 1);
+          this.tweens.add({ targets: ghost, alpha: 0, scaleX: ghost.scaleX * 0.9, duration: 320, onComplete: () => ghost.destroy() });
+          this.puff.setParticleTint(0xd8c8a8);
+          this.puff.explode(2, e.img.x, e.img.y);
+        }
+        // long slides bounce off the walls
+        if (clampX(e.img.x + e.dashX * 30) !== e.img.x + e.dashX * 30) e.dashX *= -1;
+        if (clampY(e.img.y + e.dashY * 30) !== e.img.y + e.dashY * 30) e.dashY *= -1;
+        if (e.phaseT <= 0) {
+          if (e.shots > 0) {
+            // chained dashes: aim again and go
+            e.shots--;
+            const a = Math.atan2(this.hero.y - e.img.y, this.hero.x - e.img.x);
+            [e.dashX, e.dashY] = [Math.cos(a), Math.sin(a)];
+            e.phase = "windup";
+            e.phaseT = e.dashWind;
+            sfx.charge(2);
+          } else this.bossRest(e);
+        }
+        return e.dashV;
+      case "cast":
         if (e.phaseT <= 0) this.bossRest(e);
-        return 1000;
+        return walk * 0.25;
       case "stomp":
         if (e.phaseT <= 0) {
           this.shockwave(e.img.x, e.img.y, 360, e.dmg * 1.5);
@@ -3531,7 +3646,7 @@ export class BattleScene extends Phaser.Scene {
       case "throw":
         if (e.phaseT <= 0) {
           const a0 = Math.atan2(this.hero.y - 40 - (e.img.y - 100), this.hero.x - e.img.x);
-          for (let k = -2; k <= 2; k++) this.bossShot(e, a0 + k * 0.22, 720, e.dmg * 0.8, "rock_small");
+          for (let k = -2; k <= 2; k++) this.bossShot(e, a0 + k * 0.22, 720, e.dmg * 0.8, "boulder");
           sfx.boom();
           this.bossRest(e);
         }
@@ -3582,7 +3697,7 @@ export class BattleScene extends Phaser.Scene {
         if (e.phaseT <= 0) {
           e.phase = "rise";
           e.phaseT = 650;
-          this.addStrike(e.img.x, e.img.y, 240, 650, e.dmg * 1.6);
+          this.addStrike(e.img.x, e.img.y, 240, 650, e.dmg * 1.6, "sand");
         }
         return 560;
       case "rise":
@@ -3599,12 +3714,17 @@ export class BattleScene extends Phaser.Scene {
           e.tickT -= delta;
           if (e.tickT <= 0) {
             e.tickT = 160;
-            this.puff.setParticleTint(e.type.fx);
+            // real flames (or frost) pouring out along the cone
             const a = Math.atan2(e.dashY, e.dashX);
-            for (let k = 0; k < 4; k++) {
-              const aa = a + (Math.random() - 0.5) * 0.8;
-              const r = 120 + Math.random() * 560;
-              this.puff.explode(2, e.img.x + Math.cos(aa) * r, e.img.y - 60 + Math.sin(aa) * r);
+            const [ox, oy] = [e.img.x + Math.cos(a) * 60, e.img.y - 60 + Math.sin(a) * 60];
+            // fire, or frost for the icy ones
+            const frost = (e.type.fx & 255) > ((e.type.fx >> 16) & 255);
+            const pal = frost ? [0x6ac0ff, 0xbff0ff, 0xffffff] : [0xff4a1a, 0xff9a2a, 0xffe066];
+            for (let k = 0; k < 9; k++) {
+              const aa = a + (Math.random() - 0.5) * BREATH_HALF * 1.7;
+              const d = 220 + Math.random() * (BREATH_LEN - 200);
+              const f = this.add.image(ox, oy, orbTexture(this, pal[k % 3])).setScale(0.45).setDepth(9050);
+              this.tweens.add({ targets: f, x: ox + Math.cos(aa) * d, y: oy + Math.sin(aa) * d, scale: 1.7 + Math.random(), alpha: 0, duration: 420 + Math.random() * 160, ease: "Quad.out", onComplete: () => f.destroy() });
             }
             if (this.inCone(e)) this.hurt(e.dmg * 0.45);
           }
@@ -3618,7 +3738,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Starts a boss move: each one shows itself first so you can get out of the way. */
   private startBossMove(e: Enemy, move: BossMoveId, ux: number, uy: number): void {
-    this.bossAlert(e, move);
+    this.bossAlert(e, BOSS_MOVES[move]);
     const glowUp = (color: number) => {
       e.img.setTintFill(color);
       this.time.delayedCall(90, () => e.img.clearTint());
@@ -3629,6 +3749,10 @@ export class BattleScene extends Phaser.Scene {
         e.phaseT = 750;
         e.dashX = ux;
         e.dashY = uy;
+        e.shots = 0;
+        e.dashV = 1000;
+        e.dashMs = 600;
+        e.dashWind = 750;
         this.tweens.add({ targets: e.img, scaleX: e.img.scaleX * 1.12, scaleY: e.img.scaleY * 0.85, duration: 140, yoyo: true, repeat: 2 });
         break;
       case "stomp":
@@ -3674,7 +3798,7 @@ export class BattleScene extends Phaser.Scene {
         for (let k = 0; k < 6; k++) {
           const a = Math.random() * Math.PI * 2;
           const d = k === 0 ? 0 : 120 + Math.random() * 300;
-          this.addStrike(this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.7, 150, 800 + k * 120, e.dmg * 1.1, e.type.fx);
+          this.addStrike(this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.7, 150, 800 + k * 120, e.dmg * 1.1, "magic", e.type.fx);
         }
         this.tweens.add({ targets: e.img, y: e.img.y - 30, duration: 200, yoyo: true });
         break;
@@ -3736,12 +3860,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** Before every boss move: a big red "!" with the move's name, and the boss flashes red. */
-  private bossAlert(e: Enemy, move: BossMoveId): void {
+  private bossAlert(e: Enemy, name: string): void {
     const top = e.img.y - e.img.displayHeight * 0.95 - 120;
     const bubble = this.add.container(e.img.x, top, [
       this.add.image(0, 0, "comic_burst").setScale(0.9, 0.75),
       text(this, 0, -4, "!", 92, "#ffffff", { stroke: 14 }),
-      text(this, 0, 92, `${BOSS_MOVES[move].toUpperCase()}!`, 46, "#ffe066", { stroke: 10 }),
+      text(this, 0, 92, `${name.toUpperCase()}!`, 46, "#ffe066", { stroke: 10 }),
     ]).setDepth(9300).setScale(0);
     this.tweens.add({ targets: bubble, scale: 1, duration: 220, ease: "Back.out" });
     this.tweens.add({ targets: bubble, y: top - 30, alpha: 0, delay: 900, duration: 300, onComplete: () => bubble.destroy() });
@@ -3756,6 +3880,57 @@ export class BattleScene extends Phaser.Scene {
     sfx.charge(2);
   }
 
+  /** Each boss move's warning as a picture: a charge lane, an aim lane, a zone, a cone, a mound or a whirl. */
+  private bossTele(e: Enemy, time: number): void {
+    const want = (key: string) => {
+      if (!e.tele || !e.tele.active || e.tele.texture.key !== key) {
+        e.tele?.destroy();
+        e.tele = this.add.image(0, 0, key);
+      }
+      return e.tele.setVisible(true).setDepth(7).setOrigin(0.5).setRotation(0);
+    };
+    const blink = time % 200 < 100 ? 1 : 0.6;
+    switch (e.phase) {
+      case "windup": {
+        const L = (e.dashV * e.dashMs) / 1000 + 100;
+        want("bx_lane").setOrigin(0, 0.5).setPosition(e.img.x, e.img.y).setRotation(Math.atan2(e.dashY, e.dashX)).setDisplaySize(L, 170).setTint(0xff3a3a).setAlpha(blink);
+        break;
+      }
+      case "throw":
+      case "volley": {
+        const [ox, oy] = [e.img.x, e.img.y - 100];
+        const d = Math.hypot(this.hero.x - ox, this.hero.y - 40 - oy);
+        want("bx_lane").setOrigin(0, 0.5).setPosition(ox, oy).setRotation(Math.atan2(this.hero.y - 40 - oy, this.hero.x - ox)).setDisplaySize(Math.min(1500, d + 80), 90).setTint(0xff5a3a).setAlpha(blink * 0.9);
+        break;
+      }
+      case "ring": {
+        const R = 450 * (1 - Math.max(0, e.phaseT) / 600) + 50;
+        want("bx_warn").setPosition(e.img.x, e.img.y).setDisplaySize(R * 2, (R * 2) / 1.4).setTint(0xff3a3a).setAlpha(blink);
+        break;
+      }
+      case "breath": {
+        const firing = e.phaseT < 700;
+        want("bx_cone").setOrigin(0, 0.5).setPosition(e.img.x, e.img.y - 60).setRotation(Math.atan2(e.dashY, e.dashX))
+          .setDisplaySize(BREATH_LEN * 1.1, Math.tan(BREATH_HALF) * BREATH_LEN * 2).setTint(firing ? 0xffa03a : 0xff3a3a).setAlpha(firing ? 0.5 : blink * 0.85);
+        break;
+      }
+      case "stomp": {
+        const f = 1 - Math.max(0, e.phaseT) / 950;
+        want("bx_warn").setPosition(e.img.x, e.img.y).setDisplaySize(720 * (0.6 + 0.4 * f), 504 * (0.6 + 0.4 * f)).setTint(0xff3a3a).setAlpha(0.55 + 0.45 * f * blink);
+        break;
+      }
+      case "burrow":
+        want("bx_mound").setOrigin(0.5, 0.7).setPosition(e.img.x, e.img.y).clearTint().setScale(1 + Math.sin(time / 60) * 0.06).setAlpha(1).setDepth(e.img.y + 1);
+        break;
+      case "spin":
+        want("bx_whirl").setPosition(e.img.x, e.img.y - e.img.displayHeight * 0.4).setScale(e.img.displayWidth / 120).clearTint()
+          .setRotation(time / 70).setAlpha(0.95).setDepth(e.img.depth + 1);
+        break;
+      default:
+        e.tele?.setVisible(false);
+    }
+  }
+
   /** Is the hero inside the boss's breath cone? */
   private inCone(e: Enemy): boolean {
     const dx = this.hero.x - e.img.x;
@@ -3766,41 +3941,149 @@ export class BattleScene extends Phaser.Scene {
     return Math.abs(diff) < BREATH_HALF;
   }
 
-  /** A shot from the boss (an orb in its colour, or a rock) flying straight. */
-  private bossShot(e: Enemy, a: number, speed: number, dmg: number, tex = "b_orb"): void {
-    const img = this.add.image(e.img.x, e.img.y - 100, tex).setScale(tex === "b_orb" ? 1.1 : 1.4).setDepth(9000);
-    if (tex === "b_orb") img.setTint(e.type.fx);
-    this.rocks.push({ img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 2600, dmg });
-  }
-
-  /** A ring blast on the ground: hurts you and your pets inside it. */
+  /** A stomp: dust, rocks bursting up around it, and it hurts you and your pets inside. */
   private shockwave(x: number, y: number, r: number, dmg: number): void {
-    const hits = dmg > 0;
-    const ring = this.add.image(x, y - 20, "ring").setTint(0xffb03b).setScale(0.5, 0.25).setDepth(y + 1);
-    this.tweens.add({ targets: ring, scaleX: (r / 360) * 4.6, scaleY: (r / 360) * 2.3, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
+    this.impact(x, y, r, "dust", 0xff4a3a);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      this.impact(x + Math.cos(a) * r * 0.75, y + Math.sin(a) * r * 0.5, 70, "rock", 0xff7a3a);
+    }
     this.boom(x, y - 30, (r / 360) * 1.6);
     this.cameras.main.shake(350, 0.014);
-    if (!hits) return;
-    for (const p of this.pets) if (Math.hypot(p.img.x - x, (p.img.y - y) * 1.4) < r) this.hurtPet(p, dmg);
-    if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 1.4) < r) this.hurt(dmg);
+    if (dmg > 0) this.areaHit(x, y, r, dmg);
   }
 
-  /** A red circle on the ground that blows up after `ms` (with something falling from the sky if `fall` is set). */
-  private addStrike(x: number, y: number, r: number, ms: number, dmg: number, fall?: number): void {
+  /** A danger zone on the ground that fills up, then hits in its own way (`style`). */
+  private addStrike(x: number, y: number, r: number, ms: number, dmg: number, style: StrikeStyle = "slam", orb?: number): void {
     const [sx, sy] = [clampX(x), clampY(y)];
-    this.strikes.push({ x: sx, y: sy, r, at: this.time.now + ms, ms, dmg });
-    if (fall === undefined) return;
-    const img = this.add.image(sx, sy - 1500, "b_orb").setTint(fall).setScale(1.9).setDepth(sy + 5);
-    this.tweens.add({ targets: img, y: sy - 40, duration: ms, ease: "Quad.in", onComplete: () => img.destroy() });
+    const look = STRIKE_LOOK[style];
+    // the zone is always a bright warning colour; `orb` colours what falls on it
+    const col = look.color;
+    const k = r / 124;
+    const warn = this.add.image(0, 0, "bx_warn").setTint(col);
+    const dash = this.add.image(0, 0, "bx_dash").setTint(lighten(col, 0.6)).setAlpha(0.9);
+    const fill = this.add.image(0, 0, "bx_fill").setTint(col).setScale(0).setAlpha(0.35);
+    const zone = this.add.container(sx, sy, [warn, fill, dash]).setScale(k * 0.6, (k / 1.4) * 0.6).setDepth(6).setAlpha(0);
+    this.tweens.add({ targets: zone, scaleX: k, scaleY: k / 1.4, alpha: 1, duration: 180, ease: "Back.out" });
+    this.tweens.add({ targets: dash, angle: 360, duration: 2400, repeat: -1 });
+    this.tweens.add({ targets: fill, scale: 1, alpha: 0.75, duration: ms, ease: "Quad.in" });
+    this.tweens.add({ targets: warn, alpha: 0.55, duration: 160, yoyo: true, repeat: -1 });
+    const objs: Phaser.GameObjects.GameObject[] = [zone];
+    // something falls out of the sky onto it (with its shadow growing)
+    const fallTex = look.fall === "orb" ? orbTexture(this, orb ?? col) : look.fall;
+    if (fallTex) {
+      const shadow = this.add.ellipse(sx, sy, r * 0.9, r * 0.36, 0x000000, 0.35).setScale(0.2).setDepth(7);
+      const img = this.add.image(sx, sy - 1500, fallTex).setScale(look.fall === "orb" ? 1.6 : 1.3).setDepth(sy + 5);
+      if (look.fall === "bp_icicle") img.setScale(1.2);
+      else img.setAngle(Phaser.Math.Between(-30, 30));
+      this.tweens.add({ targets: shadow, scale: 1, duration: ms, ease: "Quad.in" });
+      this.tweens.add({ targets: img, y: sy - 30, duration: ms, ease: "Quad.in" });
+      objs.push(shadow, img);
+    }
+    this.strikes.push({ x: sx, y: sy, r, at: this.time.now + ms, ms, dmg, style, color: col, objs });
   }
 
   private strikesTick(): void {
     const now = this.time.now;
     this.strikes = this.strikes.filter((s) => {
       if (now < s.at) return true;
-      this.shockwave(s.x, s.y, s.r, this.fighting ? s.dmg : 0);
+      s.objs.forEach((o) => o.destroy());
+      this.impact(s.x, s.y, s.r, STRIKE_LOOK[s.style].impact, s.color);
+      if (this.fighting) this.areaHit(s.x, s.y, s.r, s.dmg);
       return false;
     });
+  }
+
+  /** What a hit looks like where it lands. */
+  private impact(x: number, y: number, r: number, kind: ImpactKind, color: number): void {
+    const k = r / 124;
+    const scorch = (a = 0.9) => {
+      const sc = this.add.image(x, y, "bx_scorch").setScale(k * 1.1).setAlpha(a).setDepth(2);
+      this.tweens.add({ targets: sc, alpha: 0, delay: 1400, duration: 900, onComplete: () => sc.destroy() });
+    };
+    const ring = (tint: number, grow = 2.1) => {
+      const w = this.add.image(x, y, "bx_shock").setTint(tint).setScale(k * 0.5, (k / 1.4) * 0.5).setDepth(8);
+      this.tweens.add({ targets: w, scaleX: k * grow, scaleY: (k / 1.4) * grow, alpha: 0, duration: 420, ease: "Quad.out", onComplete: () => w.destroy() });
+    };
+    const spikes = (tex: string, n: number) => {
+      for (let i = 0; i < n; i++) {
+        const a = n === 1 ? 0 : (i / n) * Math.PI * 2;
+        const d = n === 1 ? 0 : r * 0.55;
+        const [px, py] = [x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7];
+        const sp = this.add.image(px, py, tex).setOrigin(0.5, 0.94).setScale(k * (n === 1 ? 1.1 : 0.6), 0).setDepth(py + 2);
+        this.tweens.add({ targets: sp, scaleY: k * (n === 1 ? 1.1 : 0.6), duration: 120, delay: i * 25, ease: "Back.out" });
+        this.tweens.add({ targets: sp, scaleY: 0, alpha: 0, delay: 650, duration: 300, ease: "Quad.in", onComplete: () => sp.destroy() });
+      }
+    };
+    switch (kind) {
+      case "dust":
+        ring(0xf6e6c8);
+        this.puff.setParticleTint(0xd8c8a8);
+        this.puff.explode(18, x, y);
+        scorch(0.6);
+        this.cameras.main.shake(180, 0.008);
+        break;
+      case "splat": {
+        const sp = this.add.image(x, y, "bx_splat").setTint(color).setScale(k * 0.3).setDepth(3);
+        this.tweens.add({ targets: sp, scale: k * 1.15, duration: 160, ease: "Back.out" });
+        this.tweens.add({ targets: sp, alpha: 0, delay: 1500, duration: 700, onComplete: () => sp.destroy() });
+        ring(lighten(color, 0.4), 1.6);
+        this.puff.setParticleTint(color);
+        this.puff.explode(16, x, y - 20);
+        sfx.boom();
+        break;
+      }
+      case "bolt": {
+        const b = this.add.image(x, y, "bx_bolt").setOrigin(0.5, 1).setScale(Phaser.Math.FloatBetween(0.9, 1.2) * (Math.random() < 0.5 ? -1 : 1), 1.6).setDepth(9100).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: b, alpha: 0.2, duration: 50, yoyo: true, repeat: 2, onComplete: () => this.tweens.add({ targets: b, alpha: 0, duration: 160, onComplete: () => b.destroy() }) });
+        const flash = this.add.image(x, y - 40, "glow").setTint(0xfff3a0).setScale(k * 3.2).setDepth(9099).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: flash, alpha: 0, scale: k * 4, duration: 380, onComplete: () => flash.destroy() });
+        this.sparks.setParticleTint(0xffe066);
+        this.sparks.explode(20, x, y - 30);
+        ring(0xfff3a0, 1.8);
+        scorch();
+        sfx.boom();
+        this.cameras.main.shake(160, 0.009);
+        break;
+      }
+      case "blast": {
+        const bl = this.add.image(x, y - 40, "bx_blast").setScale(k * 0.3).setAngle(Phaser.Math.Between(0, 360)).setDepth(9050);
+        this.tweens.add({ targets: bl, scale: k * 1.35, duration: 150, ease: "Quad.out" });
+        this.tweens.add({ targets: bl, alpha: 0, angle: bl.angle + 40, delay: 140, duration: 300, onComplete: () => bl.destroy() });
+        this.sparks.setParticleTint(color);
+        this.sparks.explode(22, x, y - 40);
+        this.puff.setParticleTint(0x6a5a4a);
+        this.puff.explode(12, x, y - 20);
+        ring(0xffd23f, 1.9);
+        scorch();
+        sfx.boom();
+        this.cameras.main.shake(220, 0.012);
+        break;
+      }
+      case "ice":
+        spikes("bx_spike_ice", 1);
+        spikes("bx_spike_ice", 5);
+        this.sparks.setParticleTint(0xd8f6ff);
+        this.sparks.explode(22, x, y - 40);
+        ring(0xbff0ff, 1.7);
+        sfx.boom();
+        this.cameras.main.shake(150, 0.007);
+        break;
+      case "rock":
+      case "root":
+        spikes(kind === "rock" ? "bx_spike_rock" : "bx_spike_root", 1);
+        this.puff.setParticleTint(kind === "rock" ? 0xc8b8a0 : 0x8a6a3a);
+        this.puff.explode(14, x, y);
+        ring(kind === "rock" ? 0xf0dcc0 : 0xb8e08a, 1.5);
+        this.cameras.main.shake(120, 0.006);
+        break;
+    }
+  }
+
+  /** Damage to you and your pets inside an area (squashed like the ground). */
+  private areaHit(x: number, y: number, r: number, dmg: number): void {
+    for (const p of this.pets) if (Math.hypot(p.img.x - x, (p.img.y - y) * 1.4) < r) this.hurtPet(p, dmg);
+    if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 1.4) < r) this.hurt(dmg);
   }
 
   /** The boss calls a few monsters of this land around it. */
@@ -3819,7 +4102,320 @@ export class BattleScene extends Phaser.Scene {
 
   private bossRest(e: Enemy): void {
     e.phase = "walk";
-    e.phaseT = 1600 + Math.random() * 1400;
+    e.phaseT = 1100 + Math.random() * 900;
+  }
+
+  // ───────────────────────── boss specials ─────────────────────────
+
+  /**
+   * The boss's own SPECIAL: it reaches you anywhere on the map, shows its danger first (red marks,
+   * lanes or aim lines), and then you have to dodge. While it plays the boss stands and casts.
+   */
+  private bossSpecial(e: Enemy, ux: number, uy: number): void {
+    const sp = e.type.special!;
+    this.bossAlert(e, BOSS_SPECIALS[sp]);
+    this.banner(`${BOSS_SPECIALS[sp].toUpperCase()}!`, "red", 700);
+    const D = e.dmg;
+    const fx = e.type.fx;
+    const [hx, hy] = [this.hero.x, this.hero.y];
+    const [bx, by] = [e.img.x, e.img.y];
+    const toHero = Math.atan2(hy - by, hx - bx);
+    // keeps going only while the fight and the boss are still on
+    const later = (ms: number, fn: () => void) => this.time.delayedCall(ms, () => this.fighting && e.hp > 0 && e.img.active && fn());
+    const lead = (s: number): [number, number] => [this.hero.x + this.heroVel[0] * s, this.hero.y + this.heroVel[1] * s];
+    const cast = (ms: number) => {
+      e.phase = "cast";
+      e.phaseT = ms;
+      e.img.setTintFill(fx);
+      this.time.delayedCall(120, () => e.img.active && e.img.clearTint());
+    };
+    const dash = (n: number, v: number, ms: number, wind: number) => {
+      e.phase = "windup";
+      e.phaseT = wind;
+      e.shots = n - 1;
+      e.dashV = v;
+      e.dashMs = ms;
+      e.dashWind = wind;
+      e.dashX = ux;
+      e.dashY = uy;
+    };
+    switch (sp) {
+      case "goo":
+        // three waves of goo in a 3x3 square on you, one gap each time
+        cast(3200);
+        for (let w = 0; w < 3; w++) later(w * 1000, () => {
+          const [cx, cy] = [this.hero.x, this.hero.y];
+          const gap = Math.floor(Math.random() * 9);
+          for (let i = 0; i < 9; i++) if (i !== gap) this.addStrike(cx + ((i % 3) - 1) * 250, cy + (Math.floor(i / 3) - 1) * 180, 135, 1000, D * 1.3, "goo");
+        });
+        break;
+      case "spores":
+        // four turning rings of spores that fly across the whole map
+        cast(2400);
+        for (let w = 0; w < 4; w++) later(w * 500, () => {
+          for (let k = 0; k < 18; k++) this.hazardShot(e.img.x, e.img.y - 100, ((k + w * 0.5) / 18) * Math.PI * 2, 460, D * 0.9, { tex: "bp_spore", r: 48, spin: 3, life: 7000 });
+          sfx.shoot(true);
+        });
+        break;
+      case "bats":
+        // bats that follow you: turn hard to shake them
+        cast(1800);
+        for (let k = 0; k < 7; k++) later(k * 150, () => {
+          this.hazardShot(e.img.x, e.img.y - 120, toHero + (k - 3) * 0.35, 430, D * 0.9, { tex: "bp_bat0", frames: ["bp_bat0", "bp_bat1"], r: 50, home: 1.5, spin: 0, life: 5500 });
+          sfx.shoot(false);
+        });
+        break;
+      case "quake":
+        // three cracks race out of the ground toward you
+        cast(2600);
+        for (const da of [-0.4, 0, 0.4]) {
+          for (let s = 1; s <= 14; s++) this.addStrike(bx + Math.cos(toHero + da) * s * 170, by + Math.sin(toHero + da) * s * 170 * 0.75, 115, 600 + s * 90, D * 1.2, "rock");
+        }
+        break;
+      case "crows":
+        // crows dive at you from every side, twice
+        cast(2600);
+        for (let w = 0; w < 2; w++) later(w * 1100, () => {
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2 + w * 0.4;
+            const [sx, sy] = [this.hero.x + Math.cos(a) * 1000, this.hero.y + Math.sin(a) * 750];
+            this.hazardShot(sx, sy, Math.atan2(this.hero.y - 40 - sy, this.hero.x - sx), 1100, D, { tex: "bp_crow", face: true, r: 55, wait: 800, life: 2600 });
+          }
+        });
+        break;
+      case "thunder":
+        // lightning keeps landing where you are: don't stop moving
+        cast(3000);
+        for (let k = 0; k < 7; k++) later(k * 380, () => {
+          const [x, y] = lead(0.3);
+          this.addStrike(x, y, 150, 700, D * 1.3, "thunder");
+        });
+        break;
+      case "hay": {
+        // rows of hay bales roll across: find the empty row
+        cast(3200);
+        const wave = (dir: number) => {
+          const gap = Math.floor(Math.random() * 7) - 3;
+          for (let k = -3; k <= 3; k++) {
+            if (k === gap) continue;
+            const [sx, sy] = [this.hero.x - dir * 950, this.hero.y + k * 200];
+            this.hazardShot(sx, sy, dir > 0 ? 0 : Math.PI, 950, D * 1.2, { tex: "bp_hay", scale: 1.6, r: 100, wait: 900, spin: 8 * dir, life: 3200 });
+          }
+        };
+        wave(1);
+        later(1400, () => wave(-1));
+        break;
+      }
+      case "pumpkins":
+        // pumpkins lobbed to where you are going
+        cast(2600);
+        for (let k = 0; k < 6; k++) later(k * 300, () => {
+          const [x, y] = lead(0.9);
+          this.addStrike(x + (Math.random() - 0.5) * 120, y + (Math.random() - 0.5) * 90, 175, 1100, D * 1.4, "pumpkin");
+        });
+        break;
+      case "toxic": {
+        // a poison ring closes around you; get out through the gap before the middle blows
+        cast(2600);
+        const gap = Math.floor(Math.random() * 12);
+        for (let k = 0; k < 12; k++) {
+          if (k === gap || k === (gap + 1) % 12) continue;
+          const a = (k / 12) * Math.PI * 2;
+          this.addStrike(hx + Math.cos(a) * 360, hy + Math.sin(a) * 260, 120, 1300, D * 1.2, "toxic");
+        }
+        this.addStrike(hx, hy, 250, 1900, D * 1.6, "toxic");
+        break;
+      }
+      case "pounce":
+        // four fast pounces, each one aimed again
+        dash(4, 1600, 450, 400);
+        break;
+      case "boulders":
+        // huge boulders that bounce off the walls
+        cast(2400);
+        for (let k = 0; k < 3; k++) later(k * 400, () => {
+          const [x, y] = lead(0.6);
+          this.hazardShot(e.img.x, e.img.y - 60, Math.atan2(y - e.img.y, x - e.img.x), 760, D * 1.4, { tex: "bp_boulder", scale: 1.5, r: 105, wait: 500, bounce: true, spin: 5, life: 6000 });
+        });
+        break;
+      case "roots": {
+        // rings of roots burst out of the ground one after another; each ring has a gap
+        cast(3000);
+        for (let j = 1; j <= 5; j++) {
+          const R = j * 300;
+          const n = Math.round((Math.PI * 2 * R) / 230);
+          const gap = Math.floor(Math.random() * n);
+          for (let k = 0; k < n; k++) {
+            if (Math.abs(k - gap) <= 1 || Math.abs(k - gap) >= n - 1) continue;
+            const a = (k / n) * Math.PI * 2;
+            this.addStrike(bx + Math.cos(a) * R, by + Math.sin(a) * R * 0.75, 120, 700 + j * 350, D * 1.2, "root");
+          }
+        }
+        break;
+      }
+      case "curse":
+        // a cross of curse beams through you, then an X
+        cast(2600);
+        this.addLane(hx - 1600, hy, hx + 1600, hy, 170, 1000, D * 1.4, 0xc04aff);
+        this.addLane(hx, hy - 1300, hx, hy + 1300, 170, 1000, D * 1.4, 0xc04aff);
+        later(1100, () => {
+          const [x, y] = [this.hero.x, this.hero.y];
+          this.addLane(x - 1100, y - 1100, x + 1100, y + 1100, 170, 900, D * 1.4, 0xc04aff);
+          this.addLane(x - 1100, y + 1100, x + 1100, y - 1100, 170, 900, D * 1.4, 0xc04aff);
+        });
+        break;
+      case "quicksand":
+        // the ground opens under you three times and throws sand all around
+        cast(3400);
+        for (let k = 0; k < 3; k++) later(k * 850, () => {
+          const [x, y] = [this.hero.x, this.hero.y];
+          this.addStrike(x, y, 210, 800, D * 1.4, "sand");
+          later(800, () => {
+            for (let i = 0; i < 10; i++) this.hazardShot(x, y - 40, (i / 10) * Math.PI * 2 + k, 600, D * 0.8, { tex: "bp_sand", r: 45, life: 1700 });
+          });
+        });
+        break;
+      case "needles": {
+        // a spinning spiral of needles: slip between the arms
+        cast(3300);
+        let a = toHero;
+        this.time.addEvent({
+          delay: 90, repeat: 33, callback: () => {
+            if (!this.fighting || e.hp <= 0) return;
+            for (let arm = 0; arm < 3; arm++) this.hazardShot(e.img.x, e.img.y - 100, a + (arm * Math.PI * 2) / 3, 500, D * 0.7, { tex: "bp_thorn", scale: 1.9, face: true, r: 40, life: 6000 });
+            a += 0.27;
+          },
+        });
+        break;
+      }
+      case "snipe":
+        // the tail locks on (a red line), then fires very fast
+        cast(3000);
+        for (let k = 0; k < 4; k++) later(k * 650, () => {
+          this.hazardShot(e.img.x, e.img.y - 120, Math.atan2(this.hero.y - 40 - (e.img.y - 120), this.hero.x - e.img.x), 2000, D * 1.3, { tex: "bp_sting", scale: 1.5, face: true, glow: 0xffb03b, r: 50, wait: 750, track: true, life: 1600 });
+        });
+        break;
+      case "slide":
+        // three long belly slides that bounce off the walls
+        dash(3, 1400, 900, 600);
+        break;
+      case "icegrid": {
+        // a checkerboard of icicles, then the other half
+        cast(2600);
+        const [cx, cy] = [hx, hy];
+        for (const [parity, ms] of [[0, 1000], [1, 1900]] as const) {
+          for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+            if ((((i + j) % 2) + 2) % 2 !== parity) continue;
+            this.addStrike(cx + i * 240, cy + j * 172, 125, ms, D * 1.3, "ice");
+          }
+        }
+        break;
+      }
+      case "avalanche": {
+        // rows of snowballs roll down from above; find the gap
+        cast(3000);
+        const wave = () => {
+          const gap = Math.floor(Math.random() * 8) - 4;
+          for (let k = -4; k <= 4; k++) {
+            if (k === gap || k === gap + 1) continue;
+            this.hazardShot(this.hero.x + k * 210, this.hero.y - 1200, Math.PI / 2, 1000, D * 1.2, { tex: "bp_snow", scale: 1.7, r: 95, wait: 800, spin: 7, life: 3000 });
+          }
+        };
+        wave();
+        later(1300, wave);
+        break;
+      }
+      case "nova":
+        // a frost beam sweeps all the way around, then icicles fall on you
+        cast(3400);
+        for (let i = 0; i < 18; i++) {
+          const a = toHero - 0.9 + i * 0.35;
+          this.addLane(bx, by - 40, bx + Math.cos(a) * 1700, by - 40 + Math.sin(a) * 1700 * 0.75, 150, 800 + i * 110, D * 1.3, 0x8fd8ff);
+        }
+        later(1500, () => {
+          for (let k = 0; k < 5; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const d = k === 0 ? 0 : 160 + Math.random() * 220;
+            this.addStrike(this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.7, 140, 900, D * 1.2, "ice");
+          }
+        });
+        break;
+    }
+  }
+
+  /** A shot that can wait (showing its aim lane), follow you, bounce off walls, face where it flies, or glow. */
+  private hazardShot(
+    x: number, y: number, a: number, speed: number, dmg: number,
+    o: { tex?: string; tint?: number; scale?: number; r?: number; home?: number; wait?: number; track?: boolean; bounce?: boolean; life?: number; face?: boolean; spin?: number; frames?: string[]; glow?: number } = {},
+  ): void {
+    const tex = o.tex ?? "b_orb";
+    const img = this.add.image(x, y, tex).setScale(o.scale ?? 1).setDepth(9000);
+    if (o.tint !== undefined) img.setTint(o.tint);
+    if (o.face) img.setRotation(a);
+    const rock: Rock = {
+      img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: o.life ?? 2600, dmg,
+      r: o.r, home: o.home, wait: o.wait, track: o.track, bounce: o.bounce, speed, face: o.face, spin: o.spin ?? (o.face ? 0 : 6), frames: o.frames,
+    };
+    if (o.glow !== undefined) rock.glow = this.add.image(x, y, "glow").setTint(o.glow).setScale((o.r ?? 60) / 70).setAlpha(0.7).setDepth(8999).setBlendMode(Phaser.BlendModes.ADD);
+    if (o.wait) {
+      img.setAlpha(0.75).setScale(img.scale * 0.6);
+      this.tweens.add({ targets: img, scale: o.scale ?? 1, alpha: 1, duration: o.wait, ease: "Back.out" });
+      const L = Math.min(2400, speed * 1.6);
+      rock.aim = this.add.image(x, y, "bx_lane").setOrigin(0, 0.5).setTint(0xff3a3a).setDisplaySize(L, (o.r ?? 60) * 1.6).setRotation(a).setAlpha(0).setDepth(7);
+      this.tweens.add({ targets: rock.aim, alpha: 0.85, duration: 200 });
+    }
+    this.rocks.push(rock);
+  }
+
+  /** A shot from the boss: a glowing orb in its colour, or a thrown boulder. */
+  private bossShot(e: Enemy, a: number, speed: number, dmg: number, tex?: string): void {
+    if (tex === "boulder") this.hazardShot(e.img.x, e.img.y - 100, a, speed, dmg, { tex: "bp_boulder", scale: 0.6, r: 55, spin: 8 });
+    else this.hazardShot(e.img.x, e.img.y - 100, a, speed, dmg, { tex: orbTexture(this, e.type.fx), scale: 1.1, glow: e.type.fx, r: 50 });
+  }
+
+  private dropRock(r: Rock): void {
+    r.img.destroy();
+    r.glow?.destroy();
+    r.aim?.destroy();
+  }
+
+  /** A beam lane: shown first (a lane with arrows that fills up), then it fires along its whole length. */
+  private addLane(x1: number, y1: number, x2: number, y2: number, w: number, ms: number, dmg: number, color = 0xffffff): void {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const warn = this.add.image(0, 0, "bx_lane").setOrigin(0, 0.5).setTint(color).setDisplaySize(len, w);
+    const fill = this.add.image(0, 0, "bx_beam").setOrigin(0, 0.5).setTint(color).setDisplaySize(len, w).setAlpha(0.6);
+    const fy = fill.scaleY;
+    fill.scaleY = 0;
+    const lane = this.add.container(x1, y1, [warn, fill]).setRotation(a).setDepth(7).setAlpha(0);
+    this.tweens.add({ targets: lane, alpha: 1, duration: 160 });
+    this.tweens.add({ targets: fill, scaleY: fy, duration: ms, ease: "Quad.in" });
+    this.tweens.add({ targets: warn, alpha: 0.55, duration: 150, yoyo: true, repeat: -1 });
+    this.lanes.push({ x1, y1, x2, y2, w, at: this.time.now + ms, ms, dmg, color, obj: lane });
+  }
+
+  private lanesTick(): void {
+    const now = this.time.now;
+    this.lanes = this.lanes.filter((l) => {
+      if (now < l.at) return true;
+      l.obj.destroy();
+      // the beam: a coloured glow with a white-hot core that flickers out
+      const len = Math.hypot(l.x2 - l.x1, l.y2 - l.y1);
+      const a = Math.atan2(l.y2 - l.y1, l.x2 - l.x1);
+      const glow = this.add.image(0, 0, "bx_beam").setOrigin(0, 0.5).setTint(l.color).setDisplaySize(len, l.w * 1.5).setAlpha(0.85);
+      const core = this.add.image(0, 0, "bx_beam").setOrigin(0, 0.5).setDisplaySize(len, l.w * 0.5).setAlpha(0.8);
+      const beam = this.add.container(l.x1, l.y1, [glow, core]).setRotation(a).setDepth(9200);
+      this.tweens.add({ targets: beam, scaleY: 1.35, duration: 60, yoyo: true, repeat: 2 });
+      this.tweens.add({ targets: beam, alpha: 0, delay: 260, duration: 260, onComplete: () => beam.destroy() });
+      this.sparks.setParticleTint(l.color);
+      for (let t = 0.15; t <= 1; t += 0.2) this.sparks.explode(5, l.x1 + Math.cos(a) * len * t, l.y1 + Math.sin(a) * len * t);
+      this.cameras.main.shake(140, 0.006);
+      if (!this.fighting) return false;
+      const t = Phaser.Math.Clamp(((this.hero.x - l.x1) * (l.x2 - l.x1) + (this.hero.y - 40 - l.y1) * (l.y2 - l.y1)) / (len * len || 1), 0, 1);
+      const [px, py] = [l.x1 + (l.x2 - l.x1) * t, l.y1 + (l.y2 - l.y1) * t];
+      if (Math.hypot(this.hero.x - px, this.hero.y - 40 - py) < l.w / 2 + 30) this.hurt(l.dmg);
+      return false;
+    });
   }
 
   // ───────────────────────── boss seals ─────────────────────────
@@ -3896,22 +4492,62 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Boss rocks fly straight; dodge them. */
+  /** Boss rocks and shots: they fly straight, or wait and aim first, follow you, or bounce. */
   private moveRocks(delta: number): void {
     const dt = delta / 1000;
+    if (dt > 0) {
+      const k = Math.min(1, dt * 4);
+      this.heroVel[0] += ((this.hero.x - this.heroPrev[0]) / dt - this.heroVel[0]) * k;
+      this.heroVel[1] += ((this.hero.y - this.heroPrev[1]) / dt - this.heroVel[1]) * k;
+      this.heroPrev = [this.hero.x, this.hero.y];
+      // a teleport or a new fight is not speed
+      if (Math.hypot(...this.heroVel) > 1500) this.heroVel = [0, 0];
+    }
     this.rocks = this.rocks.filter((r) => {
+      const speed = r.speed ?? Math.hypot(r.vx, r.vy);
+      const aim = Math.atan2(this.hero.y - 40 - r.img.y, this.hero.x - r.img.x);
+      if (r.wait) {
+        r.wait -= delta;
+        if (r.track && r.wait > 250) [r.vx, r.vy] = [Math.cos(aim) * speed, Math.sin(aim) * speed];
+        const dir = Math.atan2(r.vy, r.vx);
+        if (r.face) r.img.setRotation(dir);
+        r.aim?.setPosition(r.img.x, r.img.y).setRotation(dir);
+        // locked on: the lane goes white-hot just before it flies
+        if (r.aim && r.wait < 250) r.aim.setTint(0xffffff);
+        if (r.wait > 0) return true;
+        r.wait = 0;
+        r.aim?.destroy();
+        r.aim = undefined;
+      }
+      if (r.home) {
+        const cur = Math.atan2(r.vy, r.vx);
+        const a = cur + Phaser.Math.Clamp(Phaser.Math.Angle.Wrap(aim - cur), -r.home * dt, r.home * dt);
+        [r.vx, r.vy] = [Math.cos(a) * speed, Math.sin(a) * speed];
+      }
       r.img.x += r.vx * dt;
       r.img.y += r.vy * dt;
-      r.img.rotation += 6 * dt;
+      if (r.bounce) {
+        if (clampX(r.img.x) !== r.img.x) r.vx *= -1;
+        if (clampY(r.img.y) !== r.img.y) r.vy *= -1;
+        r.img.setPosition(clampX(r.img.x), clampY(r.img.y));
+      }
+      if (r.face) r.img.setRotation(Math.atan2(r.vy, r.vx));
+      else r.img.rotation += (r.spin ?? 6) * dt;
+      if (r.frames) r.img.setTexture(r.frames[Math.floor(this.time.now / 110) % r.frames.length]);
+      r.glow?.setPosition(r.img.x, r.img.y);
       r.life -= delta;
-      const hit = this.fighting && Math.hypot(r.img.x - this.hero.x, r.img.y - (this.hero.y - 60)) < 60;
+      const hit = this.fighting && Math.hypot(r.img.x - this.hero.x, r.img.y - (this.hero.y - 60)) < (r.r ?? 60);
       if (hit) {
         this.hurt(r.dmg);
         this.puff.setParticleTint(0xa89a8a);
         this.puff.explode(8, r.img.x, r.img.y);
+        this.sparks.setParticleTint(0xffffff);
+        this.sparks.explode(8, r.img.x, r.img.y);
       }
+      // the last moment it fades out instead of popping away
+      if (r.life < 250) r.img.setAlpha(Math.max(0, r.life / 250));
       if (hit || r.life <= 0) {
-        r.img.destroy();
+        this.dropRock(r);
         return false;
       }
       return true;
@@ -4143,6 +4779,7 @@ export class BattleScene extends Phaser.Scene {
   private kill(e: Enemy, sweep = false): void {
     this.enemies = this.enemies.filter((o) => o !== e);
     e.aura?.destroy();
+    e.tele?.destroy();
     e.badge?.destroy();
     if (!sweep && e.muts.includes("split")) {
       // a splitter breaks into two smaller monsters
@@ -4256,64 +4893,7 @@ export class BattleScene extends Phaser.Scene {
         this.fx.lineStyle(16, 0xffe066, 1).beginPath().arc(sl.x, sl.y - 170, 70, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * sl.t) / SEAL_MS).strokePath();
       }
     }
-    for (const e of this.enemies) {
-      const blink = time % 200 < 100 ? 0.55 : 0.3;
-      if (e.phase === "windup") {
-        // a red lane with an arrow where the boss will charge
-        const [nx, ny] = [-e.dashY, e.dashX];
-        const L = 760;
-        const W2 = 70;
-        const pts = [
-          [e.img.x + nx * W2, e.img.y + ny * W2], [e.img.x + e.dashX * L + nx * W2, e.img.y + e.dashY * L + ny * W2],
-          [e.img.x + e.dashX * (L + 110), e.img.y + e.dashY * (L + 110)],
-          [e.img.x + e.dashX * L - nx * W2, e.img.y + e.dashY * L - ny * W2], [e.img.x - nx * W2, e.img.y - ny * W2],
-        ].map(([x, y]) => new Phaser.Math.Vector2(x, y));
-        this.fx.fillStyle(0xff3a3a, blink * 0.6).fillPoints(pts, true);
-        this.fx.lineStyle(10, 0xffffff, blink + 0.3).strokePoints(pts, true);
-        for (let d = 120; d <= L; d += 110) {
-          this.fx.fillStyle(0xffffff, blink).fillTriangle(
-            e.img.x + e.dashX * (d + 40), e.img.y + e.dashY * (d + 40),
-            e.img.x + e.dashX * d + nx * 30, e.img.y + e.dashY * d + ny * 30,
-            e.img.x + e.dashX * d - nx * 30, e.img.y + e.dashY * d - ny * 30,
-          );
-        }
-      } else if (e.phase === "throw" || e.phase === "volley") {
-        // aim line at you
-        this.fx.lineStyle(10, 0xff3a3a, blink).lineBetween(e.img.x, e.img.y - 60, this.hero.x, this.hero.y - 40);
-        this.fx.lineStyle(6, 0xffffff, blink).strokeCircle(this.hero.x, this.hero.y - 40, 60);
-      } else if (e.phase === "ring") {
-        this.fx.lineStyle(12, 0xff3a3a, blink).strokeEllipse(e.img.x, e.img.y, 900 * (1 - e.phaseT / 600) + 100, (900 * (1 - e.phaseT / 600) + 100) * 0.7);
-      } else if (e.phase === "breath") {
-        const a = Math.atan2(e.dashY, e.dashX);
-        const [ox, oy] = [e.img.x, e.img.y - 60];
-        const firing = e.phaseT < 700;
-        this.fx.fillStyle(firing ? 0xffa03a : 0xff3a3a, firing ? 0.4 : blink * 0.7).fillTriangle(
-          ox, oy, ox + Math.cos(a - BREATH_HALF) * BREATH_LEN, oy + Math.sin(a - BREATH_HALF) * BREATH_LEN,
-          ox + Math.cos(a + BREATH_HALF) * BREATH_LEN, oy + Math.sin(a + BREATH_HALF) * BREATH_LEN,
-        );
-        this.fx.lineStyle(10, 0xffffff, blink + 0.3).strokeTriangle(
-          ox, oy, ox + Math.cos(a - BREATH_HALF) * BREATH_LEN, oy + Math.sin(a - BREATH_HALF) * BREATH_LEN,
-          ox + Math.cos(a + BREATH_HALF) * BREATH_LEN, oy + Math.sin(a + BREATH_HALF) * BREATH_LEN,
-        );
-      } else if (e.phase === "burrow") {
-        this.fx.fillStyle(0x8a6a3a, 0.85).fillEllipse(e.img.x, e.img.y, 150, 56);
-        this.fx.fillStyle(0xc8a878, 0.9).fillEllipse(e.img.x, e.img.y - 8, 100, 34);
-      } else if (e.phase === "stomp") {
-        const f = 1 - Math.max(0, e.phaseT) / 950;
-        this.fx.fillStyle(0xff3a3a, 0.2 + f * 0.3).fillEllipse(e.img.x, e.img.y, 720 * f, 504 * f);
-        this.fx.lineStyle(16, 0xff3a3a, blink + 0.3).strokeEllipse(e.img.x, e.img.y, 720, 504);
-        this.fx.lineStyle(6, 0xffffff, blink + 0.3).strokeEllipse(e.img.x, e.img.y, 700, 490);
-      }
-    }
-    for (const st of this.strikes) {
-      const f = Phaser.Math.Clamp(1 - (st.at - time) / st.ms, 0, 1);
-      const blink = time % 200 < 100 ? 0.75 : 0.4;
-      this.fx.fillStyle(0xff3a3a, 0.15 + f * 0.35).fillEllipse(st.x, st.y, st.r * 2 * f, (st.r * 2 * f) / 1.4);
-      this.fx.lineStyle(14, 0xff3a3a, blink).strokeEllipse(st.x, st.y, st.r * 2, (st.r * 2) / 1.4);
-      this.fx.lineStyle(6, 0xffffff, blink).strokeEllipse(st.x, st.y, st.r * 1.9, (st.r * 1.9) / 1.4);
-      // a crosshair in the middle
-      this.fx.lineStyle(8, 0xffffff, blink).lineBetween(st.x - st.r * 0.3, st.y, st.x + st.r * 0.3, st.y).lineBetween(st.x, st.y - st.r * 0.22, st.x, st.y + st.r * 0.22);
-    }
+    for (const e of this.enemies) if (e.type.boss) this.bossTele(e, time);
     this.bars.clear();
     this.hpUsed = 0;
     const numbers = battle.mode === "run";

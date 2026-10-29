@@ -839,6 +839,15 @@ export class FishScreen extends Screen {
     fitText(t, 520);
     this.pond.add(t);
     s.tweens.add({ targets: t, y: t.y - 60, alpha: 0, delay: 500, duration: 400, onComplete: () => t.destroy() });
+    // every catch brings shells too (rarer rows bring more)
+    if (c.shells > 0 && p.kind !== "shells") {
+      const sh = s.add.container(img.x, t.y + 44, [
+        s.add.image(-30, 0, "fish_shell").setScale(0.32),
+        text(s, 14, 0, `+${fmt(c.shells)}`, 32, "#ffb0d0").setOrigin(0, 0.5),
+      ]);
+      this.pond.add(sh);
+      s.tweens.add({ targets: sh, y: sh.y - 60, alpha: 0, delay: 500, duration: 400, onComplete: () => sh.destroy() });
+    }
     s.time.delayedCall(this.hurry ? 200 : 380, done);
   }
 
@@ -866,6 +875,7 @@ export class FishScreen extends Screen {
     if (c.super) tags.push(`SUPER CATCH  x${SUPER_LUCK} LUCK`);
     if (c.shiny) tags.push(`SHINY  x${SHINY_MULT}`);
     if (first) tags.push(c.bonus ? `NEW PRIZE!  +${fmt(c.bonus)} shells` : "NEW PRIZE!");
+    if (c.shells > 0) tags.push(`+${fmt(c.shells)} shells`);
     const css = rgba(lighten(color, 0.35));
     const parts: Phaser.GameObjects.GameObject[] = [
       dim, rays, pic,
