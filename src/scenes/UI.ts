@@ -781,7 +781,7 @@ export class UIScene extends Phaser.Scene implements Host {
     makeFishTextures(this);
     makeEventTextures(this);
     const x = this.W - 136;
-    const y = this.L.hudBottom + 525;
+    const y = this.L.hudBottom + 330;
     this.eventGlow = this.add.image(0, 0, "glow").setTint(0xffd23f).setScale(1.5, 1.6).setAlpha(0);
     this.tweens.add({ targets: this.eventGlow, alpha: { from: 0.25, to: 0.75 }, duration: 600, yoyo: true, repeat: -1 });
     const card = this.add.image(0, 0, "event_card");
@@ -837,7 +837,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** The beginners' Dice Rain event card (first 14 days): a bouncing die, the time left. */
   private buildDiceEventCard(): void {
     const x = this.W - 136;
-    const y = this.L.hudBottom + 820;
+    const y = this.L.hudBottom + 625;
     const glow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(1.5, 1.6).setAlpha(0.5);
     this.tweens.add({ targets: glow, alpha: 0.9, duration: 600, yoyo: true, repeat: -1 });
     const shadow = this.add.ellipse(0, 50, 90, 22, 0x000000, 0.3);
