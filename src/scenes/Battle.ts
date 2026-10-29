@@ -60,9 +60,8 @@ const pickWeighted = <T,>(list: [T, number][]): T => {
   for (const [v, w] of list) if ((r -= w) <= 0) return v;
   return list[0][0];
 };
-/** the Air Zone covers 10% of the map */
-/** The safe air square: a third as wide as it used to be, so you have to stay sharp. */
-const AIR_ZONE = Math.round((ARENA * Math.sqrt(0.1)) / 3);
+/** The safe air square: two thirds as wide as the old 10%-of-the-map zone. */
+const AIR_ZONE = Math.round((ARENA * Math.sqrt(0.1) * 2) / 3);
 const PICK_R = 210;
 /** While the crystal is open, monsters this close to you go for you instead. */
 const AGGRO = 420;

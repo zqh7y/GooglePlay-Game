@@ -1,6 +1,7 @@
 /**
  * Every stage has one of five modes, in a repeating cycle: 1 Air Zone, 2 Crystal, 3 Feed the Beast,
- * 4 Dice Rain, 5 Boss Battle, then 6 is Air Zone again, and so on up to stage 100.
+ * 4 Dice Rain, 5 Boss Battle, then 6 is Air Zone again, and so on up to stage 100. Stage 1 is the
+ * exception: it is always a Crystal stage.
  */
 export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss";
 
@@ -10,7 +11,9 @@ export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "crystal", "bo
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
 
-export const modeForStage = (stage: number): StageMode => MODE_ORDER[(Math.max(1, stage) - 1) % MODE_ORDER.length];
+/** Stage 1 is always a Crystal stage (the easiest start); after that the cycle runs as usual. */
+export const modeForStage = (stage: number): StageMode =>
+  stage <= 1 ? "crystal" : MODE_ORDER[(Math.max(1, stage) - 1) % MODE_ORDER.length];
 
 export interface ModeInfo {
   name: string;
