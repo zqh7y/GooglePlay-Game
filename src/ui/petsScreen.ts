@@ -15,9 +15,6 @@ import { classBadge, classText } from "./classText";
 import { Host, Screen } from "./screens";
 import { Modal, button, drawBar, fitText, label, modal, text } from "./widgets";
 import { gemCard } from "./cardOptions";
-import { FUSE_CLASSES, FUSE_COST, canFuse, fuse, nextClass, spareCopies } from "../systems/fuse";
-import { vividCard } from "../art/ps";
-import type { Tier } from "../data/tiers";
 
 /** The Dark Gem card is 200 x 250; grow it to fill the old card's space. */
 const CARD_SCALE = Math.min(CARD_W / 200, CARD_H / 250);
@@ -162,25 +159,17 @@ export class PetsScreen extends Screen {
 
     // tabs and sorting
     const tabY = collY + 72 + 16 + 48;
-    this.content.add(button(s, 152, tabY, 272, 96, this.tab === "pets" ? "orange" : "grey", "MY PETS", () => this.setTab("pets"), { icon: "icon_paw", iconSize: 44, size: 28 }));
-    this.content.add(button(s, 410, tabY, 232, 96, this.tab === "index" ? "blue" : "grey", "INDEX", () => this.setTab("index"), { icon: "icon_book", iconSize: 44, size: 28 }));
-    // FUSE: 100 spare copies of a class = 1 pet of the next class
-    const ready = canFuse();
-    this.content.add(button(s, 650, tabY, 236, 96, ready ? "red" : "gold", "FUSE", () => this.openFuse(), { icon: "icon_fuse", iconSize: 44, size: 30 }));
-    if (ready) {
-      const badge = s.add.container(752, tabY - 42, [s.add.circle(0, 0, 20, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(s, 0, -1, "!", 28, "#ffffff", { stroke: 5 })]);
-      s.tweens.add({ targets: badge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      this.content.add(badge);
-    }
+    this.content.add(button(s, 230, tabY, 400, 96, this.tab === "pets" ? "orange" : "grey", "MY PETS", () => this.setTab("pets"), { icon: "icon_paw", iconSize: 50, size: 34 }));
+    this.content.add(button(s, 612, tabY, 330, 96, this.tab === "index" ? "blue" : "grey", "INDEX", () => this.setTab("index"), { icon: "icon_book", iconSize: 50, size: 34 }));
     if (this.tab === "pets") {
-      this.content.add(button(s, 910, tabY, 250, 96, "purple", SORT_LABEL[this.sort], () => {
+      this.content.add(button(s, 930, tabY, 260, 96, "purple", SORT_LABEL[this.sort], () => {
         sfx.click();
         this.sort = SORTS[(SORTS.indexOf(this.sort) + 1) % SORTS.length];
         this.list = null;
         this.build();
       }, { size: 30, sub: "sort" }));
     } else {
-      this.content.add(text(s, 910, tabY, `${save.discovered.length}/${PET_LIST.length}`, 40, "#ffffff"));
+      this.content.add(text(s, 930, tabY, `${save.discovered.length}/${PET_LIST.length}`, 40, "#ffffff"));
     }
 
     // the grid
@@ -386,72 +375,6 @@ export class PetsScreen extends Screen {
     this.host.toast(`+${n} pet level${n > 1 ? "s" : ""}!`, "#8af06a");
     this.sparkle(this.scene.scale.width / 2, this.host.L.headerBottom + 300, 60);
     this.changed();
-  }
-
-  /**
-   * The Fuse window: a row per class with your spare copies, a bar to 100 and FUSE (100 of them
-   * become 1 random pet of the next class), and FUSE ALL at the bottom.
-   */
-  private openFuse(): void {
-    const s = this.scene;
-    sfx.click();
-    const W = 1000;
-    const H = 1460;
-    const top = -H / 2;
-    const m = this.host.showModal(modal(s, W, H, "", "red", undefined, undefined, true));
-    const b = m.body;
-    b.add(s.add.image(0, 0, vividCard(s, 0xff6a3a, W, H)));
-    const icon = s.add.image(-250, top + 108, "icon_fuse").setScale(1.3);
-    s.tweens.add({ targets: icon, angle: { from: -12, to: 12 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    b.add([
-      icon,
-      text(s, 40, top + 106, "FUSE", 110, "#ffffff", { stroke: 16 }),
-      label(s, 0, top + 210, `${FUSE_COST} spare pets of a class  =  1 pet of the next class\n(you never lose a pet you own, only extra copies)`, 30, "#ffffff"),
-    ]);
-    const rows = s.add.container(0, 0);
-    b.add(rows);
-    const draw = () => {
-      rows.removeAll(true);
-      FUSE_CLASSES.forEach((cls, i) => {
-        const y = top + 330 + i * 132;
-        const have = spareCopies(cls);
-        const n = Math.floor(have / FUSE_COST);
-        const g = s.add.graphics();
-        g.fillStyle(0x000000, 0.22).fillRoundedRect(-450, y - 54 + 6, 900, 108, 26);
-        g.fillStyle(0xffffff, 0.92).fillRoundedRect(-450, y - 54, 900, 108, 26);
-        drawBar(g, -300, y + 12, 300, 24, n ? 1 : have / FUSE_COST, n ? 0x7ad651 : 0x5ac8ff);
-        rows.add([
-          g,
-          classBadge(s, -385, y, cls, 58),
-          text(s, -300, y - 22, `${fmt(have)} / ${FUSE_COST}`, 32, "#3a2a1a", { stroke: false }).setOrigin(0, 0.5),
-          text(s, 50, y - 4, "→", 54, "#ffb03b"),
-          classBadge(s, 150, y, nextClass(cls), 58),
-          button(s, 340, y, 190, 84, n ? "green" : "grey", n > 1 ? `FUSE x${n}` : "FUSE", () => go([cls], n), { size: 28 }),
-        ]);
-      });
-    };
-    const go = (classes: Tier[], times: number) => {
-      const got: Record<string, number> = {};
-      for (const cls of classes) {
-        for (let k = 0; k < times || (times === 0 && spareCopies(cls) >= FUSE_COST); k++) {
-          const p = fuse(cls);
-          if (!p) break;
-          got[p.id] = (got[p.id] ?? 0) + 1;
-        }
-      }
-      const ids = Object.keys(got);
-      if (!ids.length) {
-        this.host.toast(`You need ${FUSE_COST} spare pets of a class. Roll more!`, "#ffe680");
-        return;
-      }
-      sfx.levelUp();
-      buzz(80);
-      m.close();
-      this.changed();
-      this.host.showRewards("FUSED!", ids.sort((a, c) => ITEMS[c].index - ITEMS[a].index).map((id) => ({ icon: petTexture(s, id), amount: `x${got[id]}`, give: () => undefined })));
-    };
-    draw();
-    b.add(button(s, 0, H / 2 - 110, 480, 120, canFuse() ? "gold" : "grey", "FUSE ALL", () => go(FUSE_CLASSES, 0), { icon: "icon_fuse", iconSize: 52, size: 40 }));
   }
 
   /** A burst of green and gold sparks. */

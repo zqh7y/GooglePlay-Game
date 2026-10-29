@@ -252,7 +252,7 @@ hour of fishing brings.
   colour, a gem with the class letter, a thin bar of copies toward the next level, a green "+" when it can
   level up and a check when it is on your team. No more name, odds and numbers on the card (the pet's
   popup still shows everything). Pets you haven't found yet are dark silhouettes.
-- **Fuse** (Pets screen, next to INDEX; a red "!" when you can): **100 spare pets of a class = 1 random
+- **Fuse** (Roll screen, next to ODDS; a red "!" when you can): **100 spare pets of a class = 1 random
   pet of the next class** (the common ones of that class come more often, like in a roll). Only extra
   copies are used, never a pet you own. One row per class (A to SSS) shows your spare copies with a bar to
   100 and FUSE (or FUSE x3 when you have 300); FUSE ALL fuses everything it can, class after class, and
@@ -554,7 +554,7 @@ hour of fishing brings.
 | `src/ui/petsScreen.ts` | The Pets screen: team stage and power, collection, sorted grid, Index, pet popup with levelling |
 | `src/ui/shopScreen.ts` | The Shop: Premium Egg, deal of the day, free gifts, lucky wheel, chests and their opening show, shelves |
 | `src/data/boosts.ts` | Old Battle Boost ids (only for old saves) |
-| `src/systems/fuse.ts` | Fusing 100 spare pets of a class into a pet of the next class |
+| `src/systems/fuse.ts`, `src/ui/fuseWindow.ts` | Fusing 100 spare pets of a class into a pet of the next class, and its window |
 | `src/data/diceEvent.ts` | The Dice Rain event: Rain Drops and its 15-prize track |
 | `src/art/bossfx.ts` | Boss attack art: projectiles, warnings, beams, bolts, splats, blasts and spikes |
 | `src/ui/cardOptions.ts` | Ten pet card ideas to choose from (open the game with `?cards`) |

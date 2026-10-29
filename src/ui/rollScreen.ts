@@ -16,6 +16,8 @@ import { autoUnlocked, dieSkin, luck, luckParts, luckyEvery, luckyMult, potionAc
 import { fmt, luckText, oneIn } from "./format";
 import { classBadge, classText, setClassTint } from "./classText";
 import { Host, Screen } from "./screens";
+import { openFuse } from "./fuseWindow";
+import { canFuse } from "../systems/fuse";
 import { Button, button, drawBar, fitText, label, lockedCard, text } from "./widgets";
 
 /** Every this many rolls is a SUPER ROLL with x10 luck. */
@@ -236,6 +238,8 @@ export class RollScreen extends Screen {
   private reelY: number;
   private tierChips: { tier: Tier; box: Phaser.GameObjects.Container; count: Phaser.GameObjects.Text; ring: Phaser.GameObjects.Arc }[] = [];
   private batchBtns: { n: number; btn: Button }[] = [];
+  private fuseBadge!: Phaser.GameObjects.Container;
+  private fuseCheck = -1e9;
   private batchY: number;
   private btnY: number;
 
@@ -287,6 +291,11 @@ export class RollScreen extends Screen {
     this.chips = text(s, 150, panelY + 32, "", 26, "#fff3dc").setOrigin(0, 0.5);
     r.add([this.luckText, this.chips]);
     r.add(button(s, W - 120, panelY, 170, 100, "green", "ODDS", () => host.showOdds(), { icon: "icon_odds", iconSize: 40, size: 28 }));
+    // FUSE: 100 spare pets of a class = 1 pet of the next class (a red "!" when you can)
+    r.add(button(s, W - 310, panelY, 190, 100, "red", "FUSE", () => openFuse(s, host), { icon: "icon_fuse", iconSize: 40, size: 28 }));
+    this.fuseBadge = s.add.container(W - 222, panelY - 46, [s.add.circle(0, 0, 20, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(s, 0, -1, "!", 28, "#ffffff", { stroke: 5 })]);
+    s.tweens.add({ targets: this.fuseBadge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    r.add(this.fuseBadge);
 
     // SUPER ROLL and roll gift meters
     this.meterY = top + 196;
@@ -520,6 +529,10 @@ export class RollScreen extends Screen {
     this.autoBtn.setLabel(unlocked ? (save.autoRoll ? "AUTO ON" : "AUTO") : "LOCKED");
     this.fastBtn.setColor(this.host.isFast() ? "green" : "mint");
     for (const b of this.batchBtns) b.btn.setColor(b.n === save.rollBatch ? "gold" : "mint").setScale(b.n === save.rollBatch ? 1.08 : 1);
+    if (time - this.fuseCheck > 500) {
+      this.fuseCheck = time;
+      this.fuseBadge.setVisible(canFuse());
+    }
 
   }
 
