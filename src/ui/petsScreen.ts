@@ -422,10 +422,10 @@ export class PetsScreen extends Screen {
         drawBar(g, -300, y + 12, 300, 24, n ? 1 : have / FUSE_COST, n ? 0x7ad651 : 0x5ac8ff);
         rows.add([
           g,
-          classBadge(s, -432, y - 30, cls, 58),
+          classBadge(s, -385, y, cls, 58),
           text(s, -300, y - 22, `${fmt(have)} / ${FUSE_COST}`, 32, "#3a2a1a", { stroke: false }).setOrigin(0, 0.5),
-          text(s, 52, y, "→", 54, "#ffb03b"),
-          classBadge(s, 92, y - 30, nextClass(cls), 58),
+          text(s, 50, y - 4, "→", 54, "#ffb03b"),
+          classBadge(s, 150, y, nextClass(cls), 58),
           button(s, 340, y, 190, 84, n ? "green" : "grey", n > 1 ? `FUSE x${n}` : "FUSE", () => go([cls], n), { size: 28 }),
         ]);
       });
