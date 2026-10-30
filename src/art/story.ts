@@ -4,7 +4,7 @@ import { INK, Ctx, canvasTexture, rr } from "./draw";
 type Pt = [number, number];
 
 /** A filled polygon with the ink outline. */
-function poly(c: Ctx, pts: Pt[], fill: string | CanvasGradient, stroke = true): void {
+export function poly(c: Ctx, pts: Pt[], fill: string | CanvasGradient, stroke = true): void {
   c.beginPath();
   c.moveTo(pts[0][0], pts[0][1]);
   for (const p of pts.slice(1)) c.lineTo(p[0], p[1]);
@@ -14,14 +14,14 @@ function poly(c: Ctx, pts: Pt[], fill: string | CanvasGradient, stroke = true): 
   if (stroke) c.stroke();
 }
 
-function lin(c: Ctx, x0: number, y0: number, x1: number, y1: number, colors: string[]): CanvasGradient {
+export function lin(c: Ctx, x0: number, y0: number, x1: number, y1: number, colors: string[]): CanvasGradient {
   const g = c.createLinearGradient(x0, y0, x1, y1);
   colors.forEach((col, i) => g.addColorStop(i / (colors.length - 1), col));
   return g;
 }
 
 /** A soft dark shadow on the ground under a building. */
-function groundShadow(c: Ctx, x: number, y: number, rx: number, ry: number): void {
+export function groundShadow(c: Ctx, x: number, y: number, rx: number, ry: number): void {
   const g = c.createRadialGradient(x, y, 0, x, y, rx);
   g.addColorStop(0, "rgba(20,10,20,0.45)");
   g.addColorStop(1, "rgba(20,10,20,0)");

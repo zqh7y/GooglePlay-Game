@@ -232,28 +232,37 @@ hour of fishing brings.
   What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
   the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
   The tutorial's roll and Boss Rush steps wait until those open.
-- **The sea (stage 6, then every 5 stages)**: a small patch of sea that fits on one screen (the camera stays
+- **The sea (stage 6, then every 7 stages)**: a small patch of sea that fits on one screen (the camera stays
   put). You ride a little boat; dice fall from the sky, whale shadows grow under you then the whale bursts up,
   purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
   up every 30 s (1-6); surprise tsunamis come from the side at 1:00 and 2:00 and whirlpools open from level 3.
   After 3:00 a storm rolls in (rain, lightning) and five tsunami waves rush in from every side, each faster
   with fewer islands; only the sandy islands that rise before each wave are safe. Survive all five to win.
-- **Land Ho! (stage 7, then every 6 stages)**: a big open ocean (6000 x 24000). Sail to find the big island
+- **Land Ho! (stage 7, then every 7 stages)**: a big open ocean (6000 x 24000). Sail to find the big island
   (4:00). A rough compass points near it while the sea is calm (truer as you get close, a new guess after
   each tsunami). Tsunamis come every 10-18 s from a random side and get meaner each time (less warning,
   quicker waves, fewer and farther islands; from the 3rd on, sometimes two sides at once). Whirlpools open
   near you and pull you in; dice fall from the sky.
+- **The Lighthouse (stage 8, then every 7 stages)**: you land on the island at night in a storm (an oval
+  island with the sea round it; the shore stops you). Light the **4 fire bowls** (stand by one for 4 s; it
+  cools off if you step away; crabs burst out of the sand the first time you try each one) and then go in
+  the lighthouse door, all in **2:30**. Lightning strikes all the time (red circles, many aimed where you are
+  heading; from the 2nd fire, rows of bolts and "THE STORM IS ANGRY!"); bolts fry crabs too. Lit bowls burn
+  crabs that come close and light up the night. Lighting the lighthouse heals you, lifts the night and starts
+  its beam turning; the Storm then sends the stage boss. The beam burns crabs, burns the boss (8% and a
+  stun each pass) and warms you up: lure the boss into it. New monsters: red and blue crabs (walk frames).
 - **Tsunami waves** are towering walls of water: a curling white crest, deep blue body with streaks, a dark
   shadow running ahead, foam and spray off the top; they rise as they come, roar and shake the screen.
 - **The lobby shows the next stage**: the camp, the ruined village, the caged beast, the road to the sea, a
-  beach with the sea, a pier and your boat for the sea stages, the crystal / air zone for later modes. It is
+  beach with the sea, a pier and your boat for the sea stages (and the lighthouse with its turning light), the crystal / air zone for later modes. It is
   rebuilt every time you change stage.
 - **Buildings are solid**: houses, ruins and the village gate's posts block you (you slide along their walls).
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
   in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
   near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
-- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 5 modes up to 100: the Sea,
-  Land Ho!, Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the first Sea, 7 the first Land Ho!). The lobby button, the START popup and the map card show which one is next.
+- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 7 modes up to 100: the Sea,
+  Land Ho!, the Lighthouse, Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the first Sea, 7 the
+  first Land Ho!, 8 the first Lighthouse). The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.

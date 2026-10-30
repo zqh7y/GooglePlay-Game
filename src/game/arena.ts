@@ -39,6 +39,8 @@ export interface Arena {
   /** the sea stage: open water, nothing on it (the ocean: a big one to sail across) */
   sea?: boolean;
   ocean?: boolean;
+  /** the lighthouse island: an oval of land in the sea (centre, radii), the fire bowls and the lighthouse */
+  island?: { cx: number; cy: number; rx: number; ry: number; bowls: Pt[]; tower: Pt };
 }
 
 /** A story path: through the woods to the village, or down to the sea. */
@@ -177,6 +179,83 @@ export function getOceanArena(land: Region): Arena {
   const a: Arena = { land, center: [OCEAN_W / 2, OCEAN_H - 600], objects: [], patches: [], w: OCEAN_W, h: OCEAN_H, sea: true, ocean: true };
   useArena(a);
   return a;
+}
+
+/** The lighthouse island (stage 8): an oval of land with the sea all round, the lighthouse up top. */
+export const ISLE_W = 5200;
+export const ISLE_H = 5000;
+const ISLE_RX = 2150;
+const ISLE_RY = 1900;
+
+const isleCache = new Map<RegionId, Arena>();
+
+export function getIslandArena(land: Region): Arena {
+  if (!isleCache.has(land.id)) isleCache.set(land.id, buildIsland(land));
+  const a = isleCache.get(land.id)!;
+  useArena(a);
+  return a;
+}
+
+/** Is a point on the island's land (`margin` in from the shore)? */
+export function onIsle(a: Arena, x: number, y: number, margin = 0): boolean {
+  const i = a.island!;
+  return ((x - i.cx) / (i.rx - margin)) ** 2 + ((y - i.cy) / (i.ry - margin)) ** 2 <= 1;
+}
+
+/** The nearest point on the island's land (`margin` in from the shore). */
+export function toIsle(a: Arena, x: number, y: number, margin = 0): Pt {
+  const i = a.island!;
+  const k = Math.hypot((x - i.cx) / (i.rx - margin), (y - i.cy) / (i.ry - margin));
+  return k <= 1 ? [x, y] : [i.cx + (x - i.cx) / k, i.cy + (y - i.cy) / k];
+}
+
+function buildIsland(land: Region): Arena {
+  const rand = seeded(4242 + REGIONS.indexOf(land) * 13);
+  const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)];
+  const [cx, cy] = [ISLE_W / 2, ISLE_H / 2 + 100];
+  const tower: Pt = [cx, cy - 1150];
+  const bowls: Pt[] = [[cx - 1350, cy + 250], [cx + 1350, cy + 150], [cx - 750, cy - 850], [cx + 800, cy - 800]];
+  const start: Pt = [cx, cy + ISLE_RY - 350];
+  const taken = [...bowls, start].map(([x, y]) => ({ x, y, r: 330 }));
+  taken.push({ x: tower[0], y: tower[1] - 100, r: 420 });
+  const free = (x: number, y: number, r: number) => !taken.some((t) => Math.hypot(t.x - x, t.y - y) < t.r + r);
+  const inside = (x: number, y: number, m: number) => ((x - cx) / (ISLE_RX - m)) ** 2 + ((y - cy) / (ISLE_RY - m)) ** 2 <= 1;
+  const objects: ArenaObj[] = [];
+  // palms round the shore
+  for (let a = 0; a < Math.PI * 2; a += 0.09) {
+    if (rand() < 0.35) continue;
+    const k = 0.84 + rand() * 0.08;
+    const [x, y] = [cx + Math.cos(a) * ISLE_RX * k, cy + Math.sin(a) * ISLE_RY * k];
+    if (!free(x, y, 60)) continue;
+    objects.push({ tex: "palm", x, y, flip: rand() < 0.5, scale: 0.9 + rand() * 0.3 });
+  }
+  // groves inland
+  const trees = land.trees.filter((t) => t !== "rock");
+  for (let n = 0, tries = 0; n < 22 && tries < 500; tries++) {
+    const [x, y] = [cx + (rand() - 0.5) * ISLE_RX * 1.6, cy + (rand() - 0.5) * ISLE_RY * 1.6];
+    if (!inside(x, y, 500) || !free(x, y, 220)) continue;
+    taken.push({ x, y, r: 180 });
+    for (let i = 0, m = 1 + Math.floor(rand() * 3); i < m; i++) {
+      objects.push({ tex: pick(trees), x: x + (rand() - 0.5) * 200, y: y + (rand() - 0.5) * 140, flip: rand() < 0.5, scale: 0.85 + rand() * 0.3 });
+    }
+    n++;
+  }
+  // rocks and little plants
+  for (let n = 0, tries = 0; n < 160 && tries < 2000; tries++) {
+    const [x, y] = [cx + (rand() - 0.5) * ISLE_RX * 2, cy + (rand() - 0.5) * ISLE_RY * 2];
+    if (!inside(x, y, 300) || !free(x, y, 40)) continue;
+    objects.push({ tex: rand() < 0.15 ? "rock" : pick(land.plants), x, y, flip: rand() < 0.5, scale: rand() < 0.15 ? 0.6 : undefined });
+    n++;
+  }
+  const patches: Patch[] = [];
+  for (let n = 0; n < 60; n++) {
+    const [x, y] = [cx + (rand() - 0.5) * ISLE_RX * 1.6, cy + (rand() - 0.5) * ISLE_RY * 1.6];
+    if (inside(x, y, 450)) patches.push({ x, y, r: 90 + rand() * 120 });
+  }
+  return {
+    land, center: start, objects, patches, w: ISLE_W, h: ISLE_H,
+    island: { cx, cy, rx: ISLE_RX, ry: ISLE_RY, bowls, tower },
+  };
 }
 
 /** The field you are on: keeps everyone inside it (set by getArena / getPathArena). */

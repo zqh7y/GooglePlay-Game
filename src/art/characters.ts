@@ -384,6 +384,65 @@ function octopus(color: number, cups: number): (ctx: Ctx) => void {
   };
 }
 
+/** A crab out of the sand: a wide shell, eyes on stalks, big claws up (they snap with the arm pose), six legs stepping in turn. */
+function crab(color: number): (ctx: Ctx) => void {
+  return (ctx) => {
+    const t = toon(ctx, olFor(color), 5, true);
+    const dark = darken(color, 0.2);
+    t.paint("rgba(60,40,20,0.28)", () => t.E(80, 122, 62, 8));
+    squash(ctx, 80, 118, () => {
+      // legs: three a side, stepping in turn
+      for (const d of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const lift = (i % 2 ? 1 : -1) * d * pose.leg * 6;
+          const x0 = 80 + d * (22 + i * 9);
+          const y0 = 92 + i * 2;
+          t.tube(() => {
+            ctx.moveTo(x0, y0);
+            ctx.quadraticCurveTo(x0 + d * 24, y0 - 10 - lift, x0 + d * (32 + i * 5), y0 + 22 - lift);
+          }, 8, dark);
+        }
+      }
+      // the claws on their arms
+      for (const d of [-1, 1]) {
+        const up = d * pose.arm * 5;
+        const [cx, cy] = [80 + d * 56, 46 + up];
+        t.tube(() => {
+          ctx.moveTo(80 + d * 28, 82);
+          ctx.quadraticCurveTo(80 + d * 54, 80, cx, cy + 14);
+        }, 11, color);
+        t.part(() => t.E(cx + d * 11, cy + 15, 10, 6, d * 0.6), color);
+        t.part(() => t.E(cx, cy, 19, 14, d * -0.5), color, () => t.paint(rgba(lighten(color, 0.3)), () => t.E(cx - d * 4, cy - 5, 8, 4, d * -0.5)));
+        t.paint(rgba(darken(color, 0.5)), () => t.E(cx + d * 9, cy + 9, 7, 2.2, d * 0.4));
+      }
+      // eye stalks
+      for (const d of [-1, 1]) {
+        t.tube(() => {
+          ctx.moveTo(80 + d * 10, 70);
+          ctx.lineTo(80 + d * 14, 42);
+        }, 7, color);
+      }
+      // the shell, bumpy on top
+      t.part(() => t.E(80, 84, 46, 28), color, () => {
+        t.paint(rgba(lighten(color, 0.22)), () => t.E(80, 100, 34, 7));
+        for (const [x, y, r] of [[62, 74, 5], [98, 72, 4], [80, 66, 3.5], [108, 86, 3]] as const) t.paint(rgba(dark), () => t.C(x, y, r));
+      });
+      t.gloss(64, 70, 12, 6, -0.3);
+      // angry eyes on the stalks and a grumpy mouth
+      for (const d of [-1, 1]) {
+        t.part(() => t.C(80 + d * 14, 36, 9), 0xffffff);
+        t.paint("#1a1030", () => t.C(80 + d * 12.5, 37.5, 4.4));
+        t.paint("#ffffff", () => t.C(80 + d * 11, 35, 1.6));
+        t.tube(() => {
+          ctx.moveTo(80 + d * 22, 24 + 0);
+          ctx.lineTo(80 + d * 7, 29);
+        }, 4, 0x2a1020);
+      }
+      t.paint("rgba(60,10,20,0.9)", () => t.E(80, 94, 9, 3.5));
+    });
+  };
+}
+
 // ───────────────────────── textures ─────────────────────────
 
 /** Monster textures: key, width, height, painter. */
@@ -406,6 +465,9 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   // the sea stage's octopi (purple and red)
   e_octo: [150, 150, octopus(0xb46ad8, 0xffd0f0)],
   e_octo_r: [150, 150, octopus(0xff7a5a, 0xffe0c8)],
+  // the lighthouse island's crabs (red and blue)
+  e_crab: [160, 130, crab(0xe8543a)],
+  e_crab_b: [160, 130, crab(0x3a8ad8)],
 };
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {

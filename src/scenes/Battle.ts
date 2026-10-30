@@ -30,12 +30,13 @@ import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
 import { makeStoryTextures } from "../art/story";
 import { makeSeaTextures } from "../art/sea";
+import { makeLightTextures } from "../art/light";
 import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getOceanArena, getPathArena, getSeaArena } from "../game/arena";
+import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, onIsle, toIsle } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
@@ -64,6 +65,14 @@ const SEA_MS = 180000;
 const OCEAN_MS = 240000;
 /** the sea's finale: this many tsunami waves */
 const SEA_WAVES = 5;
+/** the Lighthouse: time to light the fire bowls and the lighthouse; how long to stand at a bowl (and how close), and at the door */
+const LIGHT_MS = 150000;
+const BOWL_MS = 4000;
+const BOWL_R = 170;
+const DOOR_MS = 1500;
+/** the lighthouse beam: how far it reaches and how fast it turns (degrees per second) */
+const BEAM_LEN = 3200;
+const BEAM_SPIN = 60;
 
 /** A tsunami wave: the wall of water and the shadow it throws ahead; `side` is where it comes from (0 top, 1 bottom, 2 left, 3 right). */
 interface Wave {
@@ -568,6 +577,8 @@ export class BattleScene extends Phaser.Scene {
   private side = { phase: "calm" as "calm" | "warn" | "wave", t: 0, dur: 0, sides: [] as number[], waves: [] as { w: Wave; from: number; span: [number, number]; hit: boolean }[] };
   /** whirlpools pulling you in */
   private whirl = { t: 9000, list: [] as { x: number; y: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Ellipse; life: number; hurtT: number }[] };
+  /** the Lighthouse: the fire bowls, the lighthouse, its beam, the storm's lightning and rain */
+  private light = this.freshLight();
   /** things you cannot walk through (houses, ruins, the gate's posts) */
   private solids: Phaser.Geom.Rectangle[] = [];
   private shieldImg!: Phaser.GameObjects.Image;
@@ -678,6 +689,15 @@ export class BattleScene extends Phaser.Scene {
     super("Battle");
   }
 
+  private freshLight() {
+    return {
+      bowls: [] as { x: number; y: number; lit: boolean; p: number; img: Phaser.GameObjects.Image; ember: Phaser.GameObjects.Image; ambushed: boolean }[],
+      tower: null as Phaser.GameObjects.Image | null, tx: 0, ty: 0, door: 0, on: false, burnT: 0,
+      beam: null as Phaser.GameObjects.Image | null, angle: -90, boltT: 5000, rain: null as Phaser.GameObjects.Particles.ParticleEmitter | null,
+      beamHit: new Map<Enemy, number>(), angry: false,
+    };
+  }
+
   get landId(): string {
     return this.land.id;
   }
@@ -700,6 +720,7 @@ export class BattleScene extends Phaser.Scene {
     makeBeastTextures(this);
     makeStoryTextures(this);
     makeSeaTextures(this);
+    makeLightTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     // the story is at night: the lobby too (a little lighter than the fights)
     const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
@@ -743,6 +764,7 @@ export class BattleScene extends Phaser.Scene {
     this.ocean = { x: 0, y: 0, img: null, nextT: 11000, phase: "calm", phaseT: 0, wave: null, from: 0, to: 0, hit: false, found: false, gx: 0, gy: 0, count: 0 };
     this.side = { phase: "calm", t: 0, dur: 0, sides: [], waves: [] };
     this.whirl = { t: 9000, list: [] };
+    this.light = this.freshLight();
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -751,7 +773,7 @@ export class BattleScene extends Phaser.Scene {
     const onPath = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "path";
     const own = !this.rush && !data?.event && !!data?.autostart ? modeForStage(save.stage) : null;
     this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village")
-      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : getArena(this.land.id);
+      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
@@ -769,7 +791,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island,
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -996,7 +1018,7 @@ export class BattleScene extends Phaser.Scene {
   /** Where the hero stands when a fight starts: by the crystal, or at the bottom of a story path. */
   private heroStart(): [number, number] {
     const [cx, cy] = this.arena.center;
-    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea ? [cx, cy] : [cx, cy + 260];
+    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island ? [cx, cy] : [cx, cy + 260];
   }
 
   /** The beginners' Dice Rain event: a Dice Rain run at your stage. */
@@ -1014,7 +1036,7 @@ export class BattleScene extends Phaser.Scene {
     }
     // a story path is a map of its own: the world is rebuilt for it
     const own = modeForStage(save.stage);
-    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean))) {
+    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island))) {
       this.enter("battle", () => this.scene.restart({ autostart: true }));
       return;
     }
@@ -1211,6 +1233,7 @@ export class BattleScene extends Phaser.Scene {
     const s = 1 / GROUND_SCALE;
     const beach = this.beachLobby();
     if (a.sea) this.drawSea();
+    else if (a.island) this.drawIsland(keys.tile);
     else if (beach) this.add.tileSprite(0, 0, a.w, a.h, "sand_tile").setOrigin(0).setDepth(-1000);
     else this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
     // toaster mode: fewer ground patches and scenery
@@ -1223,7 +1246,7 @@ export class BattleScene extends Phaser.Scene {
     const [cx, cy] = a.center;
     if (a.path) this.drawPath();
     else if (beach) this.drawBeach();
-    else if (!a.sea) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    else if (!a.sea && !a.island) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
     if (!beach) a.objects.forEach((o, i) => {
       if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
@@ -1251,7 +1274,26 @@ export class BattleScene extends Phaser.Scene {
     this.crystal.setVisible(false);
     glow.setVisible(false);
     this.crystalSparkle.stop();
-    if (!this.rush && !a.path && !a.sea) this.refreshSign();
+    if (!this.rush && !a.path && !a.sea && !a.island) this.refreshSign();
+  }
+
+  /**
+   * The lighthouse island: the sea all round, a ring of sand and foam at the shore, and the land's
+   * grass inside (each cut to the island's oval by a mask).
+   */
+  private drawIsland(tile: string): void {
+    const a = this.arena;
+    const i = a.island!;
+    const sea = this.add.tileSprite(0, 0, a.w, a.h, "sea_tile").setOrigin(0).setDepth(-1000);
+    this.tweens.add({ targets: sea, tilePositionY: -256, duration: 7000, repeat: -1 });
+    const oval = (rx: number, ry: number) => this.make.graphics({}, false).fillStyle(0xffffff).fillEllipse(i.cx, i.cy, rx * 2, ry * 2).createGeometryMask();
+    // foam where the waves break on the shore
+    const foam = this.add.ellipse(i.cx, i.cy, i.rx * 2 + 70, i.ry * 2 + 70).setStrokeStyle(46, 0xffffff, 0.75).setDepth(-998);
+    this.tweens.add({ targets: foam, scaleX: 1.012, scaleY: 1.014, alpha: 0.45, duration: 1500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.add.tileSprite(0, 0, a.w, a.h, "sand_tile").setOrigin(0).setDepth(-996).setMask(oval(i.rx, i.ry));
+    this.add.ellipse(i.cx, i.cy, i.rx * 2 - 40, i.ry * 2 - 40).setStrokeStyle(70, 0xb08a58, 0.35).setDepth(-995);
+    const s = 1 / GROUND_SCALE;
+    this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, tile).setOrigin(0).setScale(s).setDepth(-994).setMask(oval(i.rx - 300, i.ry - 270));
   }
 
   /**
@@ -1323,7 +1365,7 @@ export class BattleScene extends Phaser.Scene {
   /** The lobby before a sea stage is the beach: the sea starts above you. */
   private beachLobby(): boolean {
     const m = modeForStage(save.stage);
-    return !this.rush && !this.arena.path && !this.arena.sea && (m === "sea" || m === "ocean");
+    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && (m === "sea" || m === "ocean" || m === "light");
   }
 
   /**
@@ -1362,9 +1404,9 @@ export class BattleScene extends Phaser.Scene {
    * the fight starts.
    */
   private drawPreview(): void {
-    if (this.rush || this.arena.path || this.arena.sea || this.beachLobby()) return;
-    const [cx, cy] = this.arena.center;
     const m = modeForStage(save.stage);
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || (this.beachLobby() && m !== "light")) return;
+    const [cx, cy] = this.arena.center;
     // in the open space to the right of where you stand (clear of the lobby's cards)
     const [x, y] = [cx + 360, cy + 640];
     const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
@@ -1399,6 +1441,15 @@ export class BattleScene extends Phaser.Scene {
         const f = add(this.add.image(tx, ty - 196, "flame").setOrigin(0.5, 0.95).setDepth(ty + 1));
         this.tweens.add({ targets: f, scaleY: { from: 0.85, to: 1.15 }, duration: 200, yoyo: true, repeat: -1 });
       }
+    } else if (m === "light") {
+      // the lighthouse waiting on the island, its light sweeping round (on the left: the event cards fill the right)
+      const [x, y] = [cx - 330, cy + 720];
+      const lh = add(this.add.image(x, y, "lighthouse_lit").setOrigin(0.5, 1).setScale(0.55).setDepth(y));
+      const beam = add(this.add.image(x, y - 385, "lh_beam").setOrigin(0, 0.5).setScale(1.6, 1).setBlendMode(Phaser.BlendModes.ADD).setDepth(y + 1));
+      this.tweens.add({ targets: beam, angle: 360, duration: 6000, repeat: -1 });
+      add(this.topGlow(lh.x, y - 385, 1.4, 0xffe9a0));
+      for (const dx of [-200, 200]) add(this.add.image(x + dx, y + 60, "brazier").setOrigin(0.5, 1).setScale(0.6).setDepth(y + 60));
+      add(this.sign(x, y + 330, "LIGHTHOUSE", "light it up!", "#ffe0a0"));
     } else if (m === "path" && save.stage >= 5) {
       // the road out of the village down to the sea
       add(this.add.tileSprite(cx, cy - 400, 420, 1400, "path_dirt").setOrigin(0.5, 1).setScale(2, 1).setDepth(-860));
@@ -1452,7 +1503,7 @@ export class BattleScene extends Phaser.Scene {
    * the blocks between, and at stage 2 two of them still burnt out.
    */
   private drawPlace(): void {
-    if (this.rush || this.arena.path || this.arena.sea || this.land.id !== "village" || this.beachLobby()) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.land.id !== "village" || this.beachLobby()) return;
     const [cx, cy] = this.arena.center;
     if (save.stage <= 1) {
       const [fx, fy] = [cx + 380, cy + 420];
@@ -1596,6 +1647,7 @@ export class BattleScene extends Phaser.Scene {
     const p = this.arena.path;
     // on a path: somewhere along the open strip (not deep in the woods)
     if (p) return [Phaser.Math.Clamp(cx + Math.cos(a) * d, p.x0 + 60, p.x1 - 60), Phaser.Math.Clamp(cy + Math.sin(a) * d, p.endY + 200, p.startY + 100)];
+    if (this.arena.island) return toIsle(this.arena, clampX(cx + Math.cos(a) * d), clampY(cy + Math.sin(a) * d), 220);
     return [clampX(cx + Math.cos(a) * d), clampY(cy + Math.sin(a) * d)];
   }
 
@@ -2609,6 +2661,8 @@ export class BattleScene extends Phaser.Scene {
       const p = this.arena.path;
       let nx = p ? Phaser.Math.Clamp(this.hero.x + vx * step, p.x0 + 40, p.x1 - 40) : clampX(this.hero.x + vx * step);
       let ny = p ? Math.min(clampY(this.hero.y + vy * step), p.startY + 150) : clampY(this.hero.y + vy * step);
+      // the island: the sea stops you at the shore
+      if (this.arena.island && !onIsle(this.arena, nx, ny, 110)) [nx, ny] = toIsle(this.arena, nx, ny, 110);
       // buildings are solid: slide along their walls
       if (this.solids.length && this.blocked(nx, ny)) {
         if (!this.blocked(nx, this.hero.y)) ny = this.hero.y;
@@ -2797,7 +2851,7 @@ export class BattleScene extends Phaser.Scene {
       this.minute = minute;
       questEvent("wave");
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
-      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean";
+      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light";
       if (own && this.state === "fight" && !this.arena.sea) {
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
       } else if (!own && minute < MINUTES) {
@@ -2813,7 +2867,7 @@ export class BattleScene extends Phaser.Scene {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
-    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean") this.bossCutscene();
+    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light") this.bossCutscene();
   }
 
   private types(): Record<"a" | "b" | "f", EnemyType> {
@@ -2821,6 +2875,13 @@ export class BattleScene extends Phaser.Scene {
       return {
         a: { tex: "e_octo", stats: WALKER_A, fx: 0xb46ad8 },
         b: { tex: "e_octo_r", stats: WALKER_B, fx: 0xff7a5a },
+        f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
+      };
+    }
+    if (this.stageMode === "light") {
+      return {
+        a: { tex: "e_crab", stats: WALKER_A, fx: 0xe8543a },
+        b: { tex: "e_crab_b", stats: WALKER_B, fx: 0x3a8ad8 },
         f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
       };
     }
@@ -2848,7 +2909,7 @@ export class BattleScene extends Phaser.Scene {
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0) {
       // the first stages go a little easier on new players
-      this.spawnTimer = spawnGap(this.minute) * (1 + Math.max(0, 4 - save.stage) / 6) * (this.arena.path ? 0.8 : 1) * (this.arena.sea ? 2.6 : 1);
+      this.spawnTimer = spawnGap(this.minute) * (1 + Math.max(0, 4 - save.stage) / 6) * (this.arena.path ? 0.8 : 1) * (this.arena.sea ? 2.6 : this.arena.island ? 3.2 : 1);
       const group = 1 + (save.stage > 40 ? 1 : 0);
       for (let i = 0; i < group && this.enemies.length < MAX_MONSTERS; i++) {
         // while the crystal is open many monsters march on it from far away
@@ -2861,6 +2922,7 @@ export class BattleScene extends Phaser.Scene {
           e.speedMult *= 0.7;
           if (!e.type.flying) this.sea.under.add(e);
         }
+        if (this.arena.island) this.crabby(e);
         e.huntHero = !atCrystal;
         e.raider = atCrystal;
       }
@@ -2870,7 +2932,9 @@ export class BattleScene extends Phaser.Scene {
     if (this.eliteTimer <= 0 && this.elapsed > 50000) {
       this.eliteTimer = 25000 - this.minute * 2500;
       const [x, y] = this.spawnPoint();
-      this.addEnemy(this.types().b, x, y, true, true, 1, this.mobStage()).huntHero = true;
+      const el = this.addEnemy(this.types().b, x, y, true, true, 1, this.mobStage());
+      el.huntHero = true;
+      if (this.arena.island) this.crabby(el);
     }
   }
 
@@ -2896,12 +2960,21 @@ export class BattleScene extends Phaser.Scene {
       if (p) return [Phaser.Math.Clamp(x, p.x0 + 50, p.x1 - 50), Math.max(p.endY + 150, y)];
       return [clampX(x), clampY(y)];
     }
+    if (this.arena.island) {
+      // on the island: off screen, on land (crabs come up out of the sand); off screen over the sea, somewhere else on the island
+      for (let k = 0; k < 8; k++) {
+        const p = this.offScreen();
+        if (onIsle(this.arena, p[0], p[1], 160)) return p;
+      }
+      return this.randomSpot(1000, 1600, [this.hero.x, this.hero.y]);
+    }
     return this.arena.path ? this.fromTrees() : this.offScreen();
   }
 
   /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
   private mobStage(): number {
-    return this.arena.path ? Math.min(save.stage, 2) : save.stage;
+    // (the lighthouse island's crabs: as strong as the sea's octopi; the storm is the hard part)
+    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : save.stage;
   }
 
   /** On a path monsters step out of the woods on either side, mostly up ahead of you (some block the path). */
@@ -2935,6 +3008,17 @@ export class BattleScene extends Phaser.Scene {
     const v = this.cameras.main.worldView;
     if (this.arena.path || this.fromAbove()) {
       for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) this.addEnemy(this.pickType(), ...this.spawnPoint(), false, true, 1, this.mobStage()).huntHero = true;
+      return;
+    }
+    if (this.arena.island) {
+      // a ring of crabs digging up round you (on land)
+      for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const [x, y] = toIsle(this.arena, this.hero.x + Math.cos(a) * v.width * 0.55, this.hero.y + Math.sin(a) * v.height * 0.45, 160);
+        const e = this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage());
+        e.huntHero = true;
+        this.crabby(e);
+      }
       return;
     }
     for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) {
@@ -3081,6 +3165,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "path") this.pathStart();
     if (m === "sea") this.seaStart();
     if (m === "ocean") this.oceanStart();
+    if (m === "light") this.lightStart();
     if (m === "hunt") this.huntStart();
   }
 
@@ -3093,7 +3178,7 @@ export class BattleScene extends Phaser.Scene {
     battle.devJump = "start";
     if (j === "start" || this.rush || this.stageMode === "boss") return;
     const m = this.stageMode;
-    const full = this.story?.limit || (m === "sea" ? SEA_MS : STAGE_MS);
+    const full = this.story?.limit || (m === "sea" ? SEA_MS : m === "light" ? LIGHT_MS : STAGE_MS);
     let at = j === "mid" ? full * 0.5 : j === "end" ? full - 15000 : full - 2500;
     const p = this.arena.path;
     if (p) {
@@ -3128,6 +3213,16 @@ export class BattleScene extends Phaser.Scene {
       this.beast.hunger = 1;
     }
     if (m === "crystal") this.crystalDieAt = at + CRYSTAL_DIE_MS;
+    if (m === "light") {
+      // the middle: two bowls lit; near the end: three; the boss: all four and the lighthouse
+      const n = j === "mid" ? 2 : j === "end" ? 3 : 4;
+      for (const b of this.light.bowls.slice(0, n)) this.lightBowl(b, true);
+      if (j === "boss") {
+        this.hero.setPosition(this.light.tx, this.light.ty + 90);
+        this.time.delayedCall(300, () => this.state === "fight" && this.lightUp());
+        at = 70000;
+      }
+    }
     if (m === "ocean") {
       const o = this.ocean;
       if (j === "boss") o.nextT = 0;
@@ -3145,7 +3240,7 @@ export class BattleScene extends Phaser.Scene {
     this.toast(`DEV: ${j === "mid" ? "the middle" : j === "end" ? "near the end" : "the boss / finale"}`, "#e6b8ff");
   }
 
-  // ── The sea stage (6, 11, 16...)
+  // ── The sea stage (6, 13, 20...)
 
   /** Open water as far as you can see; buoys on a rope mark the edge of where you can go. */
   private drawSea(): void {
@@ -3614,6 +3709,282 @@ export class BattleScene extends Phaser.Scene {
     if (this.sideTick(delta)) {
       this.oceanGuess();
       this.toast("The sea is calm. Keep looking for land!", "#b6ff8a");
+    }
+  }
+
+  // ── The Lighthouse (stage 8): light the 4 fire bowls on the island, then the lighthouse; its beam burns the boss
+
+  /** Night on the island in a storm: the lighthouse up top (dark), four cold fire bowls, rain and lightning. */
+  private lightStart(): void {
+    const isl = this.arena.island;
+    if (!isl) return;
+    const L = this.light;
+    if (!this.night) this.night = new Night(this, 0.64, TOP + 8700);
+    else this.night.want = 0.64;
+    this.hasLantern = true;
+    if (!this.heldLantern) this.holdLantern(false);
+    [L.tx, L.ty] = isl.tower;
+    L.tower = this.add.image(L.tx, L.ty, "lighthouse").setOrigin(0.5, 1).setDepth(L.ty);
+    this.solid(L.tx, L.ty, 270, 90);
+    for (const [x, y] of isl.bowls) {
+      const img = this.add.image(x, y, "brazier").setOrigin(0.5, 1).setDepth(y);
+      // a faint ember glow so the cold bowls show in the dark
+      const ember = this.add.image(x, y - 110, "warm_glow").setScale(1.6).setAlpha(0.35).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8701);
+      this.tweens.add({ targets: ember, alpha: 0.15, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      L.bowls.push({ x, y, lit: false, p: 0, img, ember, ambushed: false });
+    }
+    battle.limit = LIGHT_MS;
+    L.boltT = 5000;
+    if (effectsOn()) {
+      L.rain = this.add.particles(0, 0, "puff", {
+        // (it does not scroll, but the camera's zoom still shrinks it toward the middle: spread it wide)
+        x: { min: -this.scale.width * 0.6, max: this.scale.width * 1.6 }, y: { min: -this.scale.height * 0.6, max: this.scale.height * 1.3 }, lifespan: 450,
+        speedY: { min: 1500, max: 1900 }, speedX: -260, scaleX: 0.07, scaleY: 0.8, alpha: { start: 0.45, end: 0 }, tint: 0xcfe8ff, frequency: 8,
+      }).setScrollFactor(0).setDepth(TOP + 60);
+    }
+    this.time.delayedCall(1700, () => this.toast("Light the 4 fire bowls, then the lighthouse! Watch out for lightning", "#ffe0a0"));
+  }
+
+  private lightTick(delta: number, fighting: boolean): void {
+    const L = this.light;
+    // the beam turns round and round once the lighthouse is lit
+    if (L.beam) {
+      L.angle = (L.angle + (BEAM_SPIN * delta) / 1000) % 360;
+      L.beam.setAngle(L.angle);
+    }
+    if (!fighting) return;
+    this.stormTick(delta);
+    if (this.state === "boss" && battle.limit) {
+      battle.limit = 0;
+      battle.left = -1;
+    }
+    if (L.on) {
+      this.beamTick(delta);
+      return;
+    }
+    if (this.state !== "fight") return;
+    const left = LIGHT_MS - this.elapsed;
+    battle.left = Math.max(0, left);
+    if (left <= 0) {
+      this.stageLost("time");
+      return;
+    }
+    this.storyReminders(left, delta);
+    // stand by a cold bowl to light it (it cools off again if you step away)
+    for (const b of L.bowls) {
+      if (b.lit) continue;
+      const near = Math.hypot(this.hero.x - b.x, (this.hero.y - b.y) * 1.3) < BOWL_R;
+      const was = b.p;
+      if (near) {
+        if (!b.ambushed) this.ambush(b);
+        b.p = Math.min(1, b.p + delta / BOWL_MS);
+        if (Math.floor(b.p * 6) > Math.floor(was * 6)) sfx.charge(1 + Math.floor(b.p * 6));
+        if (b.p >= 1) this.lightBowl(b);
+      } else b.p = Math.max(0, b.p - delta / (BOWL_MS * 2));
+    }
+    // lit bowls burn the crabs that come too close
+    L.burnT -= delta;
+    if (L.burnT <= 0) {
+      L.burnT = 600;
+      for (const b of L.bowls) if (b.lit) for (const e of this.near(b.x, b.y, 280)) if (!e.type.boss) this.hit(e, e.maxHp * 0.3, true);
+    }
+    // all lit: into the lighthouse
+    if (L.bowls.every((b) => b.lit)) {
+      const at = Math.hypot(this.hero.x - L.tx, (this.hero.y - L.ty - 70) * 1.3) < 190;
+      L.door = at ? L.door + delta : Math.max(0, L.door - delta);
+      if (L.door >= DOOR_MS) this.lightUp();
+    }
+  }
+
+  /** Island crabs dig up out of the sand, pinch softer and walk slower than monsters (the lightning is the real danger). */
+  private crabby(e: Enemy): void {
+    e.dmg *= 0.6;
+    e.speedMult *= 0.75;
+    if (e.type.flying || !effectsOn()) return;
+    this.puff.setParticleTint(0xe8d0a0);
+    this.puff.explode(6, e.img.x, e.img.y);
+  }
+
+  /** Crabs burst out of the sand round a bowl the first time you try to light it. */
+  private ambush(b: { x: number; y: number; ambushed: boolean }): void {
+    b.ambushed = true;
+    const lit = this.light.bowls.filter((o) => o.lit).length;
+    const n = 4 + lit * 2;
+    this.callout("AMBUSH!", "#ff9a7a");
+    sfx.alarm();
+    for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const [x, y] = toIsle(this.arena, b.x + Math.cos(a) * 520, b.y + Math.sin(a) * 380, 160);
+      const e = this.addEnemy(i % 3 ? this.types().a : this.types().b, x, y, false, true, 1, this.mobStage());
+      e.huntHero = true;
+      this.crabby(e);
+    }
+  }
+
+  /** A fire bowl bursts into flame: light in the dark, a little heal, and the Storm gets angrier. */
+  private lightBowl(b: (typeof this.light.bowls)[number], quiet = false): void {
+    const L = this.light;
+    b.lit = true;
+    b.p = 1;
+    b.ambushed = true;
+    b.img.setTexture("brazier_lit");
+    this.tweens.killTweensOf(b.ember);
+    b.ember.destroy();
+    const flame = this.add.image(b.x, b.y - 128, "flame").setOrigin(0.5, 0.95).setScale(2).setDepth(b.y + 1);
+    this.tweens.add({ targets: flame, scaleY: { from: 1.8, to: 2.3 }, scaleX: { from: 2.1, to: 1.8 }, duration: 180, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.nightGlow(b.x, b.y - 120, 5, 0.85);
+    this.lamps.push({ x: b.x, y: b.y - 120, r: 480 });
+    const lit = L.bowls.filter((o) => o.lit).length;
+    if (quiet) return;
+    this.heal(0.2);
+    this.cameras.main.flash(250, 255, 200, 120);
+    this.sparks.setParticleTint(0xffb03a);
+    this.sparks.explode(30, b.x, b.y - 130);
+    const ring = this.add.image(b.x, b.y - 100, "fx_ring").setTint(0xffb03a).setScale(0.3).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 9050);
+    this.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 600, ease: "Quad.out", onComplete: () => ring.destroy() });
+    sfx.found(lit * 5);
+    buzz(120);
+    if (lit >= L.bowls.length) {
+      this.banner("ALL FIRES LIT!", "gold", 1100);
+      this.time.delayedCall(900, () => this.toast("Run to the lighthouse door and light it!", "#ffe0a0"));
+      return;
+    }
+    this.banner(`FIRE ${lit}/${L.bowls.length}!`, "gold", 800);
+    if (lit === 2 && !L.angry) {
+      L.angry = true;
+      this.time.delayedCall(900, () => {
+        this.banner("THE STORM IS ANGRY!", "purple", 1000);
+        this.toast("More lightning, more crabs!", "#e6b8ff");
+        sfx.thunder();
+        this.swarm(16);
+      });
+    }
+  }
+
+  /** Lightning all the time, faster as the bowls are lit; some bolts land right where you are heading. */
+  private stormTick(delta: number): void {
+    const L = this.light;
+    L.boltT -= delta;
+    if (L.boltT > 0) return;
+    const lit = L.bowls.filter((b) => b.lit).length;
+    L.boltT = this.state === "boss" ? 3500 : Math.max(1300, 4200 - lit * 550 - (this.elapsed / 60000) * 300);
+    const dmg = this.heroMax * 0.14;
+    const [vx, vy] = this.heroVel;
+    // (in the boss fight it only falls at random: the boss is the danger then)
+    if (lit >= 2 && this.state !== "boss" && Math.random() < 0.35) {
+      // a row of bolts across your way
+      const a = Math.random() * Math.PI;
+      for (let i = -2; i <= 2; i++) {
+        const [x, y] = toIsle(this.arena, this.hero.x + Math.cos(a) * i * 230, this.hero.y + Math.sin(a) * i * 170, 120);
+        this.time.delayedCall((i + 2) * 120, () => this.fighting && this.addStrike(x, y, 130, 1100, dmg, "thunder", undefined, true));
+      }
+    } else {
+      const aim = this.state !== "boss" && Math.random() < 0.6;
+      const [x, y] = aim ? [this.hero.x + vx * 0.6, this.hero.y + vy * 0.6] : [this.hero.x + (Math.random() - 0.5) * 900, this.hero.y + (Math.random() - 0.5) * 700];
+      const [sx, sy] = toIsle(this.arena, x, y, 120);
+      this.addStrike(sx, sy, 140, 1100, dmg, "thunder", undefined, true);
+    }
+    if (Math.random() < 0.3) {
+      this.cameras.main.flash(90, 200, 215, 255);
+      sfx.thunder();
+    }
+  }
+
+  /** You light the lighthouse: the lamp blazes, the beam starts to turn, the night lifts, and the Storm sends its boss. */
+  private lightUp(): void {
+    const L = this.light;
+    if (L.on) return;
+    L.on = true;
+    this.state = "cutscene";
+    // the clock stops (it goes once the boss is here)
+    battle.left = Math.max(0, LIGHT_MS - this.elapsed);
+    this.joy = { ...NO_JOY };
+    for (const e of [...this.enemies]) this.kill(e, true);
+    const cam = this.cameras.main;
+    const [lx, ly] = [L.tx, L.ty - 706];
+    cam.stopFollow();
+    cam.pan(lx, ly + 300, 800, "Sine.easeInOut");
+    cam.zoomTo(0.5, 800, "Sine.easeInOut");
+    sfx.charge(6);
+    this.time.delayedCall(900, () => {
+      L.tower?.setTexture("lighthouse_lit");
+      cam.flash(400, 255, 240, 190);
+      cam.shake(300, 0.008);
+      sfx.superRoll();
+      buzz(200);
+      this.banner("THE LIGHT IS BACK!", "gold", 1400);
+      // the light warms you back up for the boss
+      this.heal(0.6);
+      this.topGlow(lx, ly, 3.2, 0xffe9a0);
+      this.nightGlow(L.tx, L.ty - 300, 9, 0.6);
+      L.beam = this.add.image(lx, ly, "lh_beam").setOrigin(0, 0.5).setScale(BEAM_LEN / 512, 2.6).setAngle(L.angle)
+        .setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8703).setAlpha(0);
+      this.tweens.add({ targets: L.beam, alpha: 0.95, duration: 600 });
+      if (this.night) this.night.want = 0.4;
+      this.fireworks(L.tx, L.ty - 1000, 6);
+    });
+    this.time.delayedCall(3600, () => {
+      cam.pan(this.hero.x, this.hero.y - 100, 700, "Sine.easeInOut");
+      cam.zoomTo(ZOOM, 700, "Sine.easeInOut");
+    });
+    this.time.delayedCall(4400, () => {
+      cam.startFollow(this.hero, true, 0.14, 0.14);
+      this.state = "fight";
+      this.bossCutscene();
+      this.time.delayedCall(4600, () => this.fighting && this.toast("Lure the boss into the light beam: it burns!", "#ffe0a0"));
+    });
+  }
+
+  /** Is a spot in the beam? (it reaches BEAM_LEN from the lamp and widens as it goes) */
+  private inBeam(x: number, y: number): boolean {
+    const L = this.light;
+    const [lx, ly] = [L.tx, L.ty - 706];
+    const d = Math.hypot(x - lx, y - ly);
+    if (d > BEAM_LEN || d < 80) return false;
+    const a = (L.angle * Math.PI) / 180;
+    const across = Math.abs(-(x - lx) * Math.sin(a) + (y - ly) * Math.cos(a));
+    const along = (x - lx) * Math.cos(a) + (y - ly) * Math.sin(a);
+    return along > 0 && across < 40 + (d / BEAM_LEN) * 300;
+  }
+
+  /** The beam burns: crabs in it are gone, the boss burns and stops for a moment, and it warms you up. */
+  private beamTick(delta: number): void {
+    const L = this.light;
+    const now = this.time.now;
+    for (const e of [...this.enemies]) {
+      if (!this.inBeam(e.img.x, e.img.y - 60)) continue;
+      if (!e.type.boss) {
+        this.kill(e);
+        continue;
+      }
+      if (now - (L.beamHit.get(e) ?? 0) < 1800) continue;
+      L.beamHit.set(e, now);
+      this.hit(e, e.maxHp * 0.08);
+      e.stunUntil = now + 1200;
+      this.callout("BURN!", "#ffd24a");
+      this.sparks.setParticleTint(0xffd24a);
+      this.sparks.explode(24, e.img.x, e.img.y - 120);
+    }
+    if (this.inBeam(this.hero.x, this.hero.y - 60)) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.05 * (delta / 1000));
+  }
+
+  /** Rings on the ground round the fire bowls: dashed when cold, filling up as you light one. */
+  private lightFx(g: Phaser.GameObjects.Graphics, t: number): void {
+    const L = this.light;
+    if (L.on || this.state !== "fight") return;
+    for (const b of L.bowls) {
+      if (b.lit) continue;
+      const [x, y] = [b.x, b.y - 10];
+      g.lineStyle(10, 0xffa040, 0.35 + 0.25 * Math.sin(t / 200)).strokeEllipse(x, y, BOWL_R * 2, (BOWL_R * 2) / 1.3);
+      if (b.p > 0) {
+        g.lineStyle(18, 0x111111, 0.45).strokeCircle(x, y - 260, 70);
+        g.lineStyle(12, 0xffd24a, 1).beginPath().arc(x, y - 260, 70, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * b.p).strokePath();
+      }
+    }
+    if (L.bowls.every((b) => b.lit)) {
+      const k = L.door / DOOR_MS;
+      g.lineStyle(10, 0xffd24a, 0.5 + 0.3 * Math.sin(t / 150)).strokeEllipse(L.tx, L.ty + 70, 380, 290);
+      if (k > 0) g.lineStyle(14, 0xffffff, 1).beginPath().arc(L.tx, L.ty - 420, 80, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k).strokePath();
     }
   }
 
@@ -4129,7 +4500,7 @@ export class BattleScene extends Phaser.Scene {
         this.game.events.emit("hurry", big);
       }
     }
-    if (this.state !== "fight") return;
+    if (this.state !== "fight" || !this.story) return;
     this.paceT -= delta;
     if (this.paceT > 0) return;
     this.paceT = 9000;
@@ -4165,9 +4536,8 @@ export class BattleScene extends Phaser.Scene {
     const reach = this.state === "lobby" ? 430 : this.hasLantern ? 760 : 400;
     n.update(this.hero.x, this.hero.y - 80, reach * flicker, delta);
     // the night is alive: an owl now and then, crickets
-    if (!this.story) return;
     this.ambientT -= delta;
-    if (this.ambientT <= 0 && this.fighting) {
+    if (this.story && this.ambientT <= 0 && this.fighting) {
       this.ambientT = 5000 + Math.random() * 7000;
       if (Math.random() < 0.4) sfx.owl();
       else sfx.crickets();
@@ -4193,6 +4563,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "dice" && fighting) this.rainTick(delta);
     if (m === "sea") this.seaTick(delta, fighting);
     if (m === "ocean") this.oceanTick(delta, fighting);
+    if (m === "light") this.lightTick(delta, fighting);
     battle.goal = this.modeGoal();
   }
 
@@ -4214,6 +4585,17 @@ export class BattleScene extends Phaser.Scene {
       const start = this.arena.h - 600;
       const far = Math.hypot(this.hero.x - o.x, this.hero.y - o.y);
       return { frac: Phaser.Math.Clamp(1 - far / Math.hypot(this.arena.w / 2 - o.x, start - o.y), 0, 1), text: far < 2200 ? `LAND HO!  •  ${Math.round(far / 100)}m` : "FIND LAND", color: 0x7ad651, icon: "mode_sea", alarm: false };
+    }
+    if (m === "light" && battle.bossFight) {
+      return { frac: Math.max(0, battle.bossFrac), text: "Lure the boss into the light beam!", color: 0xffd24a, icon: "mode_light", alarm: false };
+    }
+    if (m === "light") {
+      const L = this.light;
+      const lit = L.bowls.filter((b) => b.lit).length;
+      if (lit >= L.bowls.length) return { frac: 1, text: L.on ? "THE LIGHT IS BACK!" : "ALL LIT! Go to the lighthouse door!", color: 0xffd24a, icon: "mode_light", alarm: false };
+      const cur = L.bowls.find((b) => !b.lit && b.p > 0);
+      const text = cur ? `LIGHTING... ${Math.floor(cur.p * 100)}%` : `FIRE BOWLS ${lit}/${L.bowls.length}`;
+      return { frac: (lit + (cur?.p ?? 0)) / L.bowls.length, text, color: 0xffa040, icon: "mode_light", alarm: battle.left >= 0 && battle.left < 20000 };
     }
     if (m === "sea") {
       const sea = this.sea;
@@ -4374,6 +4756,7 @@ export class BattleScene extends Phaser.Scene {
       g.lineStyle(20, 0x111111, 0.45).strokeCircle(hx, hy, 150);
       g.lineStyle(12, c, 0.95).beginPath().arc(hx, hy, 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * o).strokePath();
     }
+    if (this.stageMode === "light") this.lightFx(g, t);
     // a trail of arrows on the ground from you toward the main goal, marching the way to go
     const goal = this.goalSpots()[0];
     if (goal) {
@@ -5165,6 +5548,15 @@ export class BattleScene extends Phaser.Scene {
           boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, Math.max(1, this.minute)) * HEALING_BOSS_HP * 0.8);
           boss.dmg *= 0.4;
         }
+        // the lighthouse's boss: it comes after a few minutes, and the beam burns it
+        if (this.stageMode === "light") {
+          boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, Math.max(1, this.minute)) * HEALING_BOSS_HP);
+          boss.dmg *= 0.25;
+          if (this.arena.island) {
+            const [ix, iy] = toIsle(this.arena, boss.img.x, boss.img.y, 200);
+            boss.img.setPosition(ix, iy);
+          }
+        }
         if (this.beast?.friend && !this.story) {
           boss.hp = boss.maxHp = Math.round(boss.maxHp * FRIEND_BOSS_HP);
           this.toast("Your beast is with you, so the boss is extra strong!", "#ffd29a");
@@ -5179,7 +5571,7 @@ export class BattleScene extends Phaser.Scene {
         // the beast's stage: its boss hits softer too (you are still new)
         if (this.story && this.stageMode === "feed") boss.dmg *= 0.5;
         // story bosses don't heal (no seals to find in the dark)
-        else if (!this.story) this.placeSeals();
+        else if (!this.story && this.stageMode !== "light") this.placeSeals();
         music.play("boss");
         if (this.story && this.stageMode === "boss") this.time.delayedCall(2400, () => this.toast(`Beat ${def.name} in ${mmss(this.story!.limit)}! The kids run when it falls`, "#ffd0d0"));
         this.game.events.emit("boss-intro", { name: this.stageMode === "boss" ? `${def.name} & ${BOSS_KIDS} kids` : def.name, tex: def.tex, moves: [`${BOSS_SPECIALS[def.special]}!`, ...def.moves.map((m) => BOSS_MOVES[m])] });
@@ -5909,8 +6301,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** A danger zone on the ground that fills up, then hits in its own way (`style`). */
-  private addStrike(x: number, y: number, r: number, ms: number, dmg: number, style: StrikeStyle = "slam", orb?: number): void {
-    if (!this.bossUp()) return;
+  private addStrike(x: number, y: number, r: number, ms: number, dmg: number, style: StrikeStyle = "slam", orb?: number, storm = false): void {
+    if (!storm && !this.bossUp()) return;
     const [sx, sy] = [clampX(x), clampY(y)];
     const look = STRIKE_LOOK[style];
     // the zone is always a bright warning colour; `orb` colours what falls on it
@@ -5946,6 +6338,8 @@ export class BattleScene extends Phaser.Scene {
       s.objs.forEach((o) => o.destroy());
       this.impact(s.x, s.y, s.r, STRIKE_LOOK[s.style].impact, s.color);
       if (this.fighting) this.areaHit(s.x, s.y, s.r, s.dmg);
+      // the storm's lightning fries the crabs too
+      if (this.fighting && this.stageMode === "light" && s.style === "thunder") for (const e of this.near(s.x, s.y, s.r)) if (!e.type.boss) this.kill(e);
       return false;
     });
   }
@@ -7043,6 +7437,20 @@ export class BattleScene extends Phaser.Scene {
       const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
       const near = this.sea.islands.reduce<{ x: number; y: number } | null>((a, c) => (!a || d(c) < d(a) ? c : a), null);
       if (near) out.push({ x: near.x, y: near.y - 60, icon: "sea_island", label: "ISLAND!", color: 0x7ad651 });
+    }
+    if (this.stageMode === "light" && this.state === "fight") {
+      const L = this.light;
+      const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
+      const cold = L.bowls.filter((b) => !b.lit);
+      if (cold.length) {
+        const b = cold.reduce((a, c) => (d(c) < d(a) ? c : a));
+        out.push({ x: b.x, y: b.y - 80, icon: "brazier", label: `FIRE ${L.bowls.length - cold.length}/${L.bowls.length}`, color: 0xffa040 });
+      } else if (!L.on) out.push({ x: L.tx, y: L.ty + 40, icon: "mode_light", label: "LIGHTHOUSE", color: 0xffd24a });
+    }
+    if (this.stageMode === "light" && this.state === "boss" && this.light.on) {
+      // the beam only reaches so far: fight the boss near the lighthouse
+      const L = this.light;
+      if (Math.hypot(this.hero.x - L.tx, this.hero.y - L.ty - 700) > 1500) out.push({ x: L.tx, y: L.ty + 700, icon: "mode_light", label: "INTO THE LIGHT", color: 0xffd24a });
     }
     if (this.stageMode === "hunt" && this.state === "fight") {
       const lost = this.pickups.filter((q) => q.quest);

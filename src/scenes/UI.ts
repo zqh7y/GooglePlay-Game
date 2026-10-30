@@ -1600,6 +1600,7 @@ export class UIScene extends Phaser.Scene implements Host {
       hunt: [["die_A", "FIND"], ["torch3d", "TORCHES"], ["mode_boss", "BOSS"]],
       sea: [["die_S", "DODGE"], ["sea_whale", "FROM BELOW"], ["sea_island", "TSUNAMI"]],
       ocean: [["sea_boat", "SAIL"], ["sea_island", "TSUNAMI? ISLAND!"], ["sea_bigisland", "FIND LAND"]],
+      light: [["brazier_lit", "LIGHT x4"], ["mode_light", "LIGHTHOUSE"], ["mode_boss", "BEAM THE BOSS"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],
       feed: [["mode_feed", "GRAB"], ["beast_cage", "FEED x6"], ["pk_heart", "FRIEND!"]],
