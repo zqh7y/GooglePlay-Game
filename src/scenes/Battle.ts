@@ -30,7 +30,7 @@ import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
 import { makeStoryTextures } from "../art/story";
 import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
-import { Light, Night } from "../game/night";
+import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
@@ -505,7 +505,7 @@ export class BattleScene extends Phaser.Scene {
   /** the story chapter this run plays (stages 1-5), its night, and the lights that cut through it */
   private story: StoryChapter | null = null;
   private night: Night | null = null;
-  private lamps: Light[] = [];
+  private lamps: { x: number; y: number; r: number }[] = [];
   /** your lantern: lying on the path until you find it, then in your hand */
   private lantern: Phaser.GameObjects.Image[] | null = null;
   private hasLantern = false;
@@ -660,6 +660,8 @@ export class BattleScene extends Phaser.Scene {
     makeBeastTextures(this);
     makeStoryTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
+    // the story is at night: the lobby too (a little lighter than the fights)
+    const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
     battle.goal = null;
     this.air = { zone: null, next: null, x: 0, y: 0, nx: 0, ny: 0, t: AIR_EVERY, oxygen: 1, choke: 0 };
     this.beast = null;
@@ -721,6 +723,7 @@ export class BattleScene extends Phaser.Scene {
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
+    if (nightLobby) this.night = new Night(this, nightLobby.dark * 0.85, TOP + 8700);
     this.drawArena();
     this.drawPlace();
 
@@ -768,6 +771,10 @@ export class BattleScene extends Phaser.Scene {
 
     this.buildPets();
     this.setupControls();
+    if (this.night && save.stage > 1) {
+      this.hasLantern = true;
+      this.holdLantern(false);
+    }
     // a finger lifted while the fight was paused never let go of the joystick: let go now
     this.events.on("resume", () => (this.joy = { ...NO_JOY }));
     const on: [string, (...a: never[]) => void][] = [
@@ -980,13 +987,20 @@ export class BattleScene extends Phaser.Scene {
     this.story = this.rush || this.eventRun ? null : storyFor(save.stage);
     battle.limit = this.story && this.stageMode !== "boss" ? this.story.limit : 0;
     battle.left = -1;
+    if (!this.story && this.night) {
+      // a Dice Rain run at a story stage is played by day
+      this.night.destroy();
+      this.night = null;
+      this.warmGlows.forEach((g) => g.setAlpha(0));
+    }
     if (this.story) {
-      this.night = new Night(this, this.story.dark, TOP + 8700);
+      if (this.night) this.night.want = this.story.dark;
+      else this.night = new Night(this, this.story.dark, TOP + 8700);
       for (const g of this.warmGlows) this.tweens.add({ targets: g, alpha: g.getData("night") as number, duration: 800 });
       this.nightLife();
       // you keep the lantern you found on the first path
       this.hasLantern = save.stage > 1;
-      if (this.hasLantern) this.holdLantern(false);
+      if (this.hasLantern && !this.heldLantern) this.holdLantern(false);
     }
     // dice picked up while roaming the lobby are not part of this run's results
     this.stats = freshStats();
@@ -1220,6 +1234,7 @@ export class BattleScene extends Phaser.Scene {
         this.addTorch(x, gy + 40);
       }
       this.lamps.push({ x: mid, y: gy - 150, r: 420 });
+      this.nightGlow(mid, gy - 150, 5, 0.6);
     } else {
       // the beach: sand, the sea with foam rolling in, a pier and the sun coming up
       const shore = p.endY - 100;
@@ -1233,6 +1248,7 @@ export class BattleScene extends Phaser.Scene {
       const pier = this.add.image(mid + 420, shore + 120, "pier").setOrigin(0.5, 1).setDepth(-863);
       add(pier, mid + 420, shore - 200);
       this.lamps.push({ x: mid, y: shore - 200, r: 700 });
+      this.nightGlow(mid, shore - 150, 9, 0.35);
     }
   }
 
@@ -1248,13 +1264,21 @@ export class BattleScene extends Phaser.Scene {
   private addTorch(x: number, y: number): void {
     this.addStatic(this.add.image(x, y, "torch3d").setOrigin(0.5, 1).setDepth(y), x, y);
     // the flame flickers (a sprite, not particles: dozens of torches stay cheap)
-    const flame = this.add.image(x, y - 196, "flame").setOrigin(0.5, 0.95).setBlendMode(Phaser.BlendModes.ADD).setDepth(y + 1);
+    // (normal blending: additive sprites mixed in among the scenery break the draw batches and lag)
+    const flame = this.add.image(x, y - 196, "flame").setOrigin(0.5, 0.95).setDepth(y + 1);
     this.tweens.add({ targets: flame, scaleY: { from: 0.85, to: 1.15 }, scaleX: { from: 1.05, to: 0.9 }, duration: 160 + Math.random() * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.addStatic(flame, x, y);
-    this.addStatic(this.add.image(x, y - 220, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(y), x, y);
+    this.addStatic(this.add.image(x, y - 220, "glow").setTint(0xffa040).setScale(0.9).setAlpha(0.45).setDepth(y), x, y);
     // at night it lights up the ground round it (the warm glow shows once night falls)
-    this.nightGlow(x, y - 100, 3.6, 0.55);
+    this.nightGlow(x, y - 100, 3.8, 0.75);
     this.lamps.push({ x, y: y - 100, r: 340 });
+  }
+
+  /** A coloured glow over the night (so things that shine show in the dark). */
+  private topGlow(x: number, y: number, scale: number, tint: number): Phaser.GameObjects.Image {
+    const g = this.add.image(x, y, "glow").setTint(tint).setScale(scale).setAlpha(0.7).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8702);
+    this.tweens.add({ targets: g, alpha: 0.4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    return g;
   }
 
   /** A warm glow on the ground that only shows at night. */
@@ -1318,7 +1342,7 @@ export class BattleScene extends Phaser.Scene {
           tint: 0x6a6070, frequency: 320,
         }).setDepth(y + 1), x, y);
       } else {
-        this.nightGlow(x, y - 140, 3.2, 0.5);
+        this.nightGlow(x, y - 140, 3.4, 0.65);
         this.lamps.push({ x: x - 50, y: y - 150, r: 220 });
       }
     }
@@ -2867,7 +2891,7 @@ export class BattleScene extends Phaser.Scene {
       const img = this.add.image(x, ly, "lantern").setOrigin(0.5, 1).setDepth(ly).setScale(1.4);
       this.tweens.add({ targets: img, y: ly - 24, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       this.tweens.add({ targets: glow, scale: 2.3, alpha: 0.5, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      this.lantern = [img, glow];
+      this.lantern = [img, glow, this.topGlow(x, ly - 60, 2.6, 0xffd24a)];
       this.lamps.push({ x, y: ly - 60, r: 260 });
     }
     this.time.delayedCall(2600, () => this.toast(this.story!.goal, "#c8f0a0"));
@@ -3075,9 +3099,9 @@ export class BattleScene extends Phaser.Scene {
       p.quest = true;
       // the lost dice shine gold, with a beam of light so you can spot them in the dark
       p.glow.setTint(0xffd23f).setScale(1.3);
-      const beam = this.add.image(p.x, p.y, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(70, 420).setTint(0xffd070).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.55).setDepth(p.y - 2);
+      const beam = this.add.image(p.x, p.y, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(70, 420).setTint(0xffe090).setAlpha(0.5).setDepth(p.y - 2);
       this.tweens.add({ targets: beam, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 });
-      p.extra.push(beam);
+      p.extra.push(beam, this.topGlow(p.x, p.y - 40, 1.6, 0xffd23f));
     }
     this.time.delayedCall(2600, () => this.toast(`Find all ${HUNT_DICE} dice! Follow the arrow`, "#ffe0a0"));
   }
@@ -3199,16 +3223,12 @@ export class BattleScene extends Phaser.Scene {
     if (!n) return;
     const t = this.time.now;
     const flicker = 1 + Math.sin(t / 90) * 0.02 + Math.sin(t / 37) * 0.015;
-    const lights: Light[] = [{ x: this.hero.x, y: this.hero.y - 80, r: (this.hasLantern ? 760 : 400) * flicker }];
-    for (const l of this.lamps) lights.push(l);
-    for (const p of this.pickups) if (p.quest || p.kind !== "dice") lights.push({ x: p.x, y: p.y - 30, r: p.quest ? 190 : 150 });
-    const b = this.beast;
-    if (b && !b.escaped) lights.push({ x: b.img.x, y: b.img.y - 150, r: b.friend ? 360 : 520 });
-    if (b?.food && !b.carried) lights.push({ x: b.food.x, y: b.food.y, r: 300 });
-    for (const e of this.enemies) if (e.type.boss) lights.push({ x: e.img.x, y: e.img.y - 120, r: 340 });
-    for (const sl of this.seals) if (!sl.done) lights.push({ x: sl.x, y: sl.y, r: 200 });
-    n.update(lights, delta);
+    // your light is the hole in the night; torches, windows and dice glow on top of it
+    // (in the lobby the camera is closer, so the light is smaller and the night shows round you)
+    const reach = this.state === "lobby" ? 430 : this.hasLantern ? 760 : 400;
+    n.update(this.hero.x, this.hero.y - 80, reach * flicker, delta);
     // the night is alive: an owl now and then, crickets
+    if (!this.story) return;
     this.ambientT -= delta;
     if (this.ambientT <= 0 && this.fighting) {
       this.ambientT = 5000 + Math.random() * 7000;
@@ -3616,6 +3636,8 @@ export class BattleScene extends Phaser.Scene {
     tg.lineStyle(6, 0x111111, 1).strokeEllipse(0, 0, 170, 130).strokeCircle(-60, 90, 18).strokeCircle(-84, 124, 10);
     this.beastThought = this.add.container(cx + 250, cy - 520, [tg, this.add.image(0, 0, "mode_feed").setScale(0.8)]).setDepth(cy + 600).setVisible(false);
     this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0, back, runes, aura, moodT: 2000, dustT: 0 };
+    // at night its cage glows (the runes light it up)
+    if (this.night) this.nightGlow(cx, cy - 160, 5, 0.6);
   }
 
   private beastTick(delta: number, fighting: boolean): void {
@@ -3645,8 +3667,9 @@ export class BattleScene extends Phaser.Scene {
         const shadow = this.add.ellipse(x, y, 110, 34, 0x000000, 0.3).setDepth(y - 3);
         const beam = this.add.image(x, y, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(90, 600).setTint(0xffc070).setBlendMode(Phaser.BlendModes.ADD).setDepth(y - 1);
         this.tweens.add({ targets: [glow, beam], alpha: 0.35, duration: 500, yoyo: true, repeat: -1 });
-        b.food.once("destroy", () => [glow, shadow, beam].forEach((o) => o.destroy()));
-        b.food.setData("fx", [glow, shadow, beam]);
+        const top = this.night ? this.topGlow(x, y - 80, 2.2, 0xffa040) : null;
+        b.food.once("destroy", () => [glow, shadow, beam, top].forEach((o) => o?.destroy()));
+        b.food.setData("fx", [glow, shadow, beam, ...(top ? [top] : [])]);
         this.toast("A snack appeared! Bring it to the beast", "#ffd29a");
         sfx.gift();
       }
