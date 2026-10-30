@@ -292,6 +292,10 @@ hour of fishing brings.
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
   in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
   near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
+  **GOD MODE** (a switch in the DEV panel, and a GOD button under the speed button in fights, toggle any
+  time): you can't die. Hits only flash you white, your pets can't be knocked out, the crystal can't break
+  and the story beast escaping doesn't lose the stage. It is saved, and only works while `DEV_TOOLS` or
+  developer mode is on. Running out of time still loses.
 - **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 9 modes up to 100: the Sea,
   Land Ho!, the Lighthouse, Quake Island, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle
   (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 Quake Island, 10 the Volcano).

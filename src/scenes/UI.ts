@@ -52,7 +52,7 @@ import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { MODE_INFO, StageMode, modeForStage, stageInfo } from "../data/modes";
 import { ROLL_OPEN, STORY_STAGES, rollOpen, storyDone, storyFor } from "../data/story";
-import { DEV_TOOLS, SPEED_BTN } from "../devtools";
+import { DEV_TOOLS, GOD_BTN, SPEED_BTN } from "../devtools";
 import type { DailyReward } from "../systems/goals";
 import { arrowButton, battleNavTexture, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, ribbonBanner, text } from "../ui/widgets";
@@ -211,6 +211,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private rushLock?: Phaser.GameObjects.Container;
   /** developer x3 speed (fights) */
   private speedBtn!: Button;
+  private godBtn!: Button;
   /** the glow behind the round BATTLE tab */
   private navHalo?: Phaser.GameObjects.Image;
   /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
@@ -850,8 +851,10 @@ export class UIScene extends Phaser.Scene implements Host {
       battle.speed = battle.speed === 1 ? 3 : 1;
       this.speedBtn.setLabel(`x${battle.speed}`).setColor(battle.speed > 1 ? "red" : "purple");
     }, { size: 40 });
+    // developer god mode: you can't die (toggle any time in a fight)
+    this.godBtn = button(this, GOD_BTN.x, GOD_BTN.y, GOD_BTN.w, GOD_BTN.h, save.god ? "green" : "grey", "GOD", () => this.toggleGod(), { size: 36 });
     this.run.add([
-      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn,
+      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn, this.godBtn,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
       iconButton(this, 160, 165, "icon_odds", 86, () => this.showStats()),
     ]);
@@ -1154,6 +1157,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const g = this.hudBars;
     g.clear();
     this.speedBtn.setVisible(DEV_TOOLS || save.dev);
+    this.godBtn.setVisible(DEV_TOOLS || save.dev);
     // kill streak: every 50 in a row is +1% damage and attack speed
     const st = battle.streak;
     const bonus = Math.floor(st / 50);
@@ -1973,7 +1977,7 @@ export class UIScene extends Phaser.Scene implements Host {
    */
   private showDev(): void {
     if (battle.mode !== "lobby") return;
-    const h = 1180;
+    const h = 1300;
     let stage = save.stage;
     let jump: typeof battle.devJump = "start";
     const m = this.showModal(modal(this, 920, h, "DEVELOPER", "purple", () => (this.openModal = null)));
@@ -2012,6 +2016,12 @@ export class UIScene extends Phaser.Scene implements Host {
       b.add(bt);
     });
     paint();
+    // god mode: you, your pets, the crystal and the beast can't die (also a GOD button in fights)
+    const god = button(this, 0, h / 2 - 260, 560, 100, save.god ? "green" : "grey", save.god ? "GOD MODE: ON" : "GOD MODE: OFF", () => {
+      this.toggleGod();
+      god.setColor(save.god ? "green" : "grey").setLabel(save.god ? "GOD MODE: ON" : "GOD MODE: OFF");
+    }, { size: 36 });
+    b.add(god);
     b.add(button(this, 0, h / 2 - 110, 560, 130, "green", "PLAY", () => {
       // developer mode opens every stage
       save.dev = true;
@@ -2021,6 +2031,15 @@ export class UIScene extends Phaser.Scene implements Host {
       this.pickStage(stage);
       this.time.delayedCall(900, () => this.game.events.emit("battle-start"));
     }, { size: 54 }));
+  }
+
+  /** Developer god mode on / off (it is saved, so it stays on for the next fights). */
+  private toggleGod(): void {
+    save.god = !save.god;
+    persist();
+    sfx.click();
+    this.godBtn.setColor(save.god ? "green" : "grey");
+    this.toast(save.god ? "GOD MODE ON: you can't die" : "GOD MODE OFF", save.god ? "#9aff8a" : "#ffffff");
   }
 
   /** Hurry up (or the last seconds): the screen edges pulse red. */

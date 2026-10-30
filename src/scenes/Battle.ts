@@ -37,7 +37,7 @@ import { makeQuakeTextures } from "../art/quake";
 import { COMICS } from "../data/comics";
 import { HAMMER_AT, HUNT_DICE, LANTERN_AT, LOG_AT, PATH_BOSSES, SMASH_MS, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
-import { SPEED_BTN } from "../devtools";
+import { GOD_BTN, SPEED_BTN, godMode } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getQuakeArena, getSeaArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
@@ -2755,6 +2755,7 @@ export class BattleScene extends Phaser.Scene {
       if (p.x < 220 && p.y < this.L.hudBottom + 230) return;
       // the developer speed button
       if (Math.abs(p.x - SPEED_BTN.x) < SPEED_BTN.w / 2 + 10 && Math.abs(p.y - SPEED_BTN.y) < SPEED_BTN.h / 2 + 10) return;
+      if (Math.abs(p.x - GOD_BTN.x) < GOD_BTN.w / 2 + 10 && Math.abs(p.y - GOD_BTN.y) < GOD_BTN.h / 2 + 10) return;
       // the lobby's buttons and pills sit at the bottom
       if (roam && p.y > this.L.navTop - 380) return;
       this.joy = { active: true, id: p.id, bx: p.x, by: p.y, dx: 0, dy: 0 };
@@ -2878,7 +2879,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** A monster bit a pet. At zero health it is knocked out for a while. */
   private hurtPet(p: Pet, dmg: number): void {
-    if (p.down > 0) return;
+    if (p.down > 0 || godMode(save.dev, save.god)) return;
     p.hp -= dmg;
     p.hurtAt = this.time.now;
     p.img.setTintFill(0xff6a6a);
@@ -6533,7 +6534,7 @@ export class BattleScene extends Phaser.Scene {
     buzz(200);
     this.banner("THE BEAST ESCAPED!", "red", 1200);
     // the story's beast must not get away: the stage is lost
-    if (this.story) this.time.delayedCall(1600, () => this.fighting && this.stageLost("beast"));
+    if (this.story && !godMode(save.dev, save.god)) this.time.delayedCall(1600, () => this.fighting && this.stageLost("beast"));
     const [x, y] = [b.img.x, b.img.y];
     b.img.destroy();
     const e = this.addEnemy({ tex: b.tex, stats: { ...BOSS, hp: BOSS.hp * 0.5, speed: 230, dmg: BOSS.dmg * 1.6, xp: 40, cash: 80 }, fx: 0xffa040 }, x, y, true, false, 1.9);
@@ -7265,6 +7266,7 @@ export class BattleScene extends Phaser.Scene {
           this.toast("The crystal is under attack!", "#ff9a9a");
           sfx.alarm();
         }
+        if (this.crystalHp <= 0 && godMode(save.dev, save.god)) this.crystalHp = 1;
         if (this.crystalHp <= 0) {
           this.crystalHp = 0;
           this.stageLost("crystal");
@@ -8288,6 +8290,12 @@ export class BattleScene extends Phaser.Scene {
   private hurt(dmg: number): void {
     if (this.time.now < this.phasingUntil) return;
     this.spillWater();
+    // god mode: you still see the hit (a white flash), but lose nothing
+    if (godMode(save.dev, save.god)) {
+      this.hero.setTintFill(0xffffff);
+      this.time.delayedCall(90, () => this.hero.clearTint());
+      return;
+    }
     this.heroHp -= dmg;
     this.stats.hurt += dmg;
     this.hurtAt = this.time.now;

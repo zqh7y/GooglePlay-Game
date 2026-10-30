@@ -90,6 +90,8 @@ export interface SaveData {
   settings: { vibrate: boolean; toaster: boolean; effects: boolean; shake: boolean; dmgNumbers: boolean; hpNumbers: boolean };
   /** developer mode: every stage can be played from the map */
   dev: boolean;
+  /** developer god mode: you (and your pets, the crystal, the beast) can't die */
+  god: boolean;
   /** gamepasses bought (kept forever) */
   passes: string[];
   /** the daily pack chain: which day and how many steps claimed */
@@ -194,6 +196,7 @@ function fresh(): SaveData {
     tickets: 0,
     passes: [],
     dev: false,
+    god: false,
     settings: { vibrate: true, toaster: false, effects: true, shake: true, dmgNumbers: true, hpNumbers: true },
     firstPlay: Date.now(),
     diceWins: 0,
