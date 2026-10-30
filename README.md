@@ -260,16 +260,20 @@ hour of fishing brings.
   crabs that come close and light up the night. Lighting the lighthouse heals you, lifts the night and starts
   its beam turning; the Storm then sends the stage boss. The beam burns crabs, burns the boss (8% and a
   stun each pass) and warms you up: lure the boss into it. New monsters: red and blue crabs (walk frames).
-- **The Storm Flight (stage 9, then every 9 stages)**: a helicopter lands on the island and you fly it
-  through the storm for **2:00**, seen from the side, nothing but sky (storm clouds above, a floor of
-  clouds below, clouds rushing past). You sit at the controls in its glass bubble. The storm throws the
-  lighthouse's kind of **lightning strikes** at you (aimed where you are heading, rows of them later),
-  the **Storm Twister** (a tornado painted like the monsters, with an angry face) hangs down from the
-  clouds and sucks you sideways (fly under it), and **updrafts, downdrafts and headwinds** shove you
-  about (cartoon wind swooshes warn you). Storm crows dive at you; repair hearts (+20%) drift by every
-  30 s; the helicopter does not mend itself. Damaged, it smokes and the cockpit beeps. At 2:00 the
-  biggest bolt of all hits you anyway: the helicopter spins down into a volcano rising out of the clouds.
-- **The Volcano (stage 10, then every 9 stages)**: you crash-landed in it. A boss stage. The crater is an oval ash floor in a sea of
+- **Quake Island (stage 9, then every 9 stages)**: the volcano out at sea (north of the lighthouse
+  island) erupts and the island breaks apart under you. Survive **2:00**. The island is cut into 400 px
+  pieces: a piece first **cracks** (glowing orange cracks, a dashed edge, it trembles), then falls away into
+  **bubbling lava** (5% every 0.4 s while you stand in it), and after 10-13 s the lava cools to a black
+  **crust** you can walk on again (until it breaks once more). The ground gives way in patterns that get
+  faster and meaner: right under you and where you are heading, **a crack running across the whole island**
+  (a row or a column), **a ring round you with one way out** (then your own piece), or bits all over. The
+  volcano lobs **lava bombs** at you, every ~20 s an **AFTERSHOCK** shakes everything (rocks fall, every
+  crack gives way at once) and at 1:02 **the lighthouse topples into the sea** (its ground was safe until
+  then). Palms and trees sink into the lava with their piece; monsters standing on a piece that falls go
+  with it, and the lava burns the ones you lead into it. Magma slimes climb out of fresh lava, fire bats fly
+  in. At 2:00 comes **THE BIG ONE**: the whole island cracks, a fountain of lava bursts up under you and
+  throws you, trailing fire, right across the sea into the volcano's crater (stage 10).
+- **The Volcano (stage 10, then every 9 stages)**: the eruption threw you into it. A boss stage. The crater is an oval ash floor in a sea of
   lava with a lava lake in the middle; the **Magma King** (a new boss: a molten rock giant with a crown of
   fire and a furnace heart, walk frames, 2.3x size) rises out of the lake. Beat it in **4:00**.
   Its rock **armour** takes only 20% damage: stand on one of the 3 **water geysers** for 2.5 s to blast it
@@ -282,22 +286,22 @@ hour of fishing brings.
 - **Tsunami waves** are towering walls of water: a curling white crest, deep blue body with streaks, a dark
   shadow running ahead, foam and spray off the top; they rise as they come, roar and shake the screen.
 - **The lobby shows the next stage**: the camp, the ruined village, the caged beast, the road to the sea, a
-  beach with the sea, a pier and your boat for the sea stages (and the lighthouse with its turning light, or the smoking volcano), the crystal / air zone for later modes. It is
+  beach with the sea, a pier and your boat for the sea stages (and the lighthouse with its turning light, the volcano with the ground cracking open, or the smoking volcano), the crystal / air zone for later modes. It is
   rebuilt every time you change stage.
 - **Buildings are solid**: houses, ruins and the village gate's posts block you (you slide along their walls).
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
   in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
   near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
 - **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 9 modes up to 100: the Sea,
-  Land Ho!, the Lighthouse, the Storm Flight, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle
-  (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 the Storm Flight, 10 the Volcano).
+  Land Ho!, the Lighthouse, Quake Island, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle
+  (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 Quake Island, 10 the Volcano).
 - **Bosses arrive with a close-up**: when a boss lands the camera swoops over and zooms in on it for a
   second, then back to you; you can keep moving through every boss cutscene.
 - **The whale** (the sea): its shadow glides in under you while it sings, it bursts out in an arc
   spouting from its blowhole, crashes down in a crown of water with rings of waves, and its tail flips
   up as it dives.
 - **More sounds**: kicks, splashes, a whale song, hammer blows and splitting wood, gems, the beast's happy
-  trill, a helicopter rotor, wind, deep rumbles, cockpit beeps, crashes, comic panel swishes and stings, a
+  trill, wind, deep rumbles, cracking ground, crashes, comic panel swishes and stings, a
   sad tune when you lose; dust puffs kick up as you run. The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;

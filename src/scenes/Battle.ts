@@ -33,14 +33,14 @@ import { makeStoryTextures } from "../art/story";
 import { makeSeaTextures } from "../art/sea";
 import { makeLightTextures } from "../art/light";
 import { makeVolcanoTextures } from "../art/volcano";
-import { makeSkyTextures } from "../art/sky";
+import { makeQuakeTextures } from "../art/quake";
 import { COMICS } from "../data/comics";
 import { HAMMER_AT, HUNT_DICE, LANTERN_AT, LOG_AT, PATH_BOSSES, SMASH_MS, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, getSkyArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
+import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getQuakeArena, getSeaArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
@@ -77,12 +77,15 @@ const DOOR_MS = 1500;
 /** the lighthouse beam: how far it reaches and how fast it turns (degrees per second) */
 const BEAM_LEN = 3200;
 const BEAM_SPIN = 60;
-/** the Storm Flight: how long you must keep the helicopter in the air; where the cloud floor and the storm ceiling are (y) */
-const HELI_MS = 120000;
-const SKY_SEA = 2170;
-const SKY_CEIL = 380;
-/** the helicopter's size (the whole sky fits on the screen) */
-const HELI_SCALE = 1.75;
+/** Quake island: how long to survive; the size of the pieces the island breaks into */
+const QUAKE_MS = 120000;
+const CELL = 400;
+
+/** A piece of the island: whole, cracking (a warning), lava, or a cooled crust; its lava or crust image and its cracks. */
+type QuakeCell = {
+  i: number; j: number; x: number; y: number; state: "ok" | "crack" | "lava" | "crust"; t: number;
+  img: Phaser.GameObjects.Image | null; crack: Phaser.GameObjects.Image | null;
+};
 /** the Volcano: time to beat the Magma King; how tough it is (x a stage boss); standing on a geyser to fire it, its recharge, how long the armour stays cracked */
 const VOLC_MS = 240000;
 const KING_HP = 1.35;
@@ -602,8 +605,8 @@ export class BattleScene extends Phaser.Scene {
   private whirl = { t: 9000, list: [] as { x: number; y: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Ellipse; life: number; hurtT: number }[] };
   /** the Lighthouse: the fire bowls, the lighthouse, its beam, the storm's lightning and rain */
   private light = this.freshLight();
-  /** the Storm Flight: your helicopter, the weather (wind gusts, lightning walls, hurricanes) and their timers */
-  private heli = this.freshHeli();
+  /** Quake island: the pieces of the island, the things standing on it, and the quake's timers */
+  private quake = this.freshQuake();
   /** the Volcano: the Magma King, its phase and armour, the geysers, the shrinking floor, the timers */
   private volc = this.freshVolc();
   /** things you cannot walk through (houses, ruins, the gate's posts) */
@@ -717,18 +720,11 @@ export class BattleScene extends Phaser.Scene {
     super("Battle");
   }
 
-  private freshHeli() {
+  private freshQuake() {
     return {
-      body: null as Phaser.GameObjects.Image | null, blade: null as Phaser.GameObjects.Image | null, blur: null as Phaser.GameObjects.Image | null,
-      back: null as Phaser.GameObjects.Image | null, pilot: null as Phaser.GameObjects.Image | null,
-      tail: null as Phaser.GameObjects.Image | null, far: null as Phaser.GameObjects.TileSprite | null, sea: null as Phaser.GameObjects.TileSprite | null,
-      isle: null as Phaser.GameObjects.Image | null, puffs: [] as { img: Phaser.GameObjects.Image; v: number }[],
-      rain: null as Phaser.GameObjects.Particles.ParticleEmitter | null, flash: null as Phaser.GameObjects.Rectangle | null,
-      tilt: 0, spin: 0, speed: 1, smokeT: 0, beepT: 0, boltT: 3000, stormT: 12000, gustT: 9000, crowT: 6000, flashT: 4000, repairT: 18000,
-      puffT: 0, sprayT: 0,
-      gust: null as { kind: "down" | "up" | "head"; t: number; warn: number; fx: Phaser.GameObjects.GameObject[] } | null,
-      storms: [] as { img: Phaser.GameObjects.Image; top: boolean; tip: number; hurtT: number; v: number }[],
-      falling: false,
+      cells: [] as QuakeCell[], grid: new Map<number, QuakeCell>(), x0: 0, y0: 0,
+      objs: [] as { img: Phaser.GameObjects.Image; x: number; y: number }[], tower: null as Phaser.GameObjects.Image | null,
+      quakeT: 3500, bombT: 6000, shockT: 22000, hotT: 150, burnT: 400, bubT: 0, fell: false, done: false, flying: false,
     };
   }
 
@@ -781,7 +777,7 @@ export class BattleScene extends Phaser.Scene {
     makeSeaTextures(this);
     makeLightTextures(this);
     makeVolcanoTextures(this);
-    makeSkyTextures(this);
+    makeQuakeTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     // the story is at night: the lobby too (a little lighter than the fights)
     const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
@@ -829,7 +825,7 @@ export class BattleScene extends Phaser.Scene {
     this.light = this.freshLight();
     this.volc = this.freshVolc();
     this.smash = this.freshSmash();
-    this.heli = this.freshHeli();
+    this.quake = this.freshQuake();
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -838,7 +834,7 @@ export class BattleScene extends Phaser.Scene {
     const onPath = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "path";
     const own = !this.rush && !data?.event && !!data?.autostart ? modeForStage(save.stage) : null;
     this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village")
-      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : own === "volcano" ? getCraterArena(this.land) : own === "heli" ? getSkyArena(this.land) : getArena(this.land.id);
+      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : own === "volcano" ? getCraterArena(this.land) : own === "quake" ? getQuakeArena(this.land) : getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
@@ -856,7 +852,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island || !!this.arena.crater || !!this.arena.sky,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island || !!this.arena.crater,
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -1083,7 +1079,7 @@ export class BattleScene extends Phaser.Scene {
   /** Where the hero stands when a fight starts: by the crystal, or at the bottom of a story path. */
   private heroStart(): [number, number] {
     const [cx, cy] = this.arena.center;
-    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky ? [cx, cy] : [cx, cy + 260];
+    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island || this.arena.crater ? [cx, cy] : [cx, cy + 260];
   }
 
   /** The beginners' Dice Rain event: a Dice Rain run at your stage. */
@@ -1114,7 +1110,7 @@ export class BattleScene extends Phaser.Scene {
     }
     // a story path is a map of its own: the world is rebuilt for it
     const own = modeForStage(save.stage);
-    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island) || (own === "volcano" && !this.arena.crater) || (own === "heli" && !this.arena.sky))) {
+    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && (!this.arena.island || !!this.arena.quake)) || (own === "volcano" && !this.arena.crater) || (own === "quake" && !this.arena.quake))) {
       this.enter("battle", () => this.scene.restart({ autostart: true }));
       return;
     }
@@ -1158,7 +1154,7 @@ export class BattleScene extends Phaser.Scene {
     this.stats = freshStats();
     battle.stats = this.stats;
     battle.mode = "run";
-    if ((this.arena.sea && !this.arena.ocean) || this.arena.sky) this.seaCamera(900);
+    if (this.arena.sea && !this.arena.ocean) this.seaCamera(900);
     else this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
@@ -1314,7 +1310,6 @@ export class BattleScene extends Phaser.Scene {
     if (a.sea) this.drawSea();
     else if (a.island) this.drawIsland(keys.tile);
     else if (a.crater) this.drawCrater();
-    else if (a.sky) this.drawSky();
     else if (beach) this.add.tileSprite(0, 0, a.w, a.h, "sand_tile").setOrigin(0).setDepth(-1000);
     else this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
     // toaster mode: fewer ground patches and scenery
@@ -1327,12 +1322,13 @@ export class BattleScene extends Phaser.Scene {
     const [cx, cy] = a.center;
     if (a.path) this.drawPath();
     else if (beach) this.drawBeach();
-    else if (!a.sea && !a.island && !a.crater && !a.sky) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    else if (!a.sea && !a.island && !a.crater) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
     if (!beach) a.objects.forEach((o, i) => {
       if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
       if (o.scale) img.setScale(o.scale);
       this.addStatic(img, o.x, o.y);
+      if (a.quake) this.quake.objs.push({ img, x: o.x, y: o.y });
       // the woods along a path are thick: only some of them sway
       if ((o.tex.startsWith("tree") || o.tex === "palm") && (!a.path || i % 5 === 0)) {
         this.tweens.add({ targets: img, angle: { from: -1.5, to: 1.5 }, duration: 2200 + (o.x % 900), yoyo: true, repeat: -1, ease: "Sine.inOut" });
@@ -1355,29 +1351,8 @@ export class BattleScene extends Phaser.Scene {
     this.crystal.setVisible(false);
     glow.setVisible(false);
     this.crystalSparkle.stop();
-    if (!this.rush && !a.path && !a.sea && !a.island && !a.crater && !a.sky) this.refreshSign();
-  }
-
-  /**
-   * The storm, from the side, nothing but sky: storm clouds along the top, a floor of fluffy clouds far
-   * below (both rushing past: you are flying right), slanting rain and lightning flashes.
-   */
-  private drawSky(): void {
-    const a = this.arena;
-    const H = this.heli;
-    this.add.image(0, 0, "sky_side").setOrigin(0).setDisplaySize(a.w, a.h).setDepth(-1000);
-    // far-off lightning in the clouds now and then lights the whole sky
-    H.flash = this.add.rectangle(0, 0, a.w, a.h, 0xeef4ff, 0).setOrigin(0).setDepth(-995);
-    H.far = this.add.tileSprite(0, 0, a.w, 420, "cloudbank").setOrigin(0).setDepth(-980).setTileScale(1.4);
-    // one row of cloud tops, solid cloud below it (deep enough to hide the volcano's foot when it rises)
-    H.sea = this.add.tileSprite(-300, SKY_SEA - 160, a.w + 600, 460 * 1.3, "cloudfloor").setOrigin(0).setDepth(-960).setTileScale(1.3);
-    this.add.rectangle(-300, SKY_SEA - 160 + 440, a.w + 600, 1600, 0x6a7298).setOrigin(0).setDepth(-960);
-    if (effectsOn()) {
-      H.rain = this.add.particles(0, 0, "puff", {
-        x: { min: -200, max: a.w + 600 }, y: { min: -200, max: a.h }, lifespan: 420, speedY: { min: 1700, max: 2000 }, speedX: -700,
-        scaleX: 0.07, scaleY: 0.9, rotate: 20, alpha: { start: 0.5, end: 0 }, tint: 0xcfe0ff, frequency: 9,
-      }).setDepth(TOP + 60);
-    }
+    if (a.quake) this.drawQuake();
+    if (!this.rush && !a.path && !a.sea && !a.island && !a.crater) this.refreshSign();
   }
 
   /**
@@ -1505,7 +1480,7 @@ export class BattleScene extends Phaser.Scene {
   /** The lobby before a sea stage is the beach: the sea starts above you. */
   private beachLobby(): boolean {
     const m = modeForStage(save.stage);
-    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && !this.arena.crater && !this.arena.sky && (m === "sea" || m === "ocean" || m === "light" || m === "heli" || m === "volcano");
+    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && !this.arena.crater && (m === "sea" || m === "ocean" || m === "light" || m === "quake" || m === "volcano");
   }
 
   /**
@@ -1545,7 +1520,7 @@ export class BattleScene extends Phaser.Scene {
    */
   private drawPreview(): void {
     const m = modeForStage(save.stage);
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky || (this.beachLobby() && m !== "light" && m !== "heli" && m !== "volcano")) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || (this.beachLobby() && m !== "light" && m !== "quake" && m !== "volcano")) return;
     const [cx, cy] = this.arena.center;
     // in the open space to the right of where you stand (clear of the lobby's cards)
     const [x, y] = [cx + 360, cy + 640];
@@ -1593,15 +1568,18 @@ export class BattleScene extends Phaser.Scene {
       add(this.topGlow(lh.x, y - 385, 1.4, 0xffe9a0));
       for (const dx of [-200, 200]) add(this.add.image(x + dx, y + 60, "brazier").setOrigin(0.5, 1).setScale(0.6).setDepth(y + 60));
       add(this.sign(x, y + 330, "LIGHTHOUSE", "light it up!", "#ffe0a0"));
-    } else if (m === "heli") {
-      // the helicopter waiting on its pad, its blades turning slowly
-      const [x, y] = [cx - 330, cy + 720];
-      add(this.add.image(x, y + 20, "helipad").setDepth(y - 100));
-      const body = add(this.add.image(x, y - 60, "heli_side").setScale(1.2).setDepth(y));
-      const blade = add(this.add.image(x + 55, y - 60 - 118, "heli_blade").setScale(1.2).setDepth(y + 1));
-      this.tweens.add({ targets: blade, scaleX: -1.2, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      this.tweens.add({ targets: [body, blade], y: "-=10", duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      add(this.sign(x, y + 330, "HELICOPTER", "fly through the storm", "#b8c8ff"));
+    } else if (m === "quake") {
+      // the volcano smoking out at sea, and the ground already cracking open in front of it
+      const [x, y] = [cx - 330, cy + 760];
+      const hole = add(this.add.image(x + 230, y + 120, "quake_hole").setScale(0.75).setDepth(y - 200));
+      add(this.add.image(x - 200, y + 140, "quake_crack").setScale(0.6).setDepth(y - 199));
+      this.tweens.add({ targets: hole, alpha: 0.75, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const v = add(this.add.image(x, y - 40, "volcano_mini").setOrigin(0.5, 1).setScale(0.8).setDepth(y));
+      if (effectsOn()) add(this.add.particles(x, y - 340, "puff", {
+        lifespan: 2600, speedY: { min: -120, max: -60 }, speedX: { min: -20, max: 40 }, scale: { start: 1, end: 3 }, alpha: { start: 0.6, end: 0 }, tint: 0x5a4a4a, frequency: 220,
+      }).setDepth(y + 2));
+      this.tweens.add({ targets: v, x: x + 6, duration: 70, yoyo: true, repeat: -1, repeatDelay: 1400 });
+      add(this.sign(x, y + 330, "QUAKE ISLAND", "the ground is breaking", "#ffc08a"));
     } else if (m === "volcano") {
       // the volcano smoking across the island, and the Magma King waiting in it
       const [x, y] = [cx - 330, cy + 760];
@@ -1666,7 +1644,7 @@ export class BattleScene extends Phaser.Scene {
    * the blocks between, and at stage 2 two of them still burnt out.
    */
   private drawPlace(): void {
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky || this.land.id !== "village" || this.beachLobby()) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.land.id !== "village" || this.beachLobby()) return;
     const [cx, cy] = this.arena.center;
     if (save.stage <= 1) {
       const [fx, fy] = [cx + 380, cy + 420];
@@ -1823,7 +1801,6 @@ export class BattleScene extends Phaser.Scene {
 
   /** Dice (they pay for rolls), power-ups and skill orbs are spread all over the field. */
   private placePickups(): void {
-    if (this.arena.sky) return;
     const p = this.arena.path;
     if (p) {
       // a path: dice and power-ups along the way
@@ -1976,8 +1953,8 @@ export class BattleScene extends Phaser.Scene {
         break;
       case "heart":
         // (in the storm flight it is a quick repair, not a full fix)
-        this.heal(this.stageMode === "heli" ? 0.2 : 0.4);
-        this.toast(this.stageMode === "heli" ? "REPAIRED! +20%" : "+40% health", "#ff9ab0");
+        this.heal(0.4);
+        this.toast("+40% health", "#ff9ab0");
         break;
       case "magnet":
         this.food.forEach((g) => (g.pulled = true));
@@ -2808,6 +2785,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private moveHero(time: number, delta: number): void {
+    // (thrown into the air at the end of the quake: the tweens move you)
+    if (this.quake.flying) return;
     if (this.entering) {
       this.hero.setDepth(this.hero.y);
       return;
@@ -2851,7 +2830,7 @@ export class BattleScene extends Phaser.Scene {
       if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
       // little puffs of dust kicked up as you run
       this.dustT -= delta;
-      if (this.dustT <= 0 && len > 0.5 && this.fighting && !this.arena.sea && !this.arena.sky && effectsOn() && !save.settings.toaster) {
+      if (this.dustT <= 0 && len > 0.5 && this.fighting && !this.arena.sea && effectsOn() && !save.settings.toaster) {
         this.dustT = 240;
         const d = this.add.image(nx - vx * 30, ny - 4, "puff").setTint(this.arena.crater ? 0x8a7a76 : this.arena.island ? 0xe8d8b0 : 0xd8c8a8).setScale(0.35).setAlpha(0.6).setDepth(ny - 2);
         this.tweens.add({ targets: d, x: d.x - vx * 40, y: d.y - 20, scale: 0.9, alpha: 0, duration: 450, onComplete: () => d.destroy() });
@@ -2899,8 +2878,6 @@ export class BattleScene extends Phaser.Scene {
 
   /** A monster bit a pet. At zero health it is knocked out for a while. */
   private hurtPet(p: Pet, dmg: number): void {
-    // (your pets ride inside the helicopter: safe)
-    if (this.stageMode === "heli" && this.arena.sky) return;
     if (p.down > 0) return;
     p.hp -= dmg;
     p.hurtAt = this.time.now;
@@ -3038,8 +3015,8 @@ export class BattleScene extends Phaser.Scene {
       this.minute = minute;
       questEvent("wave");
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
-      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light" || this.stageMode === "volcano" || this.stageMode === "heli";
-      if (own && this.state === "fight" && !this.arena.sea && !this.arena.sky) {
+      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light" || this.stageMode === "volcano" || this.stageMode === "quake";
+      if (own && this.state === "fight" && !this.arena.sea) {
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
       } else if (!own && this.stageMode === "feed") {
         // feeding lasts 2:30: a swarm, and a heads-up for the last 30 s from the clock
@@ -3057,7 +3034,7 @@ export class BattleScene extends Phaser.Scene {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
-    if (this.state === "fight" && this.elapsed >= (this.stageMode === "feed" ? FEED_MS : STAGE_MS) && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light" && this.stageMode !== "volcano" && this.stageMode !== "heli") this.bossCutscene();
+    if (this.state === "fight" && this.elapsed >= (this.stageMode === "feed" ? FEED_MS : STAGE_MS) && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light" && this.stageMode !== "volcano" && this.stageMode !== "quake") this.bossCutscene();
   }
 
   private types(): Record<"a" | "b" | "f", EnemyType> {
@@ -3068,15 +3045,7 @@ export class BattleScene extends Phaser.Scene {
         f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
       };
     }
-    if (this.stageMode === "heli") {
-      // only birds up here
-      return {
-        a: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
-        b: { tex: "e_bat_d", stats: FLYER, fx: 0x8a6ad0, flying: true },
-        f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
-      };
-    }
-    if (this.stageMode === "volcano") {
+    if (this.stageMode === "volcano" || this.stageMode === "quake") {
       return {
         a: { tex: "e_magma", stats: WALKER_A, fx: 0xff6a1a },
         b: { tex: "e_magma_b", stats: WALKER_B, fx: 0xc8301a },
@@ -3108,7 +3077,7 @@ export class BattleScene extends Phaser.Scene {
 
   private spawn(delta: number): void {
     // (the volcano sends its own slimes, see volcanoTick)
-    if (this.state !== "fight" || this.stageMode === "boss" || this.stageMode === "volcano" || this.stageMode === "heli") return;
+    if (this.state !== "fight" || this.stageMode === "boss" || this.stageMode === "volcano") return;
     // the tsunami washes the monsters away
     if (this.stageMode === "sea" && this.sea.tsunami > 0) return;
     if (this.stageMode === "ocean" && this.side.phase === "wave") return;
@@ -3177,7 +3146,7 @@ export class BattleScene extends Phaser.Scene {
   /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
   private mobStage(): number {
     // (the lighthouse island's crabs: as strong as the sea's octopi; the storm is the hard part)
-    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : this.arena.crater || this.arena.sky ? Math.min(save.stage, 4) : save.stage;
+    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : this.arena.crater ? Math.min(save.stage, 4) : save.stage;
   }
 
   /** On a path monsters step out of the woods on either side, mostly up ahead of you (some block the path). */
@@ -3274,7 +3243,7 @@ export class BattleScene extends Phaser.Scene {
       e.badge = this.add.image(x, y, `mut_${muts[0]}`).setScale(type.boss ? 1.7 : 1.15);
       this.announceMutations(muts);
     }
-    if (!type.boss && (this.arena.island || this.arena.crater || this.arena.sky)) this.soften(e);
+    if (!type.boss && (this.arena.island || this.arena.crater)) this.soften(e);
     this.enemies.push(e);
     return e;
   }
@@ -3372,7 +3341,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "ocean") this.oceanStart();
     if (m === "light") this.lightStart();
     if (m === "volcano") this.volcanoStart();
-    if (m === "heli") this.heliStart();
+    if (m === "quake") this.quakeStart();
     if (m === "hunt") this.huntStart();
   }
 
@@ -3385,7 +3354,7 @@ export class BattleScene extends Phaser.Scene {
     battle.devJump = "start";
     if (j === "start" || this.rush || this.stageMode === "boss") return;
     const m = this.stageMode;
-    const full = this.story?.limit || (m === "sea" ? SEA_MS : m === "light" ? LIGHT_MS : m === "feed" ? FEED_MS : m === "heli" ? HELI_MS : STAGE_MS);
+    const full = this.story?.limit || (m === "sea" ? SEA_MS : m === "light" ? LIGHT_MS : m === "feed" ? FEED_MS : m === "quake" ? QUAKE_MS : STAGE_MS);
     let at = j === "mid" ? full * 0.5 : j === "end" ? full - 15000 : full - 2500;
     const p = this.arena.path;
     if (p) {
@@ -4280,340 +4249,393 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  // ── The Storm Flight (stage 9): fly the helicopter through the storm for 2:00 (seen from the side)
+  // ── Quake Island (stage 9): the volcano wakes and the island breaks up under you for 2:00
 
-  /** You fly the helicopter now, at the controls in its glass bubble (your pets and gadget ride inside). */
-  private heliStart(): void {
-    const H = this.heli;
-    if (!this.arena.sky) return;
-    this.hero.setAlpha(0);
-    this.handImg.setVisible(false);
-    for (const p of this.pets) {
-      p.img.setVisible(false);
-      p.odds.setVisible(false);
-    }
-    const [x, y] = [this.hero.x, this.hero.y];
-    H.blur = this.add.image(x, y, "heli_blur").setDepth(TOP + 46).setScale(HELI_SCALE);
-    H.blade = this.add.image(x, y, "heli_blade").setDepth(TOP + 47).setScale(HELI_SCALE);
-    H.tail = this.add.image(x, y, "heli_tail").setDepth(TOP + 46).setScale(HELI_SCALE);
-    // the cabin, you at the controls (your own character), then the glass bubble and the body in front
-    H.back = this.add.image(x, y, "heli_back").setDepth(TOP + 44.5).setScale(HELI_SCALE);
-    H.pilot = this.add.image(x, y, "hero").setDepth(TOP + 44.7);
-    H.pilot.setScale((HELI_SCALE * 112) / H.pilot.height);
-    H.body = this.add.image(x, y, "heli_front").setDepth(TOP + 45).setScale(HELI_SCALE);
-    battle.limit = HELI_MS;
-    battle.left = HELI_MS;
-    sfx.rotor();
-    this.time.delayedCall(1800, () => this.toast("Fly through the storm for 2:00! Dodge the lightning, the twisters and the wind", "#b8c8ff"));
-  }
-
-  /** Where a point on the helicopter is now (it leans as it flies). */
-  private heliPoint(dx: number, dy: number): [number, number] {
-    const a = (this.heli.tilt * Math.PI) / 180;
-    const [x, y] = [dx * HELI_SCALE, dy * HELI_SCALE];
-    return [this.hero.x + x * Math.cos(a) - y * Math.sin(a), this.hero.y + x * Math.sin(a) + y * Math.cos(a)];
-  }
-
-  private heliTick(delta: number, fighting: boolean): void {
-    const H = this.heli;
-    const body = H.body;
-    if (!body || !H.blade || !H.tail || !H.blur) return;
+  /** The volcano out at sea, the lighthouse (lit since stage 8) and its fire bowls; the heat in the air. */
+  private drawQuake(): void {
     const a = this.arena;
-    const dt = delta / 1000;
-    // the world rushes past: far clouds slowly, the cloud floor faster, near clouds faster still
-    const sp = dt * H.speed;
-    if (H.far) H.far.tilePositionX += 40 * sp;
-    if (H.sea) H.sea.tilePositionX += 300 * sp;
-    H.puffT -= delta;
-    if (H.puffT <= 0) {
-      H.puffT = 700 + Math.random() * 900;
-      const front = Math.random() < 0.35;
-      const img = this.add.image(a.w + 300, SKY_CEIL + Math.random() * (SKY_SEA - SKY_CEIL - 300), "cloud_puff")
-        .setScale(0.8 + Math.random() * 1.2).setAlpha(front ? 0.45 : 0.75).setDepth(front ? TOP + 55 : -970);
-      H.puffs.push({ img, v: front ? 900 + Math.random() * 300 : 240 + Math.random() * 260 });
+    const q = a.quake;
+    const isl = a.island;
+    if (!q || !isl) return;
+    const [vx, vy] = q.volcano;
+    const [kx, ky] = q.crater;
+    this.add.image(vx, vy, "volcano_pro").setOrigin(0.5, 1).setScale(2).setDepth(vy);
+    const glow = this.add.image(kx, ky + 40, "glow").setTint(0xff7a1a).setScale(5).setAlpha(0.7).setBlendMode(Phaser.BlendModes.ADD).setDepth(vy + 1);
+    this.tweens.add({ targets: glow, alpha: 0.35, scale: 4.2, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    if (effectsOn()) {
+      this.add.particles(kx, ky, "puff", {
+        x: { min: -120, max: 120 }, lifespan: 4200, speedY: { min: -260, max: -150 }, speedX: { min: 20, max: 90 },
+        scale: { start: 2, end: 7 }, alpha: { start: 0.7, end: 0 }, tint: [0x3a2e30, 0x5a4a4a, 0x6a5a58], frequency: 110,
+      }).setDepth(vy + 2);
+      this.add.particles(kx, ky, "spark", {
+        x: { min: -100, max: 100 }, lifespan: 1400, speedY: { min: -700, max: -350 }, speedX: { min: -260, max: 260 }, gravityY: 600,
+        scale: { start: 1, end: 0 }, tint: [0xff8a1a, 0xffd040, 0xff5a1a], frequency: 70,
+      }).setDepth(vy + 3);
+      // ash drifting down over everything
+      this.add.particles(0, 0, "puff", {
+        x: { min: -this.scale.width * 0.6, max: this.scale.width * 1.6 }, y: { min: -this.scale.height * 0.6, max: this.scale.height * 1.3 }, lifespan: 2600,
+        speedY: { min: 60, max: 140 }, speedX: { min: 20, max: 70 }, scale: { start: 0.12, end: 0.05 }, alpha: { start: 0.6, end: 0 }, tint: 0x5a5054, frequency: 40,
+      }).setScrollFactor(0).setDepth(TOP + 60);
     }
-    H.puffs = H.puffs.filter((p) => {
-      p.img.x -= p.v * sp;
-      if (p.img.x > -400) return true;
-      p.img.destroy();
-      return false;
+    // the air is hot: everything a little orange
+    // (it does not scroll, but the camera's zoom still shrinks it toward the middle: make it big)
+    this.add.rectangle(-this.scale.width, -this.scale.height, this.scale.width * 3, this.scale.height * 3, 0xff5a1a, 0.08).setOrigin(0).setScrollFactor(0).setDepth(TOP + 50);
+    const [tx, ty] = isl.tower;
+    this.quake.tower = this.add.image(tx, ty, "lighthouse_lit").setOrigin(0.5, 1).setDepth(ty);
+    this.solid(tx, ty, 270, 90);
+    for (const [x, y] of isl.bowls) {
+      const img = this.add.image(x, y, "brazier_lit").setOrigin(0.5, 1).setDepth(y);
+      this.quake.objs.push({ img, x, y });
+    }
+  }
+
+  /** Cut the island into pieces (the ones on land), the clock, and the volcano erupts as the fight starts. */
+  private quakeStart(): void {
+    const a = this.arena;
+    const isl = a.island;
+    const q = a.quake;
+    if (!isl || !q) return;
+    const Q = this.quake;
+    Q.x0 = isl.cx - CELL * 6;
+    Q.y0 = isl.cy - CELL * 6;
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) {
+      const [x, y] = [Q.x0 + (i + 0.5) * CELL, Q.y0 + (j + 0.5) * CELL];
+      if (!onIsle(a, x, y, 120)) continue;
+      const c: QuakeCell = { i, j, x, y, state: "ok", t: 0, img: null, crack: null };
+      Q.cells.push(c);
+      Q.grid.set(i * 100 + j, c);
+    }
+    battle.limit = QUAKE_MS;
+    battle.left = QUAKE_MS;
+    const [kx, ky] = q.crater;
+    this.time.delayedCall(500, () => {
+      if (!this.fighting) return;
+      sfx.rumble();
+      this.cameras.main.shake(900, 0.01);
+      this.banner("ERUPTION!", "red", 1000);
+      this.boom(kx, ky, 3);
+      this.focusBoss(kx, ky + 300);
     });
-    if (!H.falling) {
-      // nose down flying forward, nose up backing off; blades flicker round, a gentle bob
-      const [vx, vy] = this.heroVel;
-      H.tilt += (Phaser.Math.Clamp(vx / 30 + vy / 80, -16, 16) - H.tilt) * Math.min(1, delta / 150);
-      const bob = Math.sin(this.time.now / 260) * 6;
-      body.setPosition(this.hero.x, this.hero.y + bob).setAngle(H.tilt);
-      H.back?.setPosition(this.hero.x, this.hero.y + bob).setAngle(H.tilt);
-      if (H.pilot) {
-        const [px, py] = this.heliPoint(46, 4);
-        // you, bobbing at the controls
-        H.pilot.setPosition(px, py + bob + Math.sin(this.time.now / 180) * 2).setAngle(H.tilt);
-      }
-      H.spin += delta * 0.045;
-      const [bx, by] = this.heliPoint(46, -86);
-      H.blade.setPosition(bx, by + bob).setAngle(H.tilt).setScale(HELI_SCALE * Math.cos(H.spin), HELI_SCALE);
-      H.blur.setPosition(bx, by + bob).setAngle(H.tilt).setScale(HELI_SCALE * 0.8, HELI_SCALE * 0.6);
-      const [tx, ty] = this.heliPoint(-124, -12);
-      H.tail.setPosition(tx, ty + bob).setAngle(H.tail.angle + delta * 1.4);
-      if (this.state !== "won" && this.state !== "lost") sfx.rotor(this.heroHp / this.heroMax < 0.3);
-      // damaged: black smoke from the engine, sparks, the cockpit beeps
-      const hp = this.heroHp / this.heroMax;
-      H.smokeT -= delta;
-      if (hp < 0.55 && H.smokeT <= 0 && effectsOn()) {
-        H.smokeT = hp < 0.3 ? 60 : 130;
-        const [ex, ey] = this.heliPoint(-40, -30);
-        const pf = this.add.image(ex, ey, "puff").setTint(hp < 0.3 ? 0x2a2a2a : 0x6a6a72).setScale(0.6).setAlpha(0.8).setDepth(TOP + 44);
-        this.tweens.add({ targets: pf, x: pf.x - 360, y: pf.y - 60, scale: 2.4, alpha: 0, duration: 900, onComplete: () => pf.destroy() });
-        if (hp < 0.3 && Math.random() < 0.3) {
-          this.sparks.setParticleTint(0xffa040);
-          this.sparks.explode(3, ex, ey);
-        }
-      }
-      H.beepT -= delta;
-      if (hp < 0.3 && H.beepT <= 0 && this.fighting) {
-        H.beepT = 900;
-        sfx.beep();
-      }
-      // skimming the cloud tops stirs up wisps
-      H.sprayT -= delta;
-      if (this.hero.y > SKY_SEA - 260 && H.sprayT <= 0 && effectsOn()) {
-        H.sprayT = 90;
-        this.puff.setParticleTint(0xe8ecff);
-        this.puff.explode(2, this.hero.x + Phaser.Math.Between(-80, 80), SKY_SEA - 60);
+    this.time.delayedCall(2600, () => this.toast("The island is breaking! Glowing cracks fall into lava: get off them!", "#ffc08a"));
+  }
+
+  /** The piece of the island at a point (none out at sea). */
+  private cellAt(x: number, y: number): QuakeCell | undefined {
+    const Q = this.quake;
+    return Q.grid.get(Math.floor((x - Q.x0) / CELL) * 100 + Math.floor((y - Q.y0) / CELL));
+  }
+
+  private quakeTick(delta: number, fighting: boolean): void {
+    const Q = this.quake;
+    if (!Q.cells.length) return;
+    const k = Math.min(1, this.elapsed / QUAKE_MS);
+    // the pieces: cracking, then lava, then a cooled crust (safe again until it breaks once more)
+    for (const c of Q.cells) {
+      if (c.state === "ok" || c.state === "crust") continue;
+      c.t -= delta;
+      if (c.t > 0) continue;
+      if (c.state === "crack") this.cellFalls(c);
+      else if (c.state === "lava") this.cellCools(c);
+    }
+    // lava bubbles and pops now and then
+    Q.bubT -= delta;
+    if (Q.bubT <= 0 && effectsOn()) {
+      Q.bubT = 140;
+      const hot = Q.cells.filter((c) => c.state === "lava");
+      const c = hot[Math.floor(Math.random() * hot.length)];
+      if (c) {
+        this.sparks.setParticleTint(0xffb02a);
+        this.sparks.explode(3, c.x + Phaser.Math.Between(-150, 150), c.y + Phaser.Math.Between(-150, 150));
       }
     }
-    // far-off lightning lights up the sky
-    H.flashT -= delta;
-    if (H.flashT <= 0 && H.flash) {
-      H.flashT = 2200 + Math.random() * 3500;
-      this.tweens.add({ targets: H.flash, fillAlpha: 0.3, duration: 60, yoyo: true, repeat: 1 });
-      if (Math.random() < 0.5) sfx.thunder();
-    }
-    if (!fighting || this.state !== "fight") return;
-    const left = HELI_MS - this.elapsed;
+    if (!fighting || this.state !== "fight" || Q.done) return;
+    const left = QUAKE_MS - this.elapsed;
     battle.left = Math.max(0, left);
     if (left <= 0) {
-      this.heliFinale();
+      this.quakeFinale();
       return;
     }
     this.storyReminders(left, delta);
-    const k = this.elapsed / HELI_MS;
-    // lightning: the same strikes as the lighthouse's storm, aimed where you are heading; rows of them later on
-    H.boltT -= delta;
-    if (H.boltT <= 0) {
-      H.boltT = 2200 - 1000 * k;
+    // the ground breaks more often and faster as time goes on
+    Q.quakeT -= delta;
+    if (Q.quakeT <= 0) {
+      Q.quakeT = 4200 - 2000 * k + Math.random() * 800;
+      this.quakePattern(k);
+    }
+    // the volcano lobs lava bombs at you
+    Q.bombT -= delta;
+    if (Q.bombT <= 0) {
+      Q.bombT = 6000 - 3000 * k;
       const [vx, vy] = this.heroVel;
-      const dmg = this.heroMax * 0.12;
-      if (k > 0.25 && Math.random() < 0.3) {
-        const horiz = Math.random() < 0.5;
-        for (let i = -2; i <= 2; i++) {
-          const [x, y] = horiz ? [this.hero.x + i * 260, this.hero.y + Phaser.Math.Between(-60, 60)] : [this.hero.x + Phaser.Math.Between(-60, 60), this.hero.y + i * 230];
-          this.time.delayedCall((i + 2) * 110, () => this.fighting && this.addStrike(clampX(x), clampY(y), 140, 1100, dmg, "thunder", undefined, true));
-        }
-      } else {
-        const n = k > 0.5 && Math.random() < 0.4 ? 2 : 1;
-        for (let i = 0; i < n; i++) {
-          const [x, y] = i === 0 ? [this.hero.x + vx * 0.6, this.hero.y + vy * 0.6] : [this.hero.x + Phaser.Math.Between(-450, 450), this.hero.y + Phaser.Math.Between(-400, 400)];
-          this.addStrike(clampX(x), clampY(y), 150, 1100, dmg, "thunder", undefined, true);
-        }
+      const n = 1 + Math.floor(k * 3);
+      const [kx, ky] = this.arena.quake!.crater;
+      this.sparks.setParticleTint(0xff8a1a);
+      this.sparks.explode(16, kx, ky);
+      for (let i = 0; i < n; i++) {
+        const [x, y] = i === 0 ? [this.hero.x + vx * 0.8, this.hero.y + vy * 0.8] : [this.hero.x + Phaser.Math.Between(-500, 500), this.hero.y + Phaser.Math.Between(-400, 400)];
+        const [bx, by] = toIsle(this.arena, x, y, 120);
+        this.time.delayedCall(i * 220, () => this.fighting && this.addStrike(bx, by, 150, 1300, this.heroMax * 0.1, "lava", undefined, true));
       }
     }
-    this.gustTick(delta, k);
-    this.tornadoTick(delta, k);
-    // storm crows fly in from ahead
-    H.crowT -= delta;
-    if (H.crowT <= 0 && this.enemies.length < 6 + k * 8) {
-      H.crowT = 2800 - 1200 * k;
-      const e = this.addEnemy(this.pickType(), a.w - 80, SKY_CEIL + 150 + Math.random() * (SKY_SEA - SKY_CEIL - 450), false, true, 1, this.mobStage());
-      e.huntHero = true;
+    // aftershocks: everything shakes, rocks fall, cracks give way at once
+    Q.shockT -= delta;
+    if (Q.shockT <= 0) {
+      Q.shockT = 24000 - 6000 * k;
+      this.aftershock();
     }
-    // a repair heart now and then (grab it to patch the helicopter up)
-    H.repairT -= delta;
-    if (H.repairT <= 0) {
-      H.repairT = 30000;
-      this.addPickup("heart", 300 + Math.random() * (a.w - 600), SKY_CEIL + 300 + Math.random() * (SKY_SEA - SKY_CEIL - 700), 14000);
-      this.toast("A repair heart! Grab it", "#ffb0d0");
-    }
-    // the volcano comes up over the cloud floor near the end
-    if (k > 0.6 && !H.isle) {
-      H.isle = this.add.image(a.w + 500, SKY_SEA + 120, "volcano_pro").setOrigin(0.5, 1).setScale(0.3).setDepth(-965);
-      this.toast("Land ahead... a volcano?!", "#ffb08a");
-    }
-    if (H.isle && !H.falling) {
-      H.isle.x = Math.max(a.w * 0.72, H.isle.x - 60 * dt);
-      H.isle.setScale(Math.min(0.6, H.isle.scale + 0.006 * dt));
+    // the lighthouse cannot stand it for long
+    if (!Q.fell && this.elapsed > 62000) this.lighthouseFalls();
+    // standing in lava burns
+    const here = this.cellAt(this.hero.x, this.hero.y);
+    if (here?.state === "lava") {
+      Q.hotT -= delta;
+      if (Q.hotT <= 0) {
+        Q.hotT = 400;
+        this.hurt(this.heroMax * 0.05);
+        this.callout("TOO HOT!", "#ff8a3a");
+        this.splashLava(this.hero.x, this.hero.y, 4);
+      }
+    } else Q.hotT = 150;
+    // and burns the monsters you lead into it
+    Q.burnT -= delta;
+    if (Q.burnT <= 0) {
+      Q.burnT = 400;
+      for (const e of [...this.enemies]) {
+        if (e.type.flying || e.type.boss || e.hp <= 0) continue;
+        if (this.cellAt(e.img.x, e.img.y)?.state === "lava") this.hit(e, e.maxHp * 0.12, true);
+      }
     }
   }
 
-  /** Wind: swooshes warn you, then an updraft, a downdraft or a headwind shoves the helicopter for a few seconds. */
-  private gustTick(delta: number, k: number): void {
-    const H = this.heli;
-    const a = this.arena;
-    if (!H.gust) {
-      H.gustT -= delta;
-      if (H.gustT > 0) return;
-      H.gustT = 10000 - 4000 * k;
-      const kind = (["down", "up", "head"] as const)[Math.floor(Math.random() * 3)];
-      const fx: Phaser.GameObjects.GameObject[] = [];
-      const [dx, dy] = kind === "down" ? [0, 1] : kind === "up" ? [0, -1] : [-1, 0];
-      // cartoon wind swooshes start to blow the way it will push
-      const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-      for (let i = 0; i < 4; i++) {
-        const [x, y] = kind === "head" ? [a.w * 0.8, SKY_CEIL + (SKY_SEA - SKY_CEIL) * (0.15 + i * 0.23)] : [a.w * (0.15 + i * 0.23), kind === "down" ? SKY_CEIL + 150 : SKY_SEA - 150];
-        const w = this.add.image(x, y, "wind_curl").setAngle(ang).setScale(0.4).setAlpha(0).setDepth(TOP + 80);
-        this.tweens.add({ targets: w, alpha: 1, scale: 1.2, duration: 300, delay: i * 90, ease: "Back.out" });
-        this.tweens.add({ targets: w, x: x + dx * 120, y: y + dy * 120, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-        fx.push(w);
-      }
-      H.gust = { kind, t: 3800 - 600 * k, warn: 1500, fx };
-      this.banner(kind === "down" ? "DOWNDRAFT!" : kind === "up" ? "UPDRAFT!" : "HEADWIND!", "blue", 900);
-      sfx.wind();
+  /** How the ground gives way: here and ahead of you, a line across the island, a ring round you, or bits all over. */
+  private quakePattern(k: number): void {
+    const Q = this.quake;
+    const here = this.cellAt(this.hero.x, this.hero.y);
+    const ms = 1800 - 500 * k;
+    const r = Math.random();
+    const at = (i: number, j: number) => Q.grid.get(i * 100 + j);
+    if (!here) {
+      this.crackSome(3, ms);
       return;
     }
-    const g = H.gust;
-    const [dx, dy] = g.kind === "down" ? [0, 1] : g.kind === "up" ? [0, -1] : [-1, 0];
-    if (g.warn > 0) {
-      g.warn -= delta;
-      if (g.warn <= 0) {
-        g.fx.forEach((o) => o.destroy());
-        g.fx = [];
-        // swooshes rush across the whole sky while it blows
-        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-        const sweep = this.time.addEvent({ delay: 160, loop: true, callback: () => {
-          const [sx, sy] = dx ? [a.w + 200, SKY_CEIL + Math.random() * (SKY_SEA - SKY_CEIL)] : [Math.random() * a.w, dy > 0 ? SKY_CEIL - 100 : SKY_SEA + 100];
-          const w = this.add.image(sx, sy, "wind_curl").setAngle(ang).setScale(0.7 + Math.random() * 0.5).setAlpha(0.9).setDepth(TOP + 63);
-          this.tweens.add({ targets: w, x: sx + dx * 2200, y: sy + dy * 2200, duration: 900, onComplete: () => w.destroy() });
-        } });
-        g.fx.push({ destroy: () => sweep.remove(false) } as unknown as Phaser.GameObjects.GameObject);
-        sfx.wind();
-        this.cameras.main.shake(g.t, 0.003);
+    if (k > 0.15 && r < 0.28) {
+      // a crack runs right across the island, one piece after another (a row or a column next to you)
+      const row = Math.random() < 0.5;
+      const off = Phaser.Math.Between(-1, 1);
+      const line = Q.cells.filter((c) => (row ? c.j === here.j + off : c.i === here.i + off));
+      const back = Math.random() < 0.5;
+      line.sort((p, q) => (row ? p.i - q.i : p.j - q.j) * (back ? -1 : 1));
+      line.forEach((c, n) => this.time.delayedCall(n * 110, () => this.fighting && this.crackCell(c, ms + 300)));
+      this.banner("THE GROUND SPLITS!", "red", 800);
+      sfx.crack();
+    } else if (k > 0.35 && r < 0.5) {
+      // a ring round you with one way out, then the piece you stand on
+      const ring: QuakeCell[] = [];
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const c = (di || dj) && at(here.i + di, here.j + dj);
+        if (c) ring.push(c);
       }
-      return;
-    }
-    g.t -= delta;
-    const push = (280 + 140 * k) * (delta / 1000);
-    this.hero.x = clampX(this.hero.x + dx * push);
-    this.hero.y = clampY(this.hero.y + dy * push);
-    if (g.t <= 0) {
-      g.fx.forEach((o) => o.destroy());
-      H.gust = null;
-    }
+      const exit = ring.filter((c) => c.i === here.i || c.j === here.j);
+      const gap = exit[Math.floor(Math.random() * exit.length)];
+      for (const c of ring) if (c !== gap) this.crackCell(c, ms);
+      this.time.delayedCall(ms - 400, () => this.fighting && this.crackCell(here, ms));
+      this.banner("TRAPPED! FIND THE WAY OUT!", "red", 900);
+      sfx.crack();
+    } else if (r < 0.75) {
+      // right under you, and where you are heading
+      this.crackCell(here, ms);
+      const [vx, vy] = this.heroVel;
+      if (Math.hypot(vx, vy) > 50) {
+        const ahead = this.cellAt(this.hero.x + Math.sign(vx) * (Math.abs(vx) > Math.abs(vy) * 0.5 ? CELL : 0), this.hero.y + Math.sign(vy) * (Math.abs(vy) > Math.abs(vx) * 0.5 ? CELL : 0));
+        if (ahead && ahead !== here) this.crackCell(ahead, ms + 200);
+      }
+      sfx.crack();
+    } else this.crackSome(3 + Math.floor(k * 4), ms);
   }
 
-  /** The Storm Twister: tornadoes hanging from the storm clouds, some reaching far down (fly under them, fast). */
-  private tornadoTick(delta: number, k: number): void {
-    const H = this.heli;
-    const a = this.arena;
-    if (this.elapsed > 12000) H.stormT -= delta;
-    if (H.stormT <= 0 && H.storms.length < (k > 0.6 ? 2 : 1)) {
-      H.stormT = 11000 - 4500 * k;
-      const span = SKY_SEA - SKY_CEIL;
-      const tip = SKY_CEIL + span * (0.45 + Math.random() * (0.2 + 0.15 * k));
-      const root = SKY_CEIL - 220;
-      const img = this.add.image(a.w + 300, root, "twister").setOrigin(0.5, 0).setDepth(TOP + 35);
-      img.setScale(1, (tip - root) / 1000);
-      H.storms.push({ img, top: true, tip, hurtT: 0, v: 280 + 120 * k });
-      this.banner("TWISTER! FLY UNDER IT!", "purple", 1000);
-      sfx.rumble();
+  /** A few pieces near you start to crack (not too much lava at once). */
+  private crackSome(n: number, ms: number): void {
+    const Q = this.quake;
+    const lava = Q.cells.filter((c) => c.state !== "ok" && c.state !== "crust").length;
+    if (lava > Q.cells.length * 0.4) return;
+    const near = Q.cells.filter((c) => (c.state === "ok" || c.state === "crust") && Math.abs(c.x - this.hero.x) < CELL * 3.5 && Math.abs(c.y - this.hero.y) < CELL * 3.5);
+    Phaser.Utils.Array.Shuffle(near);
+    near.slice(0, n).forEach((c, i) => this.time.delayedCall(i * 160, () => this.fighting && this.crackCell(c, ms)));
+    if (near.length) sfx.crack();
+  }
+
+  /** The warning: glowing cracks spread over the piece and it trembles. */
+  private crackCell(c: QuakeCell, ms: number): void {
+    if (c.state !== "ok" && c.state !== "crust") return;
+    // the lighthouse's own ground holds until it falls
+    if (!this.quake.fell && this.quakeTower(c)) return;
+    c.state = "crack";
+    c.t = ms;
+    c.crack = this.add.image(c.x, c.y, Math.random() < 0.5 ? "quake_crack" : "quake_crack2").setDepth(-870).setAngle(90 * Phaser.Math.Between(0, 3)).setScale(0.4).setAlpha(0.9);
+    this.tweens.add({ targets: c.crack, scale: 0.95, duration: 380, ease: "Back.out" });
+    this.tweens.add({ targets: c.crack, alpha: 0.55, duration: 160, yoyo: true, repeat: -1, delay: 380 });
+    if (c.img) this.tweens.add({ targets: c.img, x: c.x + 6, duration: 50, yoyo: true, repeat: Math.floor(ms / 100) });
+    this.puff.setParticleTint(0x9a7a5a);
+    this.puff.explode(3, c.x + Phaser.Math.Between(-120, 120), c.y + Phaser.Math.Between(-120, 120));
+  }
+
+  private quakeTower(c: QuakeCell): boolean {
+    const [tx, ty] = this.arena.island!.tower;
+    return Math.abs(c.x - tx) < CELL && Math.abs(c.y - ty) < CELL;
+  }
+
+  /** The piece drops away into lava: things on it sink, monsters on it fall in, a slime may climb out. */
+  private cellFalls(c: QuakeCell): void {
+    const Q = this.quake;
+    c.state = "lava";
+    c.t = 10000 + Math.random() * 3000;
+    if (c.crack) {
+      this.tweens.killTweensOf(c.crack);
+      c.crack.destroy();
+      c.crack = null;
     }
-    H.storms = H.storms.filter((st) => {
-      const img = st.img;
-      img.x -= st.v * (delta / 1000);
-      // it sways and squashes as it spins
-      img.setAngle(Math.sin(this.time.now / 320 + st.tip) * 4);
-      img.scaleX = 1 + Math.sin(this.time.now / 110) * 0.05;
-      if (effectsOn() && Math.random() < 0.25) {
-        this.puff.setParticleTint(0x9aa4c8);
-        this.puff.explode(1, img.x + Phaser.Math.Between(-30, 30), st.tip);
-      }
-      if (img.x < -400) {
-        img.destroy();
-        return false;
-      }
-      // how wide it is at your height (wide up top, thin at its tip)
-      const [y0, y1] = [SKY_CEIL - 220, st.tip];
-      const hy = this.hero.y;
-      if (hy > y1 + 160) return true;
-      const f = Phaser.Math.Clamp((hy - y0) / (y1 - y0), 0, 1);
-      const w = 175 * Math.pow(1 - f, 1.25) + 30;
-      const dx = img.x - this.hero.x;
-      if (Math.abs(dx) < w + 260) {
-        // it sucks you sideways toward it
-        this.hero.x = clampX(this.hero.x + Math.sign(dx) * (140 + 260 * (1 - Math.min(1, Math.abs(dx) / (w + 260)))) * (delta / 1000));
-      }
-      st.hurtT -= delta;
-      if (Math.abs(dx) < w && hy < y1 + 40 && st.hurtT <= 0) {
-        st.hurtT = 450;
-        this.hurt(this.heroMax * 0.1);
-        this.callout("SPINNING!", "#c8d4ff");
-        if (this.heli.body) this.tweens.add({ targets: [this.heli.body, this.heli.back], angle: "+=360", duration: 420 });
-      }
-      return true;
+    if (c.img) {
+      this.tweens.killTweensOf(c.img);
+      c.img.setPosition(c.x, c.y).setTexture(Math.random() < 0.5 ? "quake_hole" : "quake_hole2");
+    } else c.img = this.add.image(c.x, c.y, Math.random() < 0.5 ? "quake_hole" : "quake_hole2").setDepth(-880).setAngle(90 * Phaser.Math.Between(0, 3));
+    c.img.setScale(0.5).setAlpha(1);
+    this.tweens.add({ targets: c.img, scale: 1.05, duration: 300, ease: "Back.out" });
+    this.puff.setParticleTint(0x7a6050);
+    this.puff.explode(8, c.x, c.y);
+    this.splashLava(c.x, c.y, 8);
+    const half = CELL / 2;
+    const inside = (x: number, y: number) => Math.abs(x - c.x) < half && Math.abs(y - c.y) < half;
+    Q.objs = Q.objs.filter((o) => {
+      if (!inside(o.x, o.y)) return true;
+      this.tweens.add({ targets: o.img, y: o.img.y + 60, scaleX: o.img.scaleX * 0.6, scaleY: o.img.scaleY * 0.4, alpha: 0, angle: Phaser.Math.Between(-30, 30), duration: 700, ease: "Quad.in" });
+      return false;
     });
+    for (const e of [...this.enemies]) {
+      if (e.type.flying || e.type.boss || !inside(e.img.x, e.img.y)) continue;
+      this.kill(e, true);
+    }
+    if (Math.random() < 0.3 && this.enemies.length < 40 && !inside(this.hero.x, this.hero.y)) {
+      this.addEnemy(this.pickType(), c.x, c.y, false, true, 1, this.mobStage()).huntHero = true;
+    }
   }
 
-  /** 2:00 survived... then the biggest bolt of all hits you: the helicopter spins down into the volcano. */
-  private heliFinale(): void {
-    const H = this.heli;
-    const a = this.arena;
-    const parts = [H.body!, H.blade!, H.blur!, H.tail!, ...(H.back ? [H.back] : []), ...(H.pilot ? [H.pilot] : [])];
+  /** The lava cools to a black crust you can walk on again. */
+  private cellCools(c: QuakeCell): void {
+    c.state = "crust";
+    if (!c.img) return;
+    c.img.setTexture("quake_crust");
+    this.tweens.add({ targets: c.img, alpha: { from: 0.6, to: 1 }, duration: 600 });
+    if (effectsOn()) {
+      this.puff.setParticleTint(0xe8eef4);
+      this.puff.explode(6, c.x, c.y - 40);
+    }
+  }
+
+  /** AFTERSHOCK: a big shake, rocks fall round you and every crack gives way at once. */
+  private aftershock(): void {
+    const Q = this.quake;
+    this.banner("AFTERSHOCK!", "red", 1000);
+    sfx.rumble();
+    sfx.alarm();
+    buzz(250);
+    this.cameras.main.shake(1100, 0.014);
+    for (const c of Q.cells) if (c.state === "crack") c.t = Math.min(c.t, 500);
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = i === 0 ? 0 : 200 + Math.random() * 500;
+      const [x, y] = toIsle(this.arena, this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.8, 120);
+      this.time.delayedCall(300 + i * 200, () => this.fighting && this.addStrike(x, y, 140, 1100, this.heroMax * 0.12, "rock", undefined, true));
+    }
+    this.time.delayedCall(1400, () => this.fighting && this.crackSome(4, 1600));
+  }
+
+  /** The lighthouse topples over into the sea: nowhere is safe now. */
+  private lighthouseFalls(): void {
+    const Q = this.quake;
+    Q.fell = true;
+    const t = Q.tower;
+    if (!t) return;
+    const [tx, ty] = this.arena.island!.tower;
+    this.solids = this.solids.filter((r) => !r.contains(tx, ty - 20));
+    this.banner("THE LIGHTHOUSE FALLS!", "red", 1200);
+    sfx.crash();
+    sfx.rumble();
+    this.cameras.main.shake(900, 0.012);
+    this.tweens.add({ targets: t, angle: 88, duration: 1600, ease: "Quad.in", onComplete: () => {
+      this.boom(tx - 500, ty - 60, 2.5);
+      this.puff.setParticleTint(0x9a8a7a);
+      this.puff.explode(24, tx - 400, ty - 40);
+      this.tweens.add({ targets: t, alpha: 0, duration: 900 });
+    } });
+    for (const c of Q.cells) if (this.quakeTower(c)) this.time.delayedCall(1800, () => this.fighting && this.crackCell(c, 1500));
+  }
+
+  /** 2:00 survived... then THE BIG ONE: the whole island cracks, the lava bursts up under you and throws you into the volcano. */
+  private quakeFinale(): void {
+    const Q = this.quake;
+    const cam = this.cameras.main;
+    const [kx, ky] = this.arena.quake!.crater;
+    Q.done = true;
     this.state = "cutscene";
     battle.left = 0;
+    this.joy = { ...NO_JOY };
     for (const e of [...this.enemies]) this.kill(e, true);
     this.clearBossAttacks();
-    H.storms.forEach((st) => this.tweens.add({ targets: st.img, alpha: 0, duration: 400, onComplete: () => st.img.destroy() }));
-    H.storms = [];
-    H.gust?.fx.forEach((o) => o.destroy());
-    H.gust = null;
-    if (!H.isle) H.isle = this.add.image(a.w + 500, SKY_SEA + 120, "volcano_pro").setOrigin(0.5, 1).setScale(0.4).setDepth(-965);
-    this.banner("YOU MADE IT... ?!", "gold", 1000);
-    // the last bolt: a warning right on you, then the hit
-    const warn = this.add.image(this.hero.x, this.hero.y, "bx_warn").setTint(0xffd23f).setScale(1.4, 1).setDepth(TOP + 48);
-    this.tweens.add({ targets: warn, alpha: 0.3, duration: 120, yoyo: true, repeat: 4, onComplete: () => warn.destroy() });
+    this.banner("THE BIG ONE!", "red", 1400);
+    sfx.rumble();
     sfx.alarm();
-    this.time.delayedCall(1250, () => {
-      H.falling = true;
-      this.impact(this.hero.x, this.hero.y + 60, 300, "bolt", 0xffd23f);
-      sfx.crash();
-      buzz(400);
-      this.cameras.main.flash(400, 255, 255, 255);
-      this.cameras.main.shake(800, 0.02);
-      this.banner("LIGHTNING STRIKE!", "red", 1200);
-      H.body!.setTint(0x6a6a72);
-      H.speed = 2.5;
-      const smoke = effectsOn() ? this.add.particles(0, 0, "puff", {
-        follow: H.body!, lifespan: 1000, speedX: { min: -320, max: -180 }, speedY: { min: -120, max: -40 }, scale: { start: 0.8, end: 2.8 },
-        alpha: { start: 0.85, end: 0 }, tint: [0x2a2a2a, 0x4a4a4a, 0xff7a2a], frequency: 30,
+    buzz(400);
+    cam.shake(2600, 0.012);
+    for (const c of Q.cells) if (c.state !== "lava") {
+      c.state = "ok";
+      this.crackCell(c, 999999);
+    }
+    // a fountain of lava right under you
+    const [hx, hy] = [this.hero.x, this.hero.y];
+    const warn = this.add.image(hx, hy, "bx_warn").setTint(0xff6a1a).setScale(1.4, 1).setDepth(-860);
+    this.tweens.add({ targets: warn, alpha: 0.3, duration: 120, yoyo: true, repeat: 6, onComplete: () => warn.destroy() });
+    this.time.delayedCall(1700, () => {
+      this.handImg.setVisible(false);
+      for (const p of this.pets) {
+        p.img.setVisible(false);
+        p.odds.setVisible(false);
+      }
+      this.boom(hx, hy, 2.5);
+      this.splashLava(hx, hy, 40);
+      sfx.boom();
+      sfx.whoosh();
+      cam.flash(300, 255, 150, 60);
+      this.banner("WHOOOAAA!", "gold", 1000);
+      const spout = effectsOn() ? this.add.particles(hx, hy, "puff", {
+        lifespan: 900, speedY: { min: -1400, max: -900 }, speedX: { min: -120, max: 120 }, scale: { start: 1.6, end: 0.4 },
+        alpha: { start: 1, end: 0 }, tint: [0xffd040, 0xff8a1a, 0xff5a1a], frequency: 20,
+      }).setDepth(TOP + 40) : null;
+      this.time.delayedCall(1200, () => spout?.destroy());
+      // up you go, spinning (trailing fire)... over the sea... and down into the crater
+      Q.flying = true;
+      this.hero.setTexture("hero").setDepth(TOP + 45);
+      const trail = effectsOn() ? this.add.particles(0, 0, "puff", {
+        follow: this.hero, lifespan: 700, speed: { min: 20, max: 80 }, scale: { start: 1.4, end: 0 }, alpha: { start: 0.9, end: 0 },
+        tint: [0xffd040, 0xff8a1a, 0xff5a1a, 0x5a4a4a], frequency: 20,
       }).setDepth(TOP + 44) : null;
-      // the volcano rises up through the clouds below, its crater glowing; you spin down into it
-      const isle = H.isle!;
-      this.tweens.add({ targets: isle, x: a.w * 0.55, y: a.h + 120, scale: 1.9, duration: 2400, ease: "Sine.inOut" });
-      const crater: [number, number] = [a.w * 0.55, a.h + 120 - 598 * 1.9];
-      const fume = effectsOn() ? this.add.particles(crater[0], crater[1], "puff", {
-        lifespan: 1800, speedY: { min: -260, max: -140 }, speedX: { min: -40, max: 40 }, scale: { start: 1.2, end: 4 }, alpha: { start: 0.6, end: 0 },
-        tint: [0x5a4a4a, 0xff8a3a], frequency: 70,
-      }).setDepth(-964) : null;
-      this.time.delayedCall(2500, () => fume?.destroy());
-      this.time.delayedCall(900, () => {
-        sfx.beep();
-        this.banner("MAYDAY! MAYDAY!", "red", 1000);
-      });
-      this.tweens.add({ targets: parts, angle: "+=1080", duration: 3000, ease: "Quad.in" });
-      this.tweens.add({ targets: parts, x: crater[0], y: crater[1], scale: 0.3, duration: 2900, delay: 300, ease: "Quad.in" });
-      this.time.delayedCall(3300, () => {
-        smoke?.destroy();
-        parts.forEach((p) => p.setVisible(false));
-        this.boom(crater[0], crater[1], 3);
+      cam.stopFollow();
+      this.tweens.add({ targets: this.hero, y: hy - 800, scale: 3, angle: 720, duration: 1000, ease: "Quad.out" });
+      cam.pan(kx, ky + 600, 2400, "Sine.easeInOut");
+      cam.zoomTo(0.4, 2400, "Sine.easeInOut");
+      this.tweens.add({ targets: this.hero, x: kx, y: ky, scale: 1.2, angle: 1800, duration: 1700, delay: 1000, ease: "Quad.in", onComplete: () => {
+        trail?.destroy();
+        this.hero.setAlpha(0).setAngle(0).setScale(1);
+        Q.flying = false;
+        this.boom(kx, ky, 3);
         sfx.boom();
-        this.cameras.main.flash(500, 255, 140, 40);
-        this.cameras.main.shake(700, 0.02);
+        sfx.bigSplash();
+        cam.flash(500, 255, 140, 40);
+        cam.shake(700, 0.02);
         this.sparks.setParticleTint(0xff8a1a);
-        this.sparks.explode(60, crater[0], crater[1]);
+        this.sparks.explode(60, kx, ky);
         this.banner("INTO THE VOLCANO!", "red", 1400);
-        H.speed = 0.2;
-        this.time.delayedCall(900, () => this.stageWon());
-      });
+        this.time.delayedCall(1100, () => this.stageWon());
+      } });
     });
   }
 
@@ -4781,7 +4803,7 @@ export class BattleScene extends Phaser.Scene {
       if (V.hotT <= 0) {
         V.hotT = 400;
         this.hurt(this.heroMax * 0.07);
-        this.callout("HOT!", "#ff8a3a");
+        this.callout("TOO HOT!", "#ff8a3a");
         this.splashLava(this.hero.x, this.hero.y, 4);
       }
     } else V.hotT = 200;
@@ -5647,7 +5669,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "ocean") this.oceanTick(delta, fighting);
     if (m === "light") this.lightTick(delta, fighting);
     if (m === "volcano") this.volcanoTick(delta, fighting);
-    if (m === "heli") this.heliTick(delta, fighting);
+    if (m === "quake") this.quakeTick(delta, fighting);
     battle.goal = this.modeGoal();
   }
 
@@ -5672,10 +5694,12 @@ export class BattleScene extends Phaser.Scene {
       const far = Math.hypot(this.hero.x - o.x, this.hero.y - o.y);
       return { frac: Phaser.Math.Clamp(1 - far / Math.hypot(this.arena.w / 2 - o.x, start - o.y), 0, 1), text: far < 2200 ? `LAND HO!  •  ${Math.round(far / 100)}m` : "FIND LAND", color: 0x7ad651, icon: "mode_sea", alarm: false };
     }
-    if (m === "heli") {
-      const low = battle.hp < 0.3;
-      const f = Math.min(1, this.elapsed / HELI_MS);
-      return { frac: f, text: low ? "MAYDAY! Dodge everything!" : this.heli.gust ? "WIND! Hold on!" : "SURVIVE THE STORM", color: low ? 0xf26464 : 0x6a8ad8, icon: "mode_heli", alarm: low };
+    if (m === "quake") {
+      const c = this.cellAt(this.hero.x, this.hero.y);
+      const hot = c?.state === "lava";
+      const crack = c?.state === "crack";
+      const text = hot ? "LAVA! Get off!" : crack ? "IT'S CRACKING! MOVE!" : "SURVIVE THE QUAKE";
+      return { frac: Math.min(1, this.elapsed / QUAKE_MS), text, color: hot || crack ? 0xf26464 : 0xff8a3a, icon: "mode_quake", alarm: hot || crack };
     }
     if (m === "volcano") {
       const V = this.volc;
@@ -6830,7 +6854,7 @@ export class BattleScene extends Phaser.Scene {
    * (you can keep moving meanwhile). Not on the sea, whose camera never moves.
    */
   private focusBoss(x: number, y: number): void {
-    if ((this.arena.sea && !this.arena.ocean) || this.arena.sky) return;
+    if (this.arena.sea && !this.arena.ocean) return;
     const cam = this.cameras.main;
     const back = cam.zoom;
     cam.stopFollow();
@@ -7070,8 +7094,7 @@ export class BattleScene extends Phaser.Scene {
     const fighting = this.fighting;
     if (fighting) {
       // you slowly heal between hits; the crystal never heals by itself
-      // (no mending a helicopter in the air)
-      if (time - this.hurtAt > 3000 && this.stageMode !== "heli") this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.01 * (delta / 1000));
+      if (time - this.hurtAt > 3000) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.01 * (delta / 1000));
     }
     battle.hp = this.heroHp / this.heroMax;
     battle.crystal = this.crystalHp / this.crystalMax;
@@ -8265,15 +8288,6 @@ export class BattleScene extends Phaser.Scene {
   private hurt(dmg: number): void {
     if (this.time.now < this.phasingUntil) return;
     this.spillWater();
-    const hb = this.heli.body;
-    if (hb && !this.heli.falling) {
-      hb.setTintFill(0xff5a5a);
-      this.time.delayedCall(90, () => hb.clearTint());
-      this.sparks.setParticleTint(0xffd24a);
-      this.sparks.explode(8, hb.x, hb.y - 40);
-      const pl = this.heli.pilot;
-      if (pl) this.tweens.add({ targets: pl, angle: pl.angle + Phaser.Math.Between(-15, 15), duration: 80, yoyo: true });
-    }
     this.heroHp -= dmg;
     this.stats.hurt += dmg;
     this.hurtAt = this.time.now;

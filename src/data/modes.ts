@@ -3,13 +3,13 @@ import { STORY_STAGES, storyFor } from "./story";
 /**
  * Every stage has a mode. The first five are the story (see data/story.ts): 1 Path to the village,
  * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
- * round a cycle of nine: the Sea (6), Land Ho! (7), the Lighthouse (8), the Storm Flight (9), the Volcano (10),
+ * round a cycle of nine: the Sea (6), Land Ho! (7), the Lighthouse (8), Quake Island (9), the Volcano (10),
  * Crystal, Feed the Beast, Air Zone, Boss Battle, and again.
  */
-export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean" | "light" | "heli" | "volcano";
+export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean" | "light" | "quake" | "volcano";
 
 /** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
-export const MODE_ORDER: StageMode[] = ["sea", "ocean", "light", "heli", "volcano", "crystal", "feed", "air", "boss"];
+export const MODE_ORDER: StageMode[] = ["sea", "ocean", "light", "quake", "volcano", "crystal", "feed", "air", "boss"];
 
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
@@ -67,9 +67,9 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
     name: "LIGHTHOUSE", banner: "LIGHT IT UP!", icon: "mode_light", color: 0xffb03a, css: "#ffe0a0",
     goal: "Light the 4 fire bowls and the lighthouse!",
   },
-  heli: {
-    name: "STORM FLIGHT", banner: "FLY!", icon: "mode_heli", color: 0x6a8ad8, css: "#b8c8ff",
-    goal: "Fly the helicopter through the storm for 2:00!",
+  quake: {
+    name: "QUAKE ISLAND", banner: "THE ISLAND IS BREAKING!", icon: "mode_quake", color: 0xff6a2a, css: "#ffc08a",
+    goal: "Survive the quake for 2:00!",
   },
   volcano: {
     name: "THE VOLCANO", banner: "MAGMA KING!", icon: "mode_volcano", color: 0xff5a1a, css: "#ffb08a",

@@ -24,6 +24,6 @@ export const COMICS: Record<number, Comic> = {
   6: { say: "All aboard!", caption: "A tiny boat. A big, angry sea.", place: ["sea_boat", "sea_whale"], sky: 0x1a4a7a, pop: 0x5ac8ff },
   7: { say: "Land must be out there...", caption: "Sail on and find the big island!", place: ["sea_island", "sea_bigisland"], sky: 0x2a6a9a, pop: 0x8af06a },
   8: { say: "An old lighthouse!", caption: "If it shone again, the Storm would be afraid.", place: ["brazier_lit", "lighthouse", "brazier"], sky: 0x1a1a3a, pop: 0xffe066 },
-  9: { say: "A helicopter?! Let's fly!", caption: "The Storm is waiting up in the sky.", place: ["twister", "heli_side"], sky: 0x2a3456, pop: 0xb8c8ff },
-  10: { say: "Hot hot HOT!", caption: "You crashed into a volcano. Something stirs below...", place: ["volcano_pro", "b_magmaking"], sky: 0x3a1410, pop: 0xff7a2a },
+  9: { say: "The ground is shaking!", caption: "The volcano woke up... the island is breaking apart!", place: ["lighthouse_lit", "volcano_pro"], sky: 0x3a1a1a, pop: 0xff8a3a },
+  10: { say: "Hot hot HOT!", caption: "The eruption threw you into the volcano. Something stirs below...", place: ["volcano_pro", "b_magmaking"], sky: 0x3a1410, pop: 0xff7a2a },
 };

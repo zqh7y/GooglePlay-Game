@@ -43,8 +43,8 @@ export interface Arena {
   island?: { cx: number; cy: number; rx: number; ry: number; bowls: Pt[]; tower: Pt };
   /** the volcano's crater: its ash floor (an oval in a sea of lava), the lava lake in the middle, the water geysers */
   crater?: Oval & { lake: Oval; vents: Pt[] };
-  /** the storm flight: a patch of stormy sky that fits on one screen (you fly the helicopter in it) */
-  sky?: boolean;
+  /** quake island: the lighthouse island breaking up, the erupting volcano out at sea to the north (its crater) */
+  quake?: { volcano: Pt; crater: Pt };
 }
 
 /** An oval: centre and radii. */
@@ -278,10 +278,26 @@ function buildIsland(land: Region): Arena {
   };
 }
 
-/** The storm flight (stage 9): open sky, the same size as the sea stage (it fits on one screen). */
-export function getSkyArena(land: Region): Arena {
-  // (you start on the left, the storm comes at you from the right)
-  const a: Arena = { land, center: [450, 1300], objects: [], patches: [], w: SEA_W, h: SEA_H, sky: true };
+/** Quake island (stage 9): the lighthouse island moved down, with room up top for the volcano out at sea. */
+const QUAKE_TOP = 1600;
+const quakeCache = new Map<RegionId, Arena>();
+
+export function getQuakeArena(land: Region): Arena {
+  if (!quakeCache.has(land.id)) {
+    const b = buildIsland(land);
+    const i = b.island!;
+    const d = QUAKE_TOP;
+    const down = ([x, y]: Pt): Pt => [x, y + d];
+    // (the volcano's foot stands in the sea; its crater, 2x the size of the painting's, is up near the top)
+    const volcano: Pt = [i.cx, d + 150];
+    quakeCache.set(land.id, {
+      ...b, h: b.h + d, center: down(b.center),
+      objects: b.objects.map((o) => ({ ...o, y: o.y + d })), patches: b.patches.map((o) => ({ ...o, y: o.y + d })),
+      island: { ...i, cy: i.cy + d, bowls: i.bowls.map(down), tower: down(i.tower) },
+      quake: { volcano, crater: [volcano[0], volcano[1] - (780 - 182) * 2] },
+    });
+  }
+  const a = quakeCache.get(land.id)!;
   useArena(a);
   return a;
 }

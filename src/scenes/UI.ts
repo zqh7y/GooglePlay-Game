@@ -1743,10 +1743,10 @@ export class UIScene extends Phaser.Scene implements Host {
       const go = text(this, b.x + b.w * 0.75, b.y + b.h * 0.62, "GO\nGO\nGO", 54, "#111111", { stroke: 0 }).setAngle(10).setAlpha(0.55);
       inner.add(go);
       // the speech bubble, its tail pointing back at you
-      const say = text(this, 0, 0, c.say, 36, "#111111", { stroke: false, wrap: b.w * 0.78 });
+      const say = text(this, 0, 0, c.say, 36, "#111111", { stroke: false, wrap: b.w * 0.6 });
       const bw = say.width + 50;
       const bh = say.height + 40;
-      const bub = this.add.container(b.x + b.w * 0.52, b.y + bh / 2 + 34);
+      const bub = this.add.container(b.x + b.w * 0.56, b.y + bh / 2 + 34);
       const bg = this.add.graphics();
       bg.fillStyle(0xffffff, 1).lineStyle(6, 0x111111, 1);
       bg.fillTriangle(-bw * 0.32, bh * 0.3, -bw * 0.12, bh * 0.4, -bw * 0.62, bh * 0.85);
@@ -1900,7 +1900,7 @@ export class UIScene extends Phaser.Scene implements Host {
       sea: [["die_S", "DODGE"], ["sea_whale", "FROM BELOW"], ["sea_island", "TSUNAMI"]],
       ocean: [["sea_boat", "SAIL"], ["sea_island", "TSUNAMI? ISLAND!"], ["sea_bigisland", "FIND LAND"]],
       light: [["brazier_lit", "LIGHT x4"], ["mode_light", "LIGHTHOUSE"], ["mode_boss", "BEAM THE BOSS"]],
-      heli: [["heli_side", "FLY 2:00"], ["twister", "TWISTERS"], ["icon_bolt", "LIGHTNING"]],
+      quake: [["mode_quake", "SURVIVE 2:00"], ["quake_crack", "CRACKS"], ["lava_bomb", "LAVA"]],
       volcano: [["geyser", "GEYSER"], ["b_magmaking", "CRACK ARMOR"], ["lava_bomb", "DODGE LAVA"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],

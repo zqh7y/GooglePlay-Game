@@ -253,27 +253,11 @@ export const sfx = {
     tone(2093, 0.25, "sine", 0.05);
     tone(3136, 0.2, "sine", 0.03, 0, 0.04);
   },
-  /** helicopter rotor: a burst of chops (called again and again while flying) */
-  rotor: (fast = false) => {
-    if (throttle("rotor", 380)) return;
-    for (let i = 0; i < 5; i++) burst(0.05, 0.05, fast ? 900 : 600, i * 0.08);
-  },
-  /** a strong gust of wind: rising and falling filtered noise */
-  wind: () => {
-    if (throttle("wind", 900)) return;
-    burst(2.2, 0.1, 700, 0, "bandpass", 0.4);
-    burst(1.6, 0.05, 1500, 0.3, "bandpass", 0.5);
-  },
-  /** a deep rumble (a hurricane, an eruption) */
+  /** a deep rumble (an earthquake, an eruption) */
   rumble: () => {
     if (throttle("rumble", 1200)) return;
     burst(1.4, 0.14, 220, 0, "lowpass", 0.3);
     tone(48, 1.2, "sine", 0.07, 36);
-  },
-  /** warning beeps from the cockpit */
-  beep: () => {
-    if (throttle("beep", 500)) return;
-    [1760, 1760].forEach((f, i) => tone(f, 0.07, "square", 0.035, 0, i * 0.12));
   },
   /** a crash: metal bending and a big bang */
   crash: () => {
