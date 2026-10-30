@@ -1011,5 +1011,7 @@
 "LANGUAGE": "IDIOMA",
 "Choose your language": "Elige tu idioma",
 "The game restarts in the new language": "El juego se reinicia en el nuevo idioma",
-"SKIP": "SALTAR"
+"SKIP": "SALTAR",
+"Boss Rush is back in {0}": "La carrera de jefes vuelve en {0}",
+"Ready in {0}": "Listo en {0}"
 }

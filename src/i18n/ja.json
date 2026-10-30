@@ -1020,5 +1020,7 @@
 "LANGUAGE": "言語",
 "Choose your language": "言語を選んでね",
 "The game restarts in the new language": "新しい言語でゲームを再起動します",
-"SKIP": "スキップ"
+"SKIP": "スキップ",
+"Boss Rush is back in {0}": "ボスラッシュは{0}後に復活",
+"Ready in {0}": "あと{0}"
 }

@@ -991,5 +991,7 @@
 "LANGUAGE": "LANGUE",
 "Choose your language": "Choisis ta langue",
 "The game restarts in the new language": "Le jeu redémarre dans la nouvelle langue",
-"SKIP": "PASSER"
+"SKIP": "PASSER",
+"Boss Rush is back in {0}": "La ruée des boss revient dans {0}",
+"Ready in {0}": "Prêt dans {0}"
 }

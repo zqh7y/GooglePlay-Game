@@ -240,6 +240,9 @@ hour of fishing brings.
   for gems. Health numbers show on your hero, your pets and the bosses. The lobby shows your DPS against
   the stage's recommended DPS (green when you are ready); far above it, a "TRY ME!" points at Boss Rush.
 - **Boss Rush** is slower: your hero and the bosses move 1.5x slower than in a stage.
+- **Boss Rush once every 3 hours**: starting a rush starts a 3 hour wait. Meanwhile the Boss Rush card is
+  dimmed and shows "Ready in 2h 40m", tapping it only says when it is back, and the end-of-rush window has
+  no AGAIN button.
 - **Hardcore bosses**: bosses keep up with you, rest less between moves, and every boss has its own
   **SPECIAL** that reaches you anywhere on the map (every third move, and every move while you keep far
   away). Each one warns first, then you must dodge: Goo Storm (Slime King), Spore Burst, Bat Swarm (bats

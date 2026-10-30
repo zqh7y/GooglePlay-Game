@@ -7,7 +7,7 @@ import { MAX_STAGE, MINUTES, STAGE_MS, recommendedDps } from "../data/balance";
 import { GADGETS, GADGET_SLOTS, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetIcon, gadgetName, gadgetStats } from "../data/gadgets";
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
-import { RUSH_MS, bossForStage } from "../data/bosses";
+import { RUSH_COOLDOWN_MS, RUSH_MS, bossForStage } from "../data/bosses";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -99,6 +99,9 @@ interface NavTab {
  * the top bar, the battle overlay, rolling, celebrations and popups.
  */
 /** "13d 4h", "5h 12m" or "9m" */
+/** Time until the Boss Rush can be played again (0 = ready). */
+const rushWait = () => Math.max(0, (save.rushReadyAt ?? 0) - Date.now());
+
 const dhm = (ms: number) => {
   const m = Math.floor(ms / 60000);
   const d = Math.floor(m / 1440);
@@ -664,6 +667,11 @@ export class UIScene extends Phaser.Scene implements Host {
       text(this, 0, 44, "BOSS RUSH", 42, "#ffe066", { stroke: 10 }), this.rushNum,
     ], () => {
       unlockAudio();
+      if (rushWait() > 0) {
+        sfx.error();
+        this.toast(`Boss Rush is back in ${dhm(rushWait())}`, "#ffb0b0");
+        return;
+      }
       sfx.click();
       this.confirmStart("rush");
     });
@@ -1038,8 +1046,12 @@ export class UIScene extends Phaser.Scene implements Host {
       const rec = recommendedDps(save.stage);
       this.dpsPill.setValue(`${fmt(dps)} / ${fmt(rec)}`);
       this.dpsPill.value.setColor(dps >= rec ? "#b6ff8a" : "#ffb0a0");
-      // way stronger than this stage: Boss Rush is calling
-      this.rushHint.setVisible(dps >= rec * 1.5);
+      // way stronger than this stage: Boss Rush is calling (when it is ready)
+      const wait = rushWait();
+      this.rushHint.setVisible(dps >= rec * 1.5 && wait === 0);
+      // the Boss Rush card shows its wait and dims until it is ready again
+      this.rushNum.setText(wait > 0 ? `Ready in ${dhm(wait)}` : `Boss ${save.stage}  •  ${RUSH_MS / 1000}s each`);
+      this.rushBtn.setAlpha(wait > 0 ? 0.6 : 1);
       const active = potionActive();
       this.potionBadge.setVisible(active);
       if (active) {
@@ -1602,6 +1614,7 @@ export class UIScene extends Phaser.Scene implements Host {
     if (this.openModal && !this.openModal.root.active) this.openModal = null;
     if (battle.mode !== "lobby" || this.openModal) return;
     const rush = kind === "rush";
+    if (rush && rushWait() > 0) return;
     const ev = kind === "event";
     const def = bossForStage(save.stage);
     const mode = MODE_INFO[ev ? "dice" : modeForStage(save.stage)];
@@ -1610,6 +1623,11 @@ export class UIScene extends Phaser.Scene implements Host {
     let go = false;
     const m = this.showModal(modal(this, w, h, "", rush ? "purple" : "orange", () => {
       this.openModal = null;
+      if (go && rush) {
+        // the wait starts with the rush
+        save.rushReadyAt = Date.now() + RUSH_COOLDOWN_MS;
+        persist();
+      }
       if (go) this.game.events.emit(rush ? "rush-start" : ev ? "event-start" : "battle-start");
     }, undefined, true));
     const b = m.body;
@@ -2054,13 +2072,15 @@ export class UIScene extends Phaser.Scene implements Host {
       b.add([this.add.image(x - 60, top + 640, icon).setScale(0.6), text(this, x + 30, top + 640, v, 40, "#ffffff").setOrigin(0, 0.5).setStroke("#4a2f1d", 7)]);
     });
     b.add(label(this, 0, top + 730, "Get stronger pets and upgrades to beat bosses faster!", 28, "#9a7a5a", 760));
-    if (r.reason !== "done") {
+    // AGAIN only when the 3 hour wait is over (it never is right after a rush)
+    if (r.reason !== "done" && rushWait() === 0) {
       b.add(button(this, -165, h / 2 - 120, 300, 120, "purple", "AGAIN", () => {
         again = true;
         m.close();
       }, { size: 40 }));
     }
-    b.add(button(this, r.reason !== "done" ? 165 : 0, h / 2 - 120, 300, 120, "peach", "LOBBY", () => m.close(), { size: 40 }));
+    if (rushWait() > 0) b.add(text(this, 0, h / 2 - 220, `Boss Rush is back in ${dhm(rushWait())}`, 30, "#b07ad8", { stroke: false }));
+    b.add(button(this, r.reason !== "done" && rushWait() === 0 ? 165 : 0, h / 2 - 120, 300, 120, "peach", "LOBBY", () => m.close(), { size: 40 }));
   }
 
   /** Your hero up close: walking on a lit stage, total damage per second and where it comes from. */

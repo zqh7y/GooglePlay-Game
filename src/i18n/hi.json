@@ -1023,5 +1023,7 @@
 "LANGUAGE": "भाषा",
 "Choose your language": "अपनी भाषा चुनें",
 "The game restarts in the new language": "गेम नई भाषा में फिर से शुरू होगा",
-"SKIP": "छोड़ें"
+"SKIP": "छोड़ें",
+"Boss Rush is back in {0}": "बॉस रश {0} में वापस आएगा",
+"Ready in {0}": "{0} में तैयार"
 }

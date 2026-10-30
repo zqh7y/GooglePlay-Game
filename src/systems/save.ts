@@ -75,6 +75,8 @@ export interface SaveData {
   afk: boolean;
   /** highest Boss Rush boss beaten (the rush starts at your stage: boss n guards stage n) */
   bossRushBest: number;
+  /** when the Boss Rush can be played again (it has a 3 hour wait) */
+  rushReadyAt: number;
   fishing: FishingState;
   /** when this player first started the game (the beginners' Dice Rain event runs 14 days from it) */
   firstPlay: number;
@@ -184,6 +186,7 @@ function fresh(): SaveData {
     rollBatch: 1,
     afk: false,
     bossRushBest: 0,
+    rushReadyAt: 0,
     fishing: freshFishing(),
     tickets: 0,
     passes: [],

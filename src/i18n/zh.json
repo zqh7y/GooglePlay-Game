@@ -1026,5 +1026,7 @@
 "LANGUAGE": "语言",
 "Choose your language": "选择你的语言",
 "The game restarts in the new language": "游戏将以新语言重新启动",
-"SKIP": "跳过"
+"SKIP": "跳过",
+"Boss Rush is back in {0}": "首领连战将在{0}后回归",
+"Ready in {0}": "{0}后就绪"
 }

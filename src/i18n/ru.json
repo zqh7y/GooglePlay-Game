@@ -1025,5 +1025,7 @@
 "LANGUAGE": "ЯЗЫК",
 "Choose your language": "Выбери язык",
 "The game restarts in the new language": "Игра перезапустится на новом языке",
-"SKIP": "ПРОПУСТИТЬ"
+"SKIP": "ПРОПУСТИТЬ",
+"Boss Rush is back in {0}": "Босс-раш вернётся через {0}",
+"Ready in {0}": "Готово через {0}"
 }

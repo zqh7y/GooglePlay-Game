@@ -1014,5 +1014,7 @@
 "LANGUAGE": "DİL",
 "Choose your language": "Dilini seç",
 "The game restarts in the new language": "Oyun yeni dilde yeniden başlar",
-"SKIP": "GEÇ"
+"SKIP": "GEÇ",
+"Boss Rush is back in {0}": "Boss akını {0} sonra geri geliyor",
+"Ready in {0}": "{0} sonra hazır"
 }

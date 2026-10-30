@@ -1023,5 +1023,7 @@
 "LANGUAGE": "اللغة",
 "Choose your language": "اختر لغتك",
 "The game restarts in the new language": "ستُعاد اللعبة باللغة الجديدة",
-"SKIP": "تخطٍّ"
+"SKIP": "تخطٍّ",
+"Boss Rush is back in {0}": "سباق الزعماء يعود بعد {0}",
+"Ready in {0}": "جاهز بعد {0}"
 }

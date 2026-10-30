@@ -80,6 +80,8 @@ export const bossForStage = (stage: number) => BOSSES[Math.min(BOSSES.length - 1
 
 /** Seconds you get to beat each boss in the Boss Rush. */
 export const RUSH_MS = 15000;
+/** The Boss Rush can be played once every 3 hours (counted from when you start one). */
+export const RUSH_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 
 /**
  * Boss Rush boss n guards stage n: beating it moves you on to stage n + 1, so it has to be about as hard

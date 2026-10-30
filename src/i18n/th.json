@@ -1020,5 +1020,7 @@
 "LANGUAGE": "ภาษา",
 "Choose your language": "เลือกภาษาของคุณ",
 "The game restarts in the new language": "เกมจะเริ่มใหม่ในภาษาใหม่",
-"SKIP": "ข้าม"
+"SKIP": "ข้าม",
+"Boss Rush is back in {0}": "บอสรัชจะกลับมาใน {0}",
+"Ready in {0}": "พร้อมใน {0}"
 }

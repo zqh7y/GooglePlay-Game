@@ -1018,5 +1018,7 @@
 "LANGUAGE": "언어",
 "Choose your language": "언어를 선택하세요",
 "The game restarts in the new language": "새 언어로 게임이 다시 시작돼요",
-"SKIP": "건너뛰기"
+"SKIP": "건너뛰기",
+"Boss Rush is back in {0}": "보스 러시는 {0} 후에 다시 열려요",
+"Ready in {0}": "{0} 후 준비"
 }
