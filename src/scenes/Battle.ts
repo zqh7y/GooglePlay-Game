@@ -55,7 +55,7 @@ const ZOOM = 1 / 1.66;
  * long story paths (whose ground objects take their y as depth) stay underneath. */
 const TOP = 100000;
 /** the story's big boss (stage 4) is this much tougher than a Boss Battle's big boss: you start maxed out */
-const BIG_STORY_BOSS = 7;
+const BIG_STORY_BOSS = 5;
 const LOBBY_ZOOM = 0.85;
 const HERO_SPEED = 390;
 /** Pets run after monsters this far from you, and come back if you get farther away. */
