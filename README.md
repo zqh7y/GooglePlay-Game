@@ -540,7 +540,23 @@ hour of fishing brings.
   - **Audio**: Music, Sound, Vibration.
   - **Graphics**: Toaster mode (fewer ground patches and scenery, no zone effects), Zone effects (fog,
     light beams, torch fire, the dizzy edge) and Screen shake.
-  - **Interface**: Damage numbers, HP numbers, and the opening story.
+  - **Interface**: Damage numbers, HP numbers, the opening story, and **Language**.
+- **16 languages**: English, Español, Português, Français, Deutsch, Русский, Türkçe, العربية, עברית, हिन्दी,
+  Bahasa Indonesia, ไทย, Tiếng Việt, 日本語, 한국어 and 简体中文. The game starts in the phone's language (English if
+  it isn't one of them); Settings → Interface → Language picks another (the game restarts in it). Hebrew
+  and Arabic read right to left. How it works (`src/i18n/`): the game is written in English and every text
+  passes through `t()`, hooked in where all text is drawn (Phaser's Text and the canvas used by the drawn
+  signs and ribbons), so nothing else in the code has to know about languages. Each language is a
+  dictionary `src/i18n/<code>.json` from the English text to its translation (about 1,030 texts, only the
+  picked language is loaded). Texts with numbers or names match by pattern ("Next catch in {0}s"), texts
+  put together from parts ("Stage 7  •  CRYSTAL") are translated part by part, and levels in Roman
+  numerals stay as they are. Pet names, tier letters and numbers stay the same in every language. Long
+  words shrink to fit their buttons. In the story, Arabic, Hindi and Thai captions appear a word at a time
+  (their letters join up). Open the game with `?i18ncheck` to collect every shown text that has no
+  translation yet (`window.__missing`).
+- **Low health**: below half health in a fight or the Boss Rush, the edges of the screen turn red, a little
+  at first and more as your health drops; under a quarter, cracks creep in from the corners and the red
+  beats like a heart. It never covers the middle of the screen.
   - **Account**: name (RENAME), Google Play, your best stage and stats, RESET SAVE (tap twice).
 - **The upgrade tree** is a honeycomb of 101 hexagons in six colour-coded branches (luck, rolling, money,
   power, team, gems and potions). Bright = bought, glowing = you can buy it, grey = too expensive, dark "?" = locked.
@@ -605,6 +621,8 @@ hour of fishing brings.
 | `src/art/bossart.ts` | All 20 boss pictures, with moving legs, arms, heads and tails |
 | `src/art/toon.ts`, `src/art/pose.ts` | The cartoon painter (outlines, pro shading) and the walk poses for heads, arms and legs |
 | `src/ui/goalPins.ts` | The big goal markers (air zone, snack, cage) |
+| `src/i18n/index.ts`, `src/i18n/*.json` | Languages: picking one, the text hook and pattern matching, and the 15 dictionaries |
+| `src/ui/hurtScreen.ts` | The red, cracked screen edges at low health |
 | `src/ui/tapRush.ts` | TAP RUSH on the fishing screen: circles, streak, luck and shouts |
 | `src/art/beast.ts` | The beast's jail and stone base, rune ring, poison fog, toxic clouds, puddles and bubbles |
 | `src/ui/treeScreen.ts` | The honeycomb upgrade tree screen |

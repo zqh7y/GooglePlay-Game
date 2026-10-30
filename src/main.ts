@@ -1,4 +1,5 @@
 import { loadFonts } from "./fonts";
+import { collectMissing, installTextHook, loadLang, missing } from "./i18n";
 
 /**
  * Start-up: the 3D loading screen shows while the game loads behind it. New players then see the
@@ -9,6 +10,13 @@ const nextFrame = () => new Promise<void>((res) => requestAnimationFrame(() => r
 
 async function main(): Promise<void> {
   await loadFonts();
+  // the player's language (set before any text is drawn)
+  await loadLang();
+  if (params.has("i18ncheck")) {
+    collectMissing();
+    (window as unknown as { __missing: Set<string> }).__missing = missing;
+  }
+  installTextHook();
   const gameModule = import("./game");
   if (params.has("nointro")) {
     (await gameModule).startGame();

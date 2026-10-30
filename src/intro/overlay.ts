@@ -92,7 +92,7 @@ const TIPS = [
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, html = ""): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   e.className = cls;
-  if (html) e.innerHTML = html;
+  if (html) e.innerHTML = t(html);
   parent.appendChild(e);
   return e;
 }
@@ -134,6 +134,8 @@ export class Overlay {
   private tipIndex = Math.floor(Math.random() * TIPS.length);
   private capText = "";
   private capSpans: HTMLElement[] = [];
+  /** letters before each piece of the caption (it shows once that many letters are due) */
+  private capAt: number[] = [];
 
   constructor() {
     if (!document.getElementById("intro-style")) {
@@ -162,7 +164,7 @@ export class Overlay {
     this.title = el("div", "title", this.story);
     this.flashEl = el("div", "flash", this.root);
     this.fadeEl = el("div", "fade", this.root);
-    this.skipBtn = el("button", "skip", this.root, "SKIP ▸▸");
+    this.skipBtn = el("button", "skip", this.root, `${t("SKIP")} ▸▸`);
     this.skipBtn.type = "button";
     document.body.appendChild(this.root);
   }
@@ -171,13 +173,13 @@ export class Overlay {
   setProgress(f: number, now: number): void {
     const p = Math.round(f * 100);
     this.fill.style.width = `${Math.max(4, p)}%`;
-    this.pct.textContent = `LOADING ${p}%`;
+    this.pct.textContent = t(`LOADING ${p}%`);
     if (now - this.tipAt > 3.2) {
       this.tipAt = now;
       this.tip.style.opacity = "0";
       window.setTimeout(() => {
         this.tipIndex = (this.tipIndex + 1) % TIPS.length;
-        this.tip.innerHTML = TIPS[this.tipIndex];
+        this.tip.innerHTML = t(TIPS[this.tipIndex]);
         this.tip.style.opacity = "1";
       }, 450);
     }
@@ -203,15 +205,21 @@ export class Overlay {
   }
 
   /** The caption under the picture; letters appear one by one (`shown` = how many). */
-  caption(text: string, shown: number, visible: boolean): void {
+  caption(raw: string, shown: number, visible: boolean): void {
+    const text = t(raw);
     if (text !== this.capText) {
       this.capText = text;
       this.cap.innerHTML = "";
       const line = el("div", "", this.cap);
       this.capSpans = [];
+      this.capAt = [];
+      // letters appear one by one; scripts whose letters join up (Arabic, Hindi, Thai) appear a word at a time
+      const joined = /[\u0600-\u06FF\u0900-\u097F\u0E00-\u0E7F]/.test(text);
       // *word* marks a highlighted word
       let hi = false;
-      for (const c of text) {
+      let count = 0;
+      const pieces = joined ? text.split(/(\s+|\*)/).filter((p) => p) : [...text];
+      for (const c of pieces) {
         if (c === "*") {
           hi = !hi;
           continue;
@@ -221,10 +229,12 @@ export class Overlay {
         s.textContent = c;
         line.appendChild(s);
         this.capSpans.push(s);
+        this.capAt.push(count);
+        count += [...c].length;
       }
     }
     this.capSpans.forEach((s, i) => {
-      const on = i < shown;
+      const on = this.capAt[i] < shown;
       if (s.tagName === "EM") s.style.opacity = on ? "1" : "0";
       else s.classList.toggle("on", on);
     });
@@ -260,4 +270,5 @@ export class Overlay {
       }, 750),
     );
   }
-}
+}import { t } from "../i18n";
+

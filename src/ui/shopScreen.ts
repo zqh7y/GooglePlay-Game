@@ -1106,8 +1106,9 @@ export class ShopScreen extends Screen {
     const hot = s.add.container(W - 150, y + 56, [text(s, 0, 0, "HOT!", 44, "#ff8a3a", { stroke: 10 })]).setAngle(10);
     s.tweens.add({ targets: hot, scale: 1.12, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.list.add([eggGlow, egg, hot,
-      text(s, 330, y + 62, "PREMIUM", 64, "#ffffff", { stroke: 13 }).setOrigin(0, 0.5),
-      text(s, 640, y + 66, "Egg", 58, "#ffe066", { stroke: 12 }).setOrigin(0, 0.5),
+      // long words (other languages) shrink to fit their spots
+      fitText(text(s, 330, y + 62, "PREMIUM", 64, "#ffffff", { stroke: 13 }).setOrigin(0, 0.5), 290),
+      fitText(text(s, 640, y + 66, "Egg", 58, "#ffe066", { stroke: 12 }).setOrigin(0, 0.5), 230),
     ]);
     // the five pets and their chances
     PREMIUM.forEach((p, i) => {

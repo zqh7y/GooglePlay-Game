@@ -40,6 +40,8 @@ import { heroMaxHp, teamDps } from "../systems/power";
 import { fmt, luckText, oneIn } from "../ui/format";
 import { MapScreen } from "../ui/mapScreen";
 import { GoalPins } from "../ui/goalPins";
+import { LANGS, lang, setLang } from "../i18n";
+import { HurtScreen } from "../ui/hurtScreen";
 import { PetsScreen, anyLevelReady } from "../ui/petsScreen";
 import { GIFT_EVERY, RollScreen, SUPER_MULT, superEvery } from "../ui/rollScreen";
 import { Host, Screen, Tab } from "../ui/screens";
@@ -141,6 +143,7 @@ export class UIScene extends Phaser.Scene implements Host {
   private petals!: Phaser.GameObjects.Particles.ParticleEmitter;
   private overlayTimer = 0;
   private goalPins!: GoalPins;
+  private hurt!: HurtScreen;
   private shieldText!: Phaser.GameObjects.Text;
   /** the gadget panel: one slot per gadget you carry */
   private gunPanel!: Phaser.GameObjects.Container;
@@ -423,6 +426,7 @@ export class UIScene extends Phaser.Scene implements Host {
         this.goalPins.update(b.goals(), this.L.hudBottom + 30, this.H - 140, time);
       } else this.goalPins.hide();
     } else this.goalPins.hide();
+    this.hurt.update(this.tab === "battle" && !this.mapOpen && battle.mode === "run" ? battle.hp : null, time, delta);
     this.fishing();
     tickPlaytime(delta);
     this.rollScreen.setReadyAt(this.rollReadyAt);
@@ -776,6 +780,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.joyG = this.add.graphics();
     this.hud.add([this.mini, this.overlay, this.joyG]);
     this.goalPins = new GoalPins(this, 11);
+    // low health: red, cracked screen edges (under the HUD)
+    this.hurt = new HurtScreen(this, 5);
     this.countText = text(this, W / 2, H * 0.36, "", 260, "#ffe066").setStroke("#1a1030", 26).setDepth(7400).setVisible(false);
   }
 
@@ -822,11 +828,11 @@ export class UIScene extends Phaser.Scene implements Host {
     shine.setMask(mask.createGeometryMask());
     this.tweens.add({ targets: shine, x: 200, duration: 900, repeat: -1, repeatDelay: 2600, ease: "Sine.inOut" });
     const ribbon = this.add.image(0, -126, "event_ribbon").setScale(0.84);
-    const word = text(this, 0, -132, "EVENT", 32, "#fff3c8");
+    const word = fitText(text(this, 0, -132, "EVENT", 32, "#fff3c8"), 170);
     this.tweens.add({ targets: [ribbon, word], scale: "*=1.06", duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.eventBar = this.add.graphics();
     this.eventText = text(this, 0, 104, "", 22);
-    const c = this.add.container(x, y, [this.eventGlow, card, fish, shine, ribbon, word, text(this, 0, 66, "FISHING", 36), this.eventBar, this.eventText])
+    const c = this.add.container(x, y, [this.eventGlow, card, fish, shine, ribbon, word, fitText(text(this, 0, 66, "FISHING", 36), 220), this.eventBar, this.eventText])
       .setSize(240, 270).setInteractive({ useHandCursor: true });
     c.on("pointerdown", () => this.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
     c.on("pointerout", () => c.setScale(1));
@@ -854,7 +860,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.diceEventTime = text(this, 0, 104, "", 24, "#ffffff", { stroke: 6 });
     const c = this.add.container(x, y, [
       glow, this.add.image(0, 0, vividCard(this, 0xffa040, 230, 250)), shadow, die, ribbon,
-      text(this, 0, -132, "NEW!", 32, "#fff3c8"), text(this, 0, 70, "DICE RAIN", 34, "#ffffff", { stroke: 8 }), this.diceEventTime,
+      text(this, 0, -132, "NEW!", 32, "#fff3c8"), fitText(text(this, 0, 70, "DICE RAIN", 34, "#ffffff", { stroke: 8 }), 220), this.diceEventTime,
     ]).setSize(240, 270).setInteractive({ useHandCursor: true });
     c.on("pointerdown", () => this.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
     c.on("pointerout", () => c.setScale(1));
@@ -2230,6 +2236,10 @@ export class UIScene extends Phaser.Scene implements Host {
         m.close();
         void this.replayStory();
       }));
+      row("icon_globe", "Language", lang().name, action(lang().name, "blue", () => {
+        m.close();
+        this.showLanguages();
+      }));
     } else {
       const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
       row("icon_paw", playerName(), who, action("RENAME", "blue", () => {
@@ -2269,6 +2279,27 @@ export class UIScene extends Phaser.Scene implements Host {
       }, { size: 34 });
       m.body.add(reset);
     }
+  }
+
+  /** The language picker: every language in its own words; picking one restarts the game in it. */
+  private showLanguages(): void {
+    const rows = Math.ceil(LANGS.length / 2);
+    const h = 300 + rows * 116;
+    const m = this.showModal(modal(this, 900, h, "LANGUAGE", "blue", () => (this.openModal = null)));
+    m.body.add(label(this, 0, -h / 2 + 130, "Choose your language", 30, "#5a6a80"));
+    LANGS.forEach((l, i) => {
+      const x = (i % 2 ? 1 : -1) * 205;
+      const y = -h / 2 + 230 + Math.floor(i / 2) * 116;
+      const on = l.code === lang().code;
+      m.body.add(button(this, x, y, 390, 100, on ? "green" : "blue", l.name, () => {
+        if (on) return m.close();
+        sfx.click();
+        setLang(l.code);
+        this.toast("The game restarts in the new language", "#ffe680");
+        persist();
+        this.time.delayedCall(400, () => window.location.reload());
+      }, { size: 34 }));
+    });
   }
 
   /** Scales a picture so its longest side is `size`. */
