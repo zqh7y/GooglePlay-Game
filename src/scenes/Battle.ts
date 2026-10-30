@@ -3371,7 +3371,8 @@ export class BattleScene extends Phaser.Scene {
     }
     const [cx, cy] = this.arena.center;
     if (this.state === "fight") {
-      b.hunger -= delta / HUNGER_MS;
+      // the story's beast is a little more patient (losing it loses the stage)
+      b.hunger -= delta / (HUNGER_MS * (this.story ? 1.35 : 1));
       if (b.hunger <= 0) {
         this.beastEscape();
         return;
