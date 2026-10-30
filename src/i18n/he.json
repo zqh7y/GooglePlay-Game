@@ -1142,5 +1142,12 @@
 "east": "מזרח",
 "The sea is calm. Keep looking for land!": "הים רגוע. המשיכו לחפש יבשה!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "מצאו את האי הגדול לפני שהזמן נגמר! היזהרו מצונאמי",
-"this way!": "מכאן!"
+"this way!": "מכאן!",
+"DOUBLE TSUNAMI!": "צונאמי כפול!",
+"{0} and {1}": "{0} ו{1}",
+"WHIRLPOOL! Don't get sucked in!": "מערבולת! אל תישאבו פנימה!",
+"DIZZY!": "סחרחורת!",
+"Phew! Back to dodging!": "פיו! חוזרים להתחמק!",
+"Five giant waves are coming! Get on an island!": "חמישה גלי ענק בדרך! עלו על אי!",
+"TSUNAMI {0}/{1}": "צונאמי {0}/{1}"
 }

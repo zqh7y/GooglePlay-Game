@@ -1145,5 +1145,12 @@
 "east": "东",
 "The sea is calm. Keep looking for land!": "海面平静了，继续寻找陆地！",
 "Find the big island before the clock runs out! Watch out for tsunamis": "在时间用完前找到大岛！小心海啸",
-"this way!": "这边！"
+"this way!": "这边！",
+"DOUBLE TSUNAMI!": "双重海啸！",
+"{0} and {1}": "{0}和{1}",
+"WHIRLPOOL! Don't get sucked in!": "漩涡！别被吸进去！",
+"DIZZY!": "晕了！",
+"Phew! Back to dodging!": "呼！继续躲！",
+"Five giant waves are coming! Get on an island!": "五道巨浪来了！快上岛！",
+"TSUNAMI {0}/{1}": "海啸 {0}/{1}"
 }

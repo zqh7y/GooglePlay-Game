@@ -1107,5 +1107,12 @@
 "east": "Osten",
 "The sea is calm. Keep looking for land!": "Das Meer ist ruhig. Such weiter nach Land!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "Finde die große Insel, bevor die Zeit abläuft! Vorsicht vor Tsunamis",
-"this way!": "hier entlang!"
+"this way!": "hier entlang!",
+"DOUBLE TSUNAMI!": "DOPPEL-TSUNAMI!",
+"{0} and {1}": "{0} und {1}",
+"WHIRLPOOL! Don't get sucked in!": "STRUDEL! Lass dich nicht reinziehen!",
+"DIZZY!": "SCHWINDELIG!",
+"Phew! Back to dodging!": "Puh! Weiter ausweichen!",
+"Five giant waves are coming! Get on an island!": "Fünf Riesenwellen kommen! Rette dich auf eine Insel!",
+"TSUNAMI {0}/{1}": "TSUNAMI {0}/{1}"
 }

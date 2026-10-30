@@ -235,12 +235,14 @@ hour of fishing brings.
 - **The sea (stage 6, then every 5 stages)**: a small patch of sea that fits on one screen (the camera stays
   put). You ride a little boat; dice fall from the sky, whale shadows grow under you then the whale bursts up,
   purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
-  up every 30 s (1-6). After 3:00 a storm rolls in (rain, lightning) and three tsunami waves rush in from every
-  side, each faster; only the sandy islands that rise before each wave are safe. Survive all three to win.
+  up every 30 s (1-6); surprise tsunamis come from the side at 1:00 and 2:00 and whirlpools open from level 3.
+  After 3:00 a storm rolls in (rain, lightning) and five tsunami waves rush in from every side, each faster
+  with fewer islands; only the sandy islands that rise before each wave are safe. Survive all five to win.
 - **Land Ho! (stage 7, then every 6 stages)**: a big open ocean (6000 x 24000). Sail to find the big island
   (4:00). A rough compass points near it while the sea is calm (truer as you get close, a new guess after
-  each tsunami). Tsunamis come at random from a random side: little islands rise near you and you have a few
-  seconds to get on one before the wall of water sweeps across.
+  each tsunami). Tsunamis come every 10-18 s from a random side and get meaner each time (less warning,
+  quicker waves, fewer and farther islands; from the 3rd on, sometimes two sides at once). Whirlpools open
+  near you and pull you in; dice fall from the sky.
 - **Tsunami waves** are towering walls of water: a curling white crest, deep blue body with streaks, a dark
   shadow running ahead, foam and spray off the top; they rise as they come, roar and shake the screen.
 - **The lobby shows the next stage**: the camp, the ruined village, the caged beast, the road to the sea, a

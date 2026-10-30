@@ -1139,5 +1139,12 @@
 "east": "ตะวันออก",
 "The sea is calm. Keep looking for land!": "ทะเลสงบแล้ว ตามหาแผ่นดินต่อ!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "หาเกาะใหญ่ให้เจอก่อนหมดเวลา! ระวังสึนามิ",
-"this way!": "ทางนี้!"
+"this way!": "ทางนี้!",
+"DOUBLE TSUNAMI!": "สึนามิสองลูก!",
+"{0} and {1}": "{0}และ{1}",
+"WHIRLPOOL! Don't get sucked in!": "น้ำวน! อย่าโดนดูดเข้าไป!",
+"DIZZY!": "มึน!",
+"Phew! Back to dodging!": "เฮ้อ! กลับไปหลบต่อ!",
+"Five giant waves are coming! Get on an island!": "คลื่นยักษ์ห้าลูกกำลังมา! ขึ้นเกาะเร็ว!",
+"TSUNAMI {0}/{1}": "สึนามิ {0}/{1}"
 }

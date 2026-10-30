@@ -1142,5 +1142,12 @@
 "east": "الشرق",
 "The sea is calm. Keep looking for land!": "البحر هادئ. واصل البحث عن اليابسة!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "اعثر على الجزيرة الكبيرة قبل انتهاء الوقت! احذر التسونامي",
-"this way!": "من هنا!"
+"this way!": "من هنا!",
+"DOUBLE TSUNAMI!": "تسونامي مزدوج!",
+"{0} and {1}": "{0} و{1}",
+"WHIRLPOOL! Don't get sucked in!": "دوامة! لا تنجرف إليها!",
+"DIZZY!": "دوار!",
+"Phew! Back to dodging!": "فيو! عودة إلى التفادي!",
+"Five giant waves are coming! Get on an island!": "خمس موجات عملاقة قادمة! اصعد إلى جزيرة!",
+"TSUNAMI {0}/{1}": "تسونامي {0}/{1}"
 }

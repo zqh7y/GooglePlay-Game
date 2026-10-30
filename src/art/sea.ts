@@ -320,6 +320,34 @@ export function makeSeaTextures(scene: Phaser.Scene): void {
       c.fill();
     }
   });
+  // a whirlpool: a dark funnel of water with white foam spiralling into it (it spins)
+  canvasTexture(scene, "whirlpool", 360, 360, (c) => {
+    const g = c.createRadialGradient(180, 180, 6, 180, 180, 175);
+    g.addColorStop(0, "#04122e");
+    g.addColorStop(0.3, "#0e3a7a");
+    g.addColorStop(0.75, "#2a7ad8");
+    g.addColorStop(1, "rgba(42,122,216,0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(180, 180, 175, 0, Math.PI * 2);
+    c.fill();
+    c.lineCap = "round";
+    for (let arm = 0; arm < 4; arm++) {
+      c.strokeStyle = `rgba(255,255,255,${0.75 - arm * 0.1})`;
+      c.lineWidth = 9 - arm;
+      c.beginPath();
+      for (let k = 0; k <= 60; k++) {
+        const t = k / 60;
+        const a = arm * (Math.PI / 2) + t * Math.PI * 2.6;
+        const r = 160 * (1 - t) + 14;
+        const [x, y] = [180 + Math.cos(a) * r, 180 + Math.sin(a) * r];
+        if (k === 0) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+  });
+
   // the shadow the wave throws ahead of itself on the water
   canvasTexture(scene, "tsunami_shade", 8, 128, (c) => {
     const g = c.createLinearGradient(0, 0, 0, 128);

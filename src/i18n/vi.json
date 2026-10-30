@@ -1135,5 +1135,12 @@
 "east": "đông",
 "The sea is calm. Keep looking for land!": "Biển đã lặng. Tiếp tục tìm đất liền!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "Tìm hòn đảo lớn trước khi hết giờ! Coi chừng sóng thần",
-"this way!": "lối này!"
+"this way!": "lối này!",
+"DOUBLE TSUNAMI!": "SÓNG THẦN KÉP!",
+"{0} and {1}": "{0} và {1}",
+"WHIRLPOOL! Don't get sucked in!": "XOÁY NƯỚC! Đừng để bị hút vào!",
+"DIZZY!": "CHÓNG MẶT!",
+"Phew! Back to dodging!": "Phù! Tiếp tục né thôi!",
+"Five giant waves are coming! Get on an island!": "Năm con sóng khổng lồ đang tới! Lên đảo ngay!",
+"TSUNAMI {0}/{1}": "SÓNG THẦN {0}/{1}"
 }

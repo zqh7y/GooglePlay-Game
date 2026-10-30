@@ -1133,5 +1133,12 @@
 "east": "doğu",
 "The sea is calm. Keep looking for land!": "Deniz sakin. Kara aramaya devam et!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "Süre bitmeden büyük adayı bul! Tsunamilere dikkat",
-"this way!": "bu taraftan!"
+"this way!": "bu taraftan!",
+"DOUBLE TSUNAMI!": "ÇİFTE TSUNAMİ!",
+"{0} and {1}": "{0} ve {1}",
+"WHIRLPOOL! Don't get sucked in!": "GİRDAP! İçine çekilme!",
+"DIZZY!": "BAŞ DÖNMESİ!",
+"Phew! Back to dodging!": "Oh be! Kaçmaya devam!",
+"Five giant waves are coming! Get on an island!": "Beş dev dalga geliyor! Bir adaya çık!",
+"TSUNAMI {0}/{1}": "TSUNAMİ {0}/{1}"
 }

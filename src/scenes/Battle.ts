@@ -62,6 +62,8 @@ const BIG_STORY_BOSS = 5;
 const SEA_MS = 180000;
 /** Land Ho!: time to find the big island */
 const OCEAN_MS = 240000;
+/** the sea's finale: this many tsunami waves */
+const SEA_WAVES = 5;
 
 /** A tsunami wave: the wall of water and the shadow it throws ahead; `side` is where it comes from (0 top, 1 bottom, 2 left, 3 right). */
 interface Wave {
@@ -549,7 +551,7 @@ export class BattleScene extends Phaser.Scene {
   private halfSaid = false;
   /** the sea stage: attack level, timers, your boat, the tsunami's waves and the islands */
   private sea = {
-    lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0,
+    lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0, surprise: 0,
     under: new Set<Enemy>(), bubT: 0,
     tsunami: 0, phase: "calm" as "calm" | "warn" | "wave" | "rest", phaseT: 0, waveP: 0, hit: false,
     waves: [] as Wave[], islands: [] as { x: number; y: number; r: number; objs: Phaser.GameObjects.GameObject[] }[],
@@ -558,11 +560,14 @@ export class BattleScene extends Phaser.Scene {
   /** Land Ho!: where the big island is, the next tsunami, the wave and the little islands to hide on */
   private ocean = {
     x: 0, y: 0, img: null as Phaser.GameObjects.Image | null, nextT: 20000, phase: "calm" as "calm" | "warn" | "wave",
-    phaseT: 0, wave: null as Wave | null, from: 0, to: 0, hit: false, found: false, gx: 0, gy: 0,
+    phaseT: 0, wave: null as Wave | null, from: 0, to: 0, hit: false, found: false, gx: 0, gy: 0, count: 0,
   };
   private boat: Phaser.GameObjects.Image | null = null;
   /** Land Ho!: where the wave starts and ends this time */
-  private oceanSpan: [number, number] = [0, 0];
+  /** a tsunami from the side (Land Ho!, and the sea's surprise waves) */
+  private side = { phase: "calm" as "calm" | "warn" | "wave", t: 0, dur: 0, sides: [] as number[], waves: [] as { w: Wave; from: number; span: [number, number]; hit: boolean }[] };
+  /** whirlpools pulling you in */
+  private whirl = { t: 9000, list: [] as { x: number; y: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Ellipse; life: number; hurtT: number }[] };
   /** things you cannot walk through (houses, ruins, the gate's posts) */
   private solids: Phaser.Geom.Rectangle[] = [];
   private shieldImg!: Phaser.GameObjects.Image;
@@ -732,10 +737,12 @@ export class BattleScene extends Phaser.Scene {
     this.paceT = 12000;
     this.ambientT = 6000;
     this.halfSaid = false;
-    this.sea = { lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0, under: new Set(), bubT: 0, tsunami: 0, phase: "calm", phaseT: 0, waveP: 0, hit: false, waves: [], islands: [], rain: null };
+    this.sea = { lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0, surprise: 0, under: new Set(), bubT: 0, tsunami: 0, phase: "calm", phaseT: 0, waveP: 0, hit: false, waves: [], islands: [], rain: null };
     this.boat = null;
     this.solids = [];
-    this.ocean = { x: 0, y: 0, img: null, nextT: 20000, phase: "calm", phaseT: 0, wave: null, from: 0, to: 0, hit: false, found: false, gx: 0, gy: 0 };
+    this.ocean = { x: 0, y: 0, img: null, nextT: 11000, phase: "calm", phaseT: 0, wave: null, from: 0, to: 0, hit: false, found: false, gx: 0, gy: 0, count: 0 };
+    this.side = { phase: "calm", t: 0, dur: 0, sides: [], waves: [] };
+    this.whirl = { t: 9000, list: [] };
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -2837,7 +2844,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.state !== "fight" || this.stageMode === "boss") return;
     // the tsunami washes the monsters away
     if (this.stageMode === "sea" && this.sea.tsunami > 0) return;
-    if (this.stageMode === "ocean" && this.ocean.phase === "wave") return;
+    if (this.stageMode === "ocean" && this.side.phase === "wave") return;
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0) {
       // the first stages go a little easier on new players
@@ -3124,6 +3131,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "ocean") {
       const o = this.ocean;
       if (j === "boss") o.nextT = 0;
+      if (j === "boss") o.count = 3;
       else {
         const f = j === "mid" ? 0.5 : 0.88;
         this.hero.setPosition(this.hero.x + (o.x - this.hero.x) * f, this.hero.y + (o.y + 300 - this.hero.y) * f);
@@ -3207,7 +3215,7 @@ export class BattleScene extends Phaser.Scene {
     const sea = this.sea;
     this.boatTick(delta);
     if (!fighting) return;
-    if (!sea.tsunami) this.seaMonsters(delta);
+    if (!sea.tsunami && this.side.phase !== "wave") this.seaMonsters(delta);
     // gulls fly over the sea now and then
     sea.gullT -= delta;
     if (sea.gullT <= 0) {
@@ -3220,6 +3228,14 @@ export class BattleScene extends Phaser.Scene {
     }
     const left = SEA_MS - this.elapsed;
     battle.left = Math.max(0, left);
+    // surprise tsunamis from the side at 1:00 and 2:00, whirlpools from attack level 3
+    if (this.side.phase !== "calm") {
+      if (this.sideTick(delta)) this.toast("Phew! Back to dodging!", "#b6ff8a");
+    } else if (left > 3000 && ((this.elapsed >= 60000 && sea.surprise < 1) || (this.elapsed >= 120000 && sea.surprise < 2))) {
+      sea.surprise++;
+      this.startSideTsunami(sea.surprise * 2);
+    }
+    if (sea.lv >= 3) this.whirlTick(delta, 14000);
     const lv = Math.min(6, 1 + Math.floor(this.elapsed / 30000));
     if (lv > sea.lv) {
       sea.lv = lv;
@@ -3248,7 +3264,7 @@ export class BattleScene extends Phaser.Scene {
       sea.tentT = Math.max(2000, 5400 - lv * 500);
       this.tentacles(1 + Math.floor(lv / 2));
     }
-    if (left <= 0) this.startTsunami();
+    if (left <= 0 && this.side.phase === "calm") this.startTsunami();
   }
 
   /**
@@ -3429,7 +3445,7 @@ export class BattleScene extends Phaser.Scene {
     battle.limit = 0;
     for (const e of [...this.enemies]) this.kill(e, true);
     this.banner("TSUNAMI!", "red", 1400);
-    this.toast("Three giant waves are coming! Get on an island!", "#9ad8ff");
+    this.toast("Five giant waves are coming! Get on an island!", "#9ad8ff");
     sfx.alarm();
     sfx.thunder();
     this.cameras.main.flash(200, 255, 255, 255);
@@ -3493,13 +3509,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** A wave rolls over you: safe on an island, or swept away (a big hit, a tumble and a splash). */
-  private waveHits(): void {
+  private waveHits(share = 0.5): void {
     if (this.onIsland()) {
       this.callout("SAFE!", "#b6ff8a");
       sfx.levelUp();
       return;
     }
-    this.hurt(this.heroMax * 0.5);
+    this.hurt(this.heroMax * share);
     this.splash(this.hero.x, this.hero.y, 60, 2.2);
     this.cameras.main.shake(600, 0.022);
     this.cameras.main.flash(250, 120, 200, 255);
@@ -3530,7 +3546,7 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: o.img, y: o.img.y - 8, duration: 1600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.boat = this.add.image(this.hero.x, this.hero.y + 20, "sea_boat").setOrigin(0.5, 0.7).setScale(1.1);
     battle.limit = OCEAN_MS;
-    o.nextT = 18000 + Math.random() * 6000;
+    o.nextT = 10000 + Math.random() * 4000;
     this.time.delayedCall(1700, () => this.toast("Find the big island before the clock runs out! Watch out for tsunamis", "#a8e8ff"));
   }
 
@@ -3558,10 +3574,10 @@ export class BattleScene extends Phaser.Scene {
       this.stageLost("time");
       return;
     }
-    if (o.phase !== "wave") this.seaMonsters(delta);
+    if (this.side.phase !== "wave") this.seaMonsters(delta);
     // a tentacle now and then
     sea.tentT -= delta;
-    if (sea.tentT <= 0 && o.phase === "calm") {
+    if (sea.tentT <= 0 && this.side.phase === "calm") {
       sea.tentT = 7000 + Math.random() * 4000;
       this.tentacles(1 + (this.elapsed > 120000 ? 1 : 0));
     }
@@ -3577,71 +3593,151 @@ export class BattleScene extends Phaser.Scene {
       this.stageWon();
       return;
     }
-    o.phaseT -= delta;
-    if (o.phase === "calm") {
+    // a die from the sky now and then, and whirlpools
+    sea.diceT -= delta;
+    if (sea.diceT <= 0 && this.side.phase !== "wave") {
+      sea.diceT = 3500 + Math.random() * 2500;
+      const a = Math.random() * Math.PI * 2;
+      this.dropBigDie(clampX(this.hero.x + Math.cos(a) * 250), clampY(this.hero.y + Math.sin(a) * 250));
+    }
+    this.whirlTick(delta, 12000);
+    // tsunamis: more often and meaner as they come (less warning, quicker, fewer islands, two sides at once)
+    if (this.side.phase === "calm") {
       o.nextT -= delta;
-      if (o.nextT > 0) return;
-      // a tsunami is coming: little islands rise near you, 4.5 s to get on one
-      o.phase = "warn";
-      o.phaseT = 4500;
-      o.hit = false;
-      for (const isl of sea.islands) isl.objs.forEach((ob) => ob.destroy());
-      sea.islands = [];
-      for (let tries = 0; sea.islands.length < 3 && tries < 100; tries++) {
-        const ang = Math.random() * Math.PI * 2;
-        const d = 450 + Math.random() * 550;
-        const [x, y] = [clampX(this.hero.x + Math.cos(ang) * d), clampY(this.hero.y + Math.sin(ang) * d * 0.9)];
-        if (sea.islands.some((q) => Math.hypot(q.x - x, q.y - y) < 500)) continue;
-        sea.islands.push(this.miniIsland(x, y));
+      if (o.nextT <= 0) {
+        o.count++;
+        this.startSideTsunami(o.count);
+        o.nextT = Math.max(7000, 10000 + Math.random() * 8000 - o.count * 400);
       }
-      o.from = Math.floor(Math.random() * 4);
-      this.banner("TSUNAMI COMING!", "red", 1200);
-      this.toast(`From the ${["north", "south", "west", "east"][o.from]}! Get on an island!`, "#9ad8ff");
-      this.game.events.emit("hurry", true);
-      sfx.alarm();
-      this.tweens.add({ targets: this.gloom, fillAlpha: 0.25, duration: 800 });
       return;
     }
+    if (this.sideTick(delta)) {
+      this.oceanGuess();
+      this.toast("The sea is calm. Keep looking for land!", "#b6ff8a");
+    }
+  }
+
+  /**
+   * A tsunami from one side (from the 3rd on, sometimes two) sweeping right across the view. Little
+   * islands rise near you first; the higher `level`, the less warning, the quicker the wave and the
+   * fewer the islands.
+   */
+  private startSideTsunami(level: number): void {
+    const sea = this.sea;
+    const st = this.side;
+    for (const isl of sea.islands) isl.objs.forEach((ob) => ob.destroy());
+    sea.islands = [];
+    const n = level >= 5 ? 2 : 3;
+    for (let tries = 0; sea.islands.length < n && tries < 120; tries++) {
+      const ang = Math.random() * Math.PI * 2;
+      const d = 500 + Math.min(400, level * 60) + Math.random() * 500;
+      const [x, y] = [clampX(this.hero.x + Math.cos(ang) * d), clampY(this.hero.y + Math.sin(ang) * d * 0.9)];
+      if (sea.islands.some((q) => Math.hypot(q.x - x, q.y - y) < 500)) continue;
+      sea.islands.push(this.miniIsland(x, y));
+    }
+    const first = Math.floor(Math.random() * 4);
+    st.sides = [first];
+    if (level >= 3 && Math.random() < 0.55) st.sides.push([1, 0, 3, 2, 2, 3, 0, 1][first * 2 + Math.floor(Math.random() * 2)]);
+    st.phase = "warn";
+    st.t = Math.max(2200, 4200 - level * 300);
+    st.dur = Math.max(2600, 4200 - level * 250);
+    st.waves = [];
+    const names = st.sides.map((x) => ["north", "south", "west", "east"][x]);
+    this.banner(st.sides.length > 1 ? "DOUBLE TSUNAMI!" : "TSUNAMI COMING!", "red", 1200);
+    this.toast(`From the ${names.join(" and ")}! Get on an island!`, "#9ad8ff");
+    this.game.events.emit("hurry", true);
+    sfx.alarm();
+    this.tweens.add({ targets: this.gloom, fillAlpha: 0.25, duration: 800 });
+  }
+
+  /** Runs a side tsunami; true once it has passed. */
+  private sideTick(delta: number): boolean {
+    const st = this.side;
+    const sea = this.sea;
+    st.t -= delta;
     const v = this.cameras.main.worldView;
-    const span = o.from < 2 ? v.height : v.width;
-    if (o.phase === "warn") {
-      if (o.phaseT > 0) return;
-      // here it comes, across the whole view
-      o.phase = "wave";
-      o.phaseT = 4200;
-      o.wave = this.makeWave(o.from, Math.max(v.width, v.height) + 2400);
-      // the wave sweeps the monsters away
-      for (const e of [...this.enemies]) if (!e.type.flying) this.kill(e, true);
-      const c = o.from < 2 ? this.hero.y : this.hero.x;
-      const sign = o.from === 0 || o.from === 2 ? 1 : -1;
-      this.oceanSpan = [c - sign * (span / 2 + 500), c + sign * (span / 2 + 700)];
+    if (st.phase === "warn") {
+      if (st.t > 0) return false;
+      st.phase = "wave";
+      st.t = st.dur;
+      for (const from of st.sides) {
+        const span = from < 2 ? v.height : v.width;
+        const c = from < 2 ? this.hero.y : this.hero.x;
+        const sign = from === 0 || from === 2 ? 1 : -1;
+        st.waves.push({ w: this.makeWave(from, Math.max(v.width, v.height) + 2400), from, span: [c - sign * (span / 2 + 500), c + sign * (span / 2 + 700)], hit: false });
+      }
+      // the waves sweep the monsters away
+      for (const e of [...this.enemies]) if (!e.type.flying && !e.type.boss) this.kill(e, true);
       this.waveRoar();
-      return;
+      return false;
     }
-    if (o.phase === "wave" && o.wave) {
-      const k = 1 - Math.max(0, o.phaseT) / 4200;
-      const [p0, p1] = this.oceanSpan;
-      const pos = p0 + (p1 - p0) * k;
-      const along = o.from < 2 ? this.hero.x : this.hero.y;
-      this.placeWave(o.wave, pos, along, 0.35 + 0.65 * Math.min(1, k * 3));
-      const me = o.from < 2 ? this.hero.y : this.hero.x;
-      const passed = o.from === 0 || o.from === 2 ? pos > me : pos < me;
-      if (passed && !o.hit) {
-        o.hit = true;
-        this.waveHits();
-      }
-      if (o.phaseT <= 0) {
-        this.dropWave(o.wave);
-        o.wave = null;
-        o.phase = "calm";
-        o.nextT = 22000 + Math.random() * 16000;
-        for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, y: "+=40", duration: 700, onComplete: () => isl.objs.forEach((ob) => ob.destroy()) });
-        sea.islands = [];
-        this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1200 });
-        this.oceanGuess();
-        this.toast("The sea is calm. Keep looking for land!", "#b6ff8a");
+    if (st.phase !== "wave") return false;
+    const k = 1 - Math.max(0, st.t) / st.dur;
+    for (const wv of st.waves) {
+      const pos = wv.span[0] + (wv.span[1] - wv.span[0]) * k;
+      this.placeWave(wv.w, pos, wv.from < 2 ? this.hero.x : this.hero.y, 0.35 + 0.65 * Math.min(1, k * 3));
+      const me = wv.from < 2 ? this.hero.y : this.hero.x;
+      if (!wv.hit && (wv.from === 0 || wv.from === 2 ? pos > me : pos < me)) {
+        wv.hit = true;
+        // two at once hit a bit softer each (both together never take all your health)
+        this.waveHits(st.waves.length > 1 ? 0.4 : 0.55);
       }
     }
+    if (st.t > 0) return false;
+    for (const wv of st.waves) this.dropWave(wv.w);
+    st.waves = [];
+    st.phase = "calm";
+    for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, y: "+=40", duration: 700, onComplete: () => isl.objs.forEach((ob) => ob.destroy()) });
+    sea.islands = [];
+    this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1200 });
+    return true;
+  }
+
+  /** Whirlpools open near you every so often: they spin, pull you in, and hurt in the middle. */
+  private whirlTick(delta: number, every: number): void {
+    const w = this.whirl;
+    w.t -= delta;
+    if (w.t <= 0 && w.list.length < 2 && this.side.phase === "calm") {
+      w.t = every * (0.8 + Math.random() * 0.5);
+      const a = Math.random() * Math.PI * 2;
+      const d = 380 + Math.random() * 450;
+      const [x, y] = [clampX(this.hero.x + Math.cos(a) * d), clampY(this.hero.y + Math.sin(a) * d)];
+      const img = this.add.image(x, y, "whirlpool").setDepth(2).setScale(0).setAlpha(0.95);
+      this.tweens.add({ targets: img, scale: 1.8, duration: 700, ease: "Back.out" });
+      this.tweens.add({ targets: img, angle: -360, duration: 1400, repeat: -1 });
+      const ring = this.add.ellipse(x, y, 700, 700).setStrokeStyle(8, 0xffffff, 0.6).setDepth(3);
+      this.tweens.add({ targets: ring, scale: 0.5, alpha: 0.1, duration: 900, repeat: -1 });
+      w.list.push({ x, y, img, ring, life: 9000, hurtT: 0 });
+      this.toast("WHIRLPOOL! Don't get sucked in!", "#9ad8ff");
+      sfx.whoosh();
+    }
+    w.list = w.list.filter((p) => {
+      p.life -= delta;
+      if (p.life <= 0) {
+        this.tweens.add({ targets: [p.img, p.ring], scale: 0, alpha: 0, duration: 500, onComplete: () => {
+          p.img.destroy();
+          p.ring.destroy();
+        } });
+        return false;
+      }
+      const dx = p.x - this.hero.x;
+      const dy = p.y - this.hero.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 340 && d > 1) {
+        // pulled in, harder near the middle
+        const pull = (60 + 260 * (1 - d / 340)) * (delta / 1000);
+        this.hero.x = clampX(this.hero.x + (dx / d) * pull);
+        this.hero.y = clampY(this.hero.y + (dy / d) * pull);
+        p.hurtT -= delta;
+        if (d < 100 && p.hurtT <= 0) {
+          p.hurtT = 500;
+          this.hurt(this.heroMax * 0.06);
+          this.splash(this.hero.x, this.hero.y, 6, 0.6);
+          this.callout("DIZZY!", "#9ad8ff");
+        }
+      }
+      return true;
+    });
   }
 
   /** Islands rise somewhere new; a few seconds later the wave comes from every side. */
@@ -3650,14 +3746,14 @@ export class BattleScene extends Phaser.Scene {
     for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, scale: 0.5, duration: 400, onComplete: () => isl.objs.forEach((o) => o.destroy()) });
     sea.islands = [];
     const a = this.arena;
-    const n = 4 - Math.min(2, sea.tsunami - 1);
+    const n = [4, 3, 3, 2, 2][sea.tsunami - 1] ?? 2;
     for (let tries = 0; sea.islands.length < n && tries < 200; tries++) {
       const [x, y] = [300 + Math.random() * (a.w - 600), 520 + Math.random() * (a.h - 900)];
       if (sea.islands.some((q) => Math.hypot(q.x - x, q.y - y) < 600)) continue;
       sea.islands.push(this.miniIsland(x, y));
     }
     sea.phase = "warn";
-    sea.phaseT = [3200, 2600, 2200][sea.tsunami - 1];
+    sea.phaseT = [3200, 2800, 2500, 2200, 2000][sea.tsunami - 1] ?? 2000;
     sea.hit = false;
     this.banner(`WAVE ${sea.tsunami}!`, "blue", 900);
     sfx.hurry();
@@ -3682,7 +3778,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (sea.phase === "wave") {
-      const dur = [6500, 4800, 3400][sea.tsunami - 1];
+      const dur = [6000, 5000, 4200, 3500, 3000][sea.tsunami - 1] ?? 3000;
       sea.waveP = Math.min(1, sea.waveP + delta / dur);
       const p = sea.waveP;
       const [top, bottom, left, right] = [(p * a.h) / 2, a.h - (p * a.h) / 2, (p * a.w) / 2, a.w - (p * a.w) / 2];
@@ -3706,7 +3802,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (sea.phase === "rest" && sea.phaseT <= 0) {
-      if (sea.tsunami >= 3) {
+      if (sea.tsunami >= SEA_WAVES) {
         sea.rain?.destroy();
         sea.rain = null;
         this.banner("YOU SURVIVED THE SEA!", "gold", 1200);
@@ -4111,7 +4207,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "ocean") {
       const o = this.ocean;
-      if (o.phase !== "calm") {
+      if (this.side.phase !== "calm") {
         const safe = this.onIsland();
         return { frac: 1, text: safe ? "SAFE ON THE ISLAND" : "TSUNAMI! GET ON AN ISLAND!", color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
       }
@@ -4121,9 +4217,13 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "sea") {
       const sea = this.sea;
+      if (!sea.tsunami && this.side.phase !== "calm") {
+        const safe = this.onIsland();
+        return { frac: 1, text: safe ? "SAFE ON THE ISLAND" : "TSUNAMI! GET ON AN ISLAND!", color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
+      }
       if (sea.tsunami) {
         const safe = this.onIsland();
-        return { frac: sea.phase === "wave" ? sea.waveP : 0, text: `TSUNAMI ${sea.tsunami}/3  •  ${safe ? "SAFE ON THE ISLAND" : "GET ON AN ISLAND!"}`, color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
+        return { frac: sea.phase === "wave" ? sea.waveP : 0, text: `TSUNAMI ${sea.tsunami}/${SEA_WAVES}  •  ${safe ? "SAFE ON THE ISLAND" : "GET ON AN ISLAND!"}`, color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
       }
       return { frac: Math.min(1, sea.lv / 6), text: `ATTACK LEVEL ${sea.lv}`, color: sea.lv >= 5 ? 0xf26464 : 0x4fa8ff, icon: "mode_sea", alarm: false };
     }
@@ -6932,14 +7032,14 @@ export class BattleScene extends Phaser.Scene {
     if (this.stageMode === "ocean" && this.state === "fight") {
       // a rough compass: it points near the island, more truly the closer you get
       const o = this.ocean;
-      if (o.phase === "calm") {
+      if (this.side.phase === "calm") {
         const far = Math.hypot(this.hero.x - o.x, this.hero.y - o.y);
         const k = Math.min(1, far / 9000);
         const near = far < 2200;
         out.push({ x: o.x + o.gx * k, y: o.y - 200 + o.gy * k, icon: "sea_bigisland", label: near ? "LAND HO!" : "LAND?", color: near ? 0x7ad651 : 0xa8e8ff });
       }
     }
-    if ((this.stageMode === "sea" && this.sea.tsunami || this.stageMode === "ocean" && this.ocean.phase !== "calm") && !this.onIsland()) {
+    if (((this.stageMode === "sea" || this.stageMode === "ocean") && (this.sea.tsunami || this.side.phase !== "calm")) && !this.onIsland()) {
       const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
       const near = this.sea.islands.reduce<{ x: number; y: number } | null>((a, c) => (!a || d(c) < d(a) ? c : a), null);
       if (near) out.push({ x: near.x, y: near.y - 60, icon: "sea_island", label: "ISLAND!", color: 0x7ad651 });

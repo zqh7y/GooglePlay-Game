@@ -1139,5 +1139,12 @@
 "east": "東",
 "The sea is calm. Keep looking for land!": "海が静かになった。陸を探し続けよう！",
 "Find the big island before the clock runs out! Watch out for tsunamis": "時間切れまでに大きな島を見つけよう！津波に注意",
-"this way!": "こっち！"
+"this way!": "こっち！",
+"DOUBLE TSUNAMI!": "ダブル津波！",
+"{0} and {1}": "{0}と{1}",
+"WHIRLPOOL! Don't get sucked in!": "渦潮！吸い込まれるな！",
+"DIZZY!": "目が回る！",
+"Phew! Back to dodging!": "ふう！またよけよう！",
+"Five giant waves are coming! Get on an island!": "巨大な波が5つ来る！島に上がれ！",
+"TSUNAMI {0}/{1}": "津波 {0}/{1}"
 }

@@ -1137,5 +1137,12 @@
 "east": "동",
 "The sea is calm. Keep looking for land!": "바다가 잔잔해졌어요. 계속 육지를 찾아요!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "시간이 끝나기 전에 큰 섬을 찾아요! 쓰나미 조심",
-"this way!": "이쪽!"
+"this way!": "이쪽!",
+"DOUBLE TSUNAMI!": "이중 쓰나미!",
+"{0} and {1}": "{0}과 {1}",
+"WHIRLPOOL! Don't get sucked in!": "소용돌이! 빨려 들어가지 마요!",
+"DIZZY!": "어지러워!",
+"Phew! Back to dodging!": "휴! 다시 피하기!",
+"Five giant waves are coming! Get on an island!": "거대한 파도 다섯 개가 와요! 섬으로 올라가요!",
+"TSUNAMI {0}/{1}": "쓰나미 {0}/{1}"
 }

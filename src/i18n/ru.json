@@ -1144,5 +1144,12 @@
 "east": "востока",
 "The sea is calm. Keep looking for land!": "Море спокойно. Продолжай искать землю!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "Найди большой остров, пока не кончилось время! Берегись цунами",
-"this way!": "сюда!"
+"this way!": "сюда!",
+"DOUBLE TSUNAMI!": "ДВОЙНОЕ ЦУНАМИ!",
+"{0} and {1}": "{0} и {1}",
+"WHIRLPOOL! Don't get sucked in!": "ВОДОВОРОТ! Не дай себя затянуть!",
+"DIZZY!": "ГОЛОВА КРУЖИТСЯ!",
+"Phew! Back to dodging!": "Фух! Снова уворачиваемся!",
+"Five giant waves are coming! Get on an island!": "Идут пять гигантских волн! Забирайся на остров!",
+"TSUNAMI {0}/{1}": "ЦУНАМИ {0}/{1}"
 }

@@ -1120,5 +1120,12 @@
 "east": "timur",
 "The sea is calm. Keep looking for land!": "Lautnya tenang. Terus cari daratan!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "Temukan pulau besar sebelum waktu habis! Awas tsunami",
-"this way!": "lewat sini!"
+"this way!": "lewat sini!",
+"DOUBLE TSUNAMI!": "TSUNAMI GANDA!",
+"{0} and {1}": "{0} dan {1}",
+"WHIRLPOOL! Don't get sucked in!": "PUSARAN AIR! Jangan sampai tersedot!",
+"DIZZY!": "PUSING!",
+"Phew! Back to dodging!": "Fiuh! Kembali menghindar!",
+"Five giant waves are coming! Get on an island!": "Lima gelombang raksasa datang! Naik ke pulau!",
+"TSUNAMI {0}/{1}": "TSUNAMI {0}/{1}"
 }

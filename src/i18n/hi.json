@@ -1142,5 +1142,12 @@
 "east": "पूर्व",
 "The sea is calm. Keep looking for land!": "समुद्र शांत है। ज़मीन ढूँढते रहो!",
 "Find the big island before the clock runs out! Watch out for tsunamis": "समय खत्म होने से पहले बड़ा द्वीप ढूँढो! सुनामी से सावधान",
-"this way!": "इधर से!"
+"this way!": "इधर से!",
+"DOUBLE TSUNAMI!": "दोहरी सुनामी!",
+"{0} and {1}": "{0} और {1}",
+"WHIRLPOOL! Don't get sucked in!": "भँवर! अंदर मत खिंचो!",
+"DIZZY!": "चक्कर!",
+"Phew! Back to dodging!": "उफ़! फिर से बचो!",
+"Five giant waves are coming! Get on an island!": "पाँच बड़ी लहरें आ रही हैं! किसी द्वीप पर चढ़ो!",
+"TSUNAMI {0}/{1}": "सुनामी {0}/{1}"
 }
