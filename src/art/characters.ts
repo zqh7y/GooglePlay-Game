@@ -4,8 +4,7 @@ import {
   starPath, twinkle,
 } from "./draw";
 import { Toon, toon } from "./toon";
-import { octopus } from "./sea";
-import { WALK_KEYS, WALK_POSES, arms, head, legs, squash, withPose } from "./pose";
+import { WALK_KEYS, WALK_POSES, arms, head, legs, pose, squash, withPose } from "./pose";
 
 const EYE = "#24161e";
 
@@ -333,6 +332,58 @@ export function cactus(ctx: Ctx): void {
   angryFace(t, 65, 92, 13, 0.9);
 }
 
+/**
+ * An octopus for the sea stage, shaded like the other monsters: a glossy domed head with spots, a
+ * pale lip, six tentacles that curl in turn as it swims (suction cups underneath), angry eyes.
+ */
+function octopus(color: number, cups: number): (ctx: Ctx) => void {
+  return (ctx) => {
+    const t = toon(ctx, olFor(color), 5, true);
+    t.paint("rgba(10,30,60,0.28)", () => t.E(75, 141, 56, 8));
+    squash(ctx, 75, 138, () => {
+      // tentacles: the back ones darker, each curling the other way to its neighbour with the walk pose
+      for (const back of [true, false]) {
+        for (let i = back ? 1 : 0; i < 6; i += 2) {
+          const x0 = 34 + i * 16.4;
+          const side = i < 3 ? -1 : 1;
+          const sway = ((i % 2 ? 1 : -1) * (pose.leg || 0.5) * 9) + side * 5;
+          const c = back ? darken(color, 0.18) : color;
+          t.tube(() => {
+            ctx.moveTo(x0, 90);
+            ctx.bezierCurveTo(x0 + sway * 0.2, 110, x0 + sway, 122, x0 + sway * 1.5, 128);
+            ctx.quadraticCurveTo(x0 + sway * 2.1, 131, x0 + sway * 1.85, 119);
+          }, back ? 12 : 14, c);
+          // suction cups down the tentacle
+          for (const k of [0.35, 0.6, 0.82]) {
+            const x = x0 + sway * k * 1.3;
+            const y = 90 + 36 * k;
+            t.paint(rgba(cups), () => t.C(x, y, 2.8));
+            t.paint("rgba(80,20,40,0.35)", () => t.C(x + 0.6, y + 0.6, 1.3));
+          }
+        }
+      }
+      // the head (mantle) and the lip under it
+      t.part(() => {
+        ctx.moveTo(28, 96);
+        ctx.bezierCurveTo(16, 44, 46, 14, 75, 14);
+        ctx.bezierCurveTo(104, 14, 134, 44, 122, 96);
+        ctx.quadraticCurveTo(75, 110, 28, 96);
+        ctx.closePath();
+      }, color, () => {
+        t.paint(rgba(lighten(color, 0.25)), () => t.E(75, 96, 42, 8));
+        for (const [x, y, r] of [[98, 34, 7], [108, 52, 5], [50, 30, 5], [90, 22, 3.5], [114, 72, 4]] as const) {
+          t.paint(rgba(darken(color, 0.22)), () => t.C(x, y, r));
+          t.paint("rgba(255,255,255,0.25)", () => t.C(x - r * 0.3, y - r * 0.3, r * 0.4));
+        }
+      });
+      // wet shine on the dome
+      t.gloss(56, 34, 15, 8, -0.6);
+      t.paint("rgba(255,255,255,0.9)", () => t.C(46, 44, 3));
+      angryFace(t, 75, 70, 15, 0.95);
+    });
+  };
+}
+
 // ───────────────────────── textures ─────────────────────────
 
 /** Monster textures: key, width, height, painter. */
@@ -353,8 +404,8 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   e_vulture: [170, 110, bat(0x9a6a4a, true)],
   e_cactus: [130, 158, cactus],
   // the sea stage's octopi (purple and red)
-  e_octo: [150, 150, octopus("#b46ad8", "#6a2a9a")],
-  e_octo_r: [150, 150, octopus("#ff7a5a", "#a8302a")],
+  e_octo: [150, 150, octopus(0xb46ad8, 0xffd0f0)],
+  e_octo_r: [150, 150, octopus(0xff7a5a, 0xffe0c8)],
 };
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {

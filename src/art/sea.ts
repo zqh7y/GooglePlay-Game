@@ -1,84 +1,11 @@
 import Phaser from "phaser";
-import { INK, Ctx, canvasTexture } from "./draw";
-import { pose, squash } from "./pose";
+import { INK, canvasTexture } from "./draw";
 
 /**
  * The sea stage: the octopus (a monster with walk frames: its tentacles curl in turn), a whale that
  * bursts out of the water, a tentacle that slams up, your little boat, a sandy island to shelter on
  * from the tsunami, and the tsunami's breaking wave.
  */
-export function octopus(body: string, dark: string): (c: Ctx) => void {
-  return (c) => {
-    c.lineJoin = "round";
-    c.lineCap = "round";
-    // the shadow on the water
-    c.fillStyle = "rgba(10,30,60,0.25)";
-    c.beginPath();
-    c.ellipse(75, 140, 52, 9, 0, 0, Math.PI * 2);
-    c.fill();
-    squash(c, 75, 138, () => {
-      // six tentacles, curling in turn with the walk pose
-      for (let i = 0; i < 6; i++) {
-        const x0 = 38 + i * 15;
-        const curl = ((i % 2 ? 1 : -1) * (pose.leg || 0.4) + (i - 2.5) * 0.25) * 18;
-        c.strokeStyle = INK;
-        c.lineWidth = 17;
-        c.beginPath();
-        c.moveTo(x0, 96);
-        c.quadraticCurveTo(x0 + curl, 122, x0 + curl * 1.6, 136);
-        c.stroke();
-        c.strokeStyle = body;
-        c.lineWidth = 11;
-        c.stroke();
-        c.fillStyle = "rgba(255,230,240,0.8)";
-        for (const k of [0.45, 0.75]) {
-          c.beginPath();
-          c.arc(x0 + curl * k * 1.3, 96 + 40 * k, 2.4, 0, Math.PI * 2);
-          c.fill();
-        }
-      }
-      // the head: a round dome, lit from the top left
-      const g = c.createRadialGradient(60, 46, 6, 75, 66, 52);
-      g.addColorStop(0, "#ffffff");
-      g.addColorStop(0.18, body);
-      g.addColorStop(1, dark);
-      c.fillStyle = g;
-      c.strokeStyle = INK;
-      c.lineWidth = 6;
-      c.beginPath();
-      c.ellipse(75, 66, 44, 42, 0, 0, Math.PI * 2);
-      c.fill();
-      c.stroke();
-      // spots, angry eyes and brows
-      c.fillStyle = "rgba(255,255,255,0.25)";
-      for (const [x, y, r] of [[96, 46, 6], [104, 62, 4], [52, 40, 4]]) {
-        c.beginPath();
-        c.arc(x, y, r, 0, Math.PI * 2);
-        c.fill();
-      }
-      for (const x of [60, 90]) {
-        c.fillStyle = "#ffffff";
-        c.beginPath();
-        c.ellipse(x, 76, 11, 13, 0, 0, Math.PI * 2);
-        c.fill();
-        c.lineWidth = 4;
-        c.stroke();
-        c.fillStyle = "#1a1030";
-        c.beginPath();
-        c.arc(x + 2, 79, 6, 0, Math.PI * 2);
-        c.fill();
-      }
-      c.lineWidth = 5;
-      c.beginPath();
-      c.moveTo(48, 60);
-      c.lineTo(68, 66);
-      c.moveTo(102, 60);
-      c.lineTo(82, 66);
-      c.stroke();
-    });
-  };
-}
-
 export function makeSeaTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists("sea_boat")) return;
   // the mode's icon: a whale's tail over a wave
@@ -183,6 +110,49 @@ export function makeSeaTextures(scene: Phaser.Scene): void {
     c.closePath();
     c.fill();
     c.stroke();
+    // shading: a wet shine along the back, the far side in shadow, barnacles, water pouring off
+    const shine = c.createLinearGradient(0, 40, 0, 120);
+    shine.addColorStop(0, "rgba(255,255,255,0.55)");
+    shine.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = shine;
+    c.beginPath();
+    c.ellipse(250, 78, 150, 22, -0.08, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(10,20,70,0.25)";
+    c.beginPath();
+    c.ellipse(360, 190, 90, 40, -0.3, 0, Math.PI * 2);
+    c.fill();
+    for (const [x, y, r] of [[300, 70, 9], [318, 84, 6], [286, 88, 5], [380, 92, 7]]) {
+      c.fillStyle = "#d8d0c0";
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.fill();
+      c.lineWidth = 3;
+      c.stroke();
+      c.fillStyle = "#6a6458";
+      c.beginPath();
+      c.arc(x, y, r * 0.4, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "rgba(200,235,255,0.85)";
+    for (const [x, y] of [[120, 250], [200, 262], [300, 258], [400, 236], [250, 276]]) {
+      c.beginPath();
+      c.moveTo(x, y - 14);
+      c.quadraticCurveTo(x + 7, y, x, y + 6);
+      c.quadraticCurveTo(x - 7, y, x, y - 14);
+      c.fill();
+    }
+    // the throat grooves on the belly
+    c.strokeStyle = "rgba(120,150,190,0.7)";
+    c.lineWidth = 3;
+    for (let k = 0; k < 4; k++) {
+      c.beginPath();
+      c.moveTo(90 + k * 70, 214 + k * 2);
+      c.quadraticCurveTo(140 + k * 70, 226, 180 + k * 70, 220 - k * 2);
+      c.stroke();
+    }
+    c.strokeStyle = INK;
+    c.lineWidth = 8;
     // the open mouth and an angry eye
     c.fillStyle = "#3a0a1a";
     c.beginPath();
@@ -218,13 +188,39 @@ export function makeSeaTextures(scene: Phaser.Scene): void {
     c.bezierCurveTo(20, 220, 100, 140, 60, 70);
     c.quadraticCurveTo(40, 30, 76, 20);
     c.stroke();
-    c.strokeStyle = "#b04aa0";
+    c.strokeStyle = "#a03a92";
     c.lineWidth = 30;
     c.stroke();
-    c.fillStyle = "#ffd8f0";
+    // lit side and a wet highlight along the tentacle
+    c.strokeStyle = "#c86ab8";
+    c.lineWidth = 16;
+    c.save();
+    c.translate(-5, -2);
+    c.stroke();
+    c.strokeStyle = "rgba(255,255,255,0.55)";
+    c.lineWidth = 4;
+    c.translate(-4, 0);
+    c.stroke();
+    c.restore();
+    // suction cups with their little shadows
     for (let i = 0; i < 6; i++) {
+      const [x, y] = [70 + Math.sin(i * 0.9) * 14, 272 - i * 40];
+      c.fillStyle = "#ffd8f0";
       c.beginPath();
-      c.arc(66 + Math.sin(i) * 14, 270 - i * 40, 6, 0, Math.PI * 2);
+      c.ellipse(x, y, 7, 5.5, 0, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = "rgba(120,30,90,0.5)";
+      c.beginPath();
+      c.ellipse(x + 1, y + 1, 3, 2.4, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+    // water dripping off it
+    c.fillStyle = "rgba(200,235,255,0.9)";
+    for (const [x, y] of [[30, 120], [96, 180], [40, 230]]) {
+      c.beginPath();
+      c.moveTo(x, y - 10);
+      c.quadraticCurveTo(x + 5, y, x, y + 4);
+      c.quadraticCurveTo(x - 5, y, x, y - 10);
       c.fill();
     }
   });

@@ -1461,6 +1461,15 @@ export class BattleScene extends Phaser.Scene {
   // ───────────────────────── things to find on the map ─────────────────────────
 
   private randomSpot(min: number, max: number, from?: [number, number]): [number, number] {
+    // never inside a building (a die you could not reach)
+    for (let k = 0; k < 10; k++) {
+      const p = this.spotOnce(min, max, from);
+      if (!this.solids.length || (!this.blocked(p[0], p[1]) && !this.blocked(p[0], p[1] - 80) && !this.blocked(p[0], p[1] + 80))) return p;
+    }
+    return this.spotOnce(min, max, from);
+  }
+
+  private spotOnce(min: number, max: number, from?: [number, number]): [number, number] {
     const [cx, cy] = from ?? this.arena.center;
     const a = Math.random() * Math.PI * 2;
     const d = min + Math.random() * (max - min);
