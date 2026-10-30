@@ -228,7 +228,7 @@ hour of fishing brings.
   3. **THE BEAST**: Feed the Beast in the dark; if it breaks out the stage is **lost**.
   4. **BIG BOSS**: the huge boss and its 3 kids with **your beast fighting beside you** and everything maxed
      out; beat the big boss in **3:00** (its kids run when it falls). Then the beast says goodbye and goes home.
-  5. **TO THE SEA**: another path (two bosses, 2:30) down to a beach with a pier.
+  5. **TO THE SEA**: another path (two bosses, 2:50) down to a beach with a pier.
   What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
   the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
   The tutorial's roll and Boss Rush steps wait until those open.

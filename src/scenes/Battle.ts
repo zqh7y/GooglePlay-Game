@@ -513,6 +513,8 @@ export class BattleScene extends Phaser.Scene {
   /** story paths: when the bosses still to come drop in (ms) */
   private pathBosses: number[] = [];
   private pathCullT = 0;
+  /** path bosses and when they landed (they charge in bursts) */
+  private pathChargers = new Map<Enemy, number>();
   /** the village's dice hunt: how many found */
   private huntFound = 0;
   /** story clock (the big boss's 3:00 counts from when it lands) */
@@ -675,6 +677,7 @@ export class BattleScene extends Phaser.Scene {
     this.heldLantern = null;
     this.heroGlow = null;
     this.pathBosses = [];
+    this.pathChargers = new Map();
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -2791,6 +2794,15 @@ export class BattleScene extends Phaser.Scene {
     const p = this.arena.path!;
     const [hx, hy] = [this.hero.x, this.hero.y];
     if (this.lantern && Math.hypot(hx - this.lantern[0].x, hy - this.lantern[0].y) < 160) this.holdLantern(true);
+    // path bosses charge in bursts: 4 s quicker than you, then 6 s slower (outrun it or fight it)
+    for (const [b, born] of this.pathChargers) {
+      if (!this.enemies.includes(b)) {
+        this.pathChargers.delete(b);
+        continue;
+      }
+      const charging = (this.elapsed - born) % 10000 < 4000;
+      b.speedMult = ((charging ? 1.1 : 0.7) * HERO_SPEED * moveSpeedMult()) / BOSS.speed;
+    }
     if (this.pathBosses.length && this.elapsed >= this.pathBosses[0]) {
       this.pathBosses.shift();
       this.pathBoss();
@@ -2809,7 +2821,8 @@ export class BattleScene extends Phaser.Scene {
         e.img.destroy();
       }
     }
-    if (hy <= p.endY + 60) this.pathDone();
+    // through the gate (or onto the beach) counts
+    if (hy <= p.endY + 160) this.pathDone();
   }
 
   /** A boss drops onto the path ahead of you and comes running (it is quick!). */
@@ -2831,11 +2844,20 @@ export class BattleScene extends Phaser.Scene {
         if (!this.fighting) return;
         this.cameras.main.shake(400, 0.015);
         this.boom(x, y - 60, 2.4);
-        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves, special: def.special }, x, y, false, false);
-        // not as tough as a stage boss and it hits softer, but it is quicker than you: dodge or fight
-        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, this.minute) * HEALING_BOSS_HP);
+        // the one before (if you could not beat it) gives up and flies off: never two at once
+        for (const old of this.enemies.filter((e) => e.type.boss)) {
+          this.enemies = this.enemies.filter((e) => e !== old);
+          old.aura?.destroy();
+          old.badge?.destroy();
+          this.tweens.killTweensOf(old.img);
+          this.tweens.add({ targets: old.img, y: old.img.y - 900, alpha: 0, angle: 30, duration: 900, ease: "Quad.in", onComplete: () => old.img.destroy() });
+        }
+        const boss = this.addEnemy({ tex: def.tex, stats: BOSS, fx: def.color, boss: true, moves: def.moves, special: def.special }, x, y, false, false, 1, this.mobStage());
+        // as strong as the path's monsters (a path is for running) and it hits softer, but it is quicker than you
+        boss.hp = boss.maxHp = Math.round(monsterHp(BOSS.hp, this.mobStage(), this.minute) * HEALING_BOSS_HP);
         boss.speedMult = (1.1 * HERO_SPEED * moveSpeedMult()) / BOSS.speed;
         boss.dmg *= 0.35;
+        this.pathChargers.set(boss, this.elapsed);
         boss.huntHero = true;
         boss.phaseT = 1800;
       },

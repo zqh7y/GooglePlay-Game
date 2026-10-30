@@ -48,7 +48,7 @@ export const STORY: Record<number, StoryChapter> = {
   },
   5: {
     title: "TO THE SEA", tale: "Your beast went home. Follow the path through the woods down to the sea!",
-    goal: "Reach the sea!", limit: 150000, dark: 0.6,
+    goal: "Reach the sea!", limit: 170000, dark: 0.6,
     steps: [["hero", "RUN UP"], ["mode_boss", "2 BOSSES"], ["icon_fish", "THE SEA"]],
   },
 };
@@ -56,7 +56,7 @@ export const STORY: Record<number, StoryChapter> = {
 export const storyFor = (stage: number): StoryChapter | null => STORY[stage] ?? null;
 
 /** Story paths: when the bosses come down the path (ms into the run) and where the lantern lies (share of the way). */
-export const PATH_BOSSES: Record<number, number[]> = { 1: [45000, 90000], 5: [45000, 95000] };
+export const PATH_BOSSES: Record<number, number[]> = { 1: [45000, 90000], 5: [50000, 105000] };
 export const LANTERN_AT = 0.2;
 /** the village: dice to find */
 export const HUNT_DICE = 20;
