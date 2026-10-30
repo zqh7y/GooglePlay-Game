@@ -53,7 +53,7 @@ import { MODE_INFO, StageMode, modeForStage, stageInfo } from "../data/modes";
 import { ROLL_OPEN, STORY_STAGES, rollOpen, storyDone, storyFor } from "../data/story";
 import { DEV_TOOLS, SPEED_BTN } from "../devtools";
 import type { DailyReward } from "../systems/goals";
-import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
+import { arrowButton, battleNavTexture, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, ribbonBanner, text } from "../ui/widgets";
 import { badge } from "../ui/badge";
 import { BattleMode, BattleScene, FightKind, GadgetOption, RunStats, RushResult, StageResult, battle, mmss } from "./Battle";
@@ -210,6 +210,8 @@ export class UIScene extends Phaser.Scene implements Host {
   private rushLock?: Phaser.GameObjects.Container;
   /** developer x3 speed (fights) */
   private speedBtn!: Button;
+  /** the glow behind the round BATTLE tab */
+  private navHalo?: Phaser.GameObjects.Image;
   /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
   private rushHint!: Phaser.GameObjects.Container;
   private battleSub!: Phaser.GameObjects.Text;
@@ -532,13 +534,20 @@ export class UIScene extends Phaser.Scene implements Host {
       // BATTLE is the big one: a raised orange card like the lobby's BATTLE button, with the sword on a splash
       const main = t.id === "battle";
       const bg = main
-        ? this.add.image(2, -16, vividCard(this, 0xff8a2a, tw + 4, navH + 20))
+        ? this.add.image(0, -26, battleNavTexture(this))
         : this.add.image(0, 0, btnTexture(this, "peach", tw - 14, navH - 24));
-      const icon = main ? itemSplash(this, t.icon, 96, 0xffe066).setPosition(0, -30) : this.add.image(0, -20, t.icon).setScale(0.8);
-      const lbl = main ? text(this, 0, 50, "BATTLE", 34, "#ffffff", { stroke: 9 }) : text(this, 0, 52, t.label, 30);
+      const icon = main ? this.add.image(0, -58, t.icon).setScale(1.25) : this.add.image(0, -20, t.icon).setScale(0.8);
+      const lbl = main ? text(this, 0, 30, "BATTLE", 36, "#ffffff", { stroke: 10 }) : text(this, 0, 52, t.label, 30);
+      if (main) {
+        // a soft glow ring behind the button that breathes
+        const halo = this.add.image(0, -26, "glow").setTint(0xffb03a).setScale(2.4).setAlpha(0.5);
+        this.tweens.add({ targets: halo, scale: 2.8, alpha: 0.2, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        this.navHalo = halo;
+      }
       const badge = this.add.container(tw / 2 - 40, -navH / 2 + 34, [this.add.circle(0, 0, 19, 0xf03e3e).setStrokeStyle(5, INK_N), text(this, 0, -1, "!", 28)]).setVisible(false);
       this.tweens.add({ targets: badge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      const box = this.add.container(x, y, [bg, icon, lbl, badge]).setDepth(4001).setSize(tw, navH).setInteractive({ useHandCursor: true });
+      const parts: Phaser.GameObjects.GameObject[] = main && this.navHalo ? [this.navHalo, bg, icon, lbl, badge] : [bg, icon, lbl, badge];
+      const box = this.add.container(x, y, parts).setDepth(4001).setSize(tw, navH).setInteractive({ useHandCursor: true });
       box.on("pointerdown", () => this.tweens.add({ targets: box, scale: 0.92, duration: 60 }));
       box.on("pointerout", () => box.setScale(1));
       box.on("pointerup", () => {
@@ -602,7 +611,11 @@ export class UIScene extends Phaser.Scene implements Host {
       // the BATTLE card is always up (it just grows a little when you are on it)
       const main = t.id === "battle";
       n.bg.setVisible(active || main);
-      if (main) this.tweens.add({ targets: [n.icon, n.bg], scale: active ? 1.06 : 0.94, duration: 160, ease: "Back.out" });
+      if (main) {
+        this.tweens.add({ targets: n.bg, scale: active ? 1.06 : 0.96, duration: 160, ease: "Back.out" });
+        this.tweens.add({ targets: n.icon, scale: active ? 1.32 : 1.18, duration: 160, ease: "Back.out" });
+        this.navHalo?.setVisible(active);
+      }
       else this.tweens.add({ targets: n.icon, scale: active ? 1 : 0.72, y: active ? -30 : -14, duration: 160, ease: "Back.out" });
       if (!main) n.label.setAlpha(active ? 1 : 0.75).setFontSize(active ? 32 : 26);
       n.icon.setAlpha(active ? 1 : 0.85);

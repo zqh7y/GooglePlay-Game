@@ -188,3 +188,51 @@ export function arrowButton(scene: Phaser.Scene, x: number, y: number, dir: -1 |
   });
   return c;
 }
+
+/**
+ * The round BATTLE button on the tab bar: a glossy orange-to-red disc with a thick outline, a white
+ * inner rim, a shine across the top and a shadow under it (it sits raised above the bar).
+ */
+export function battleNavTexture(scene: Phaser.Scene): string {
+  return canvasTexture(scene, "nav_battle", 230, 240, (c) => {
+    const [cx, cy, r] = [115, 112, 100];
+    // the shadow it casts on the bar
+    c.fillStyle = "rgba(30,12,4,0.45)";
+    c.beginPath();
+    c.ellipse(cx, cy + 16, r + 4, r, 0, 0, Math.PI * 2);
+    c.fill();
+    // the dark outline, then the disc
+    c.fillStyle = "#3a1a0c";
+    c.beginPath();
+    c.arc(cx, cy, r + 8, 0, Math.PI * 2);
+    c.fill();
+    const g = c.createLinearGradient(0, cy - r, 0, cy + r);
+    g.addColorStop(0, "#ffd04a");
+    g.addColorStop(0.45, "#ff8a2a");
+    g.addColorStop(1, "#d8401a");
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.fill();
+    // a darker lower rim gives it thickness
+    c.strokeStyle = "rgba(140,30,10,0.55)";
+    c.lineWidth = 10;
+    c.beginPath();
+    c.arc(cx, cy + 3, r - 6, Math.PI * 0.15, Math.PI * 0.85);
+    c.stroke();
+    // the white inner rim
+    c.strokeStyle = "rgba(255,255,255,0.85)";
+    c.lineWidth = 5;
+    c.beginPath();
+    c.arc(cx, cy, r - 10, 0, Math.PI * 2);
+    c.stroke();
+    // the shine across the top
+    const sh = c.createLinearGradient(0, cy - r, 0, cy);
+    sh.addColorStop(0, "rgba(255,255,255,0.75)");
+    sh.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = sh;
+    c.beginPath();
+    c.ellipse(cx, cy - r * 0.48, r * 0.72, r * 0.38, 0, 0, Math.PI * 2);
+    c.fill();
+  });
+}
