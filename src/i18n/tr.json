@@ -1116,5 +1116,22 @@
 "TSUNAMI {0}/3": "TSUNAMİ {0}/3",
 "SAFE ON THE ISLAND": "ADADA GÜVENDESİN",
 "GET ON AN ISLAND!": "BİR ADAYA ÇIK!",
-"ISLAND!": "ADA!"
+"ISLAND!": "ADA!",
+"LAND HO!": "KARA GÖRÜNDÜ!",
+"FIND LAND!": "KARA BUL!",
+"Sail the ocean and find the big island!": "Okyanusta yelken aç ve büyük adayı bul!",
+"SAIL": "YELKEN AÇ",
+"TSUNAMI? ISLAND!": "TSUNAMİ? ADA!",
+"FIND LAND": "KARA BUL",
+"LAND?": "KARA?",
+"TSUNAMI! GET ON AN ISLAND!": "TSUNAMİ! BİR ADAYA ÇIK!",
+"TSUNAMI COMING!": "TSUNAMİ GELİYOR!",
+"From the {0}! Get on an island!": "{0} yönünden! Bir adaya çık!",
+"north": "kuzey",
+"south": "güney",
+"west": "batı",
+"east": "doğu",
+"The sea is calm. Keep looking for land!": "Deniz sakin. Kara aramaya devam et!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "Süre bitmeden büyük adayı bul! Tsunamilere dikkat",
+"this way!": "bu taraftan!"
 }

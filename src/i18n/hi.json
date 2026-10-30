@@ -1125,5 +1125,22 @@
 "TSUNAMI {0}/3": "सुनामी {0}/3",
 "SAFE ON THE ISLAND": "द्वीप पर सुरक्षित",
 "GET ON AN ISLAND!": "किसी द्वीप पर चढ़ो!",
-"ISLAND!": "द्वीप!"
+"ISLAND!": "द्वीप!",
+"LAND HO!": "ज़मीन दिखी!",
+"FIND LAND!": "ज़मीन ढूँढो!",
+"Sail the ocean and find the big island!": "समुद्र में चलो और बड़ा द्वीप ढूँढो!",
+"SAIL": "चलो",
+"TSUNAMI? ISLAND!": "सुनामी? द्वीप!",
+"FIND LAND": "ज़मीन ढूँढो",
+"LAND?": "ज़मीन?",
+"TSUNAMI! GET ON AN ISLAND!": "सुनामी! किसी द्वीप पर चढ़ो!",
+"TSUNAMI COMING!": "सुनामी आ रही है!",
+"From the {0}! Get on an island!": "{0} से! किसी द्वीप पर चढ़ो!",
+"north": "उत्तर",
+"south": "दक्षिण",
+"west": "पश्चिम",
+"east": "पूर्व",
+"The sea is calm. Keep looking for land!": "समुद्र शांत है। ज़मीन ढूँढते रहो!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "समय खत्म होने से पहले बड़ा द्वीप ढूँढो! सुनामी से सावधान",
+"this way!": "इधर से!"
 }

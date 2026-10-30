@@ -1122,5 +1122,22 @@
 "TSUNAMI {0}/3": "津波 {0}/3",
 "SAFE ON THE ISLAND": "島の上なら安全",
 "GET ON AN ISLAND!": "島に上がれ！",
-"ISLAND!": "島！"
+"ISLAND!": "島！",
+"LAND HO!": "陸だ！",
+"FIND LAND!": "陸を探せ！",
+"Sail the ocean and find the big island!": "海を進んで大きな島を見つけよう！",
+"SAIL": "進む",
+"TSUNAMI? ISLAND!": "津波？島へ！",
+"FIND LAND": "陸を探せ",
+"LAND?": "陸？",
+"TSUNAMI! GET ON AN ISLAND!": "津波！島に上がれ！",
+"TSUNAMI COMING!": "津波が来る！",
+"From the {0}! Get on an island!": "{0}から来る！島に上がれ！",
+"north": "北",
+"south": "南",
+"west": "西",
+"east": "東",
+"The sea is calm. Keep looking for land!": "海が静かになった。陸を探し続けよう！",
+"Find the big island before the clock runs out! Watch out for tsunamis": "時間切れまでに大きな島を見つけよう！津波に注意",
+"this way!": "こっち！"
 }

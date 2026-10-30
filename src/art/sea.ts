@@ -263,6 +263,149 @@ export function makeSeaTextures(scene: Phaser.Scene): void {
       c.stroke();
     }
   });
+  // the tsunami: a towering wall of water (tiles sideways); its crest is the top edge, the body runs
+  // down behind it, deep blue with streaks of light, and a white curl of foam rolls over the top
+  canvasTexture(scene, "tsunami_wall", 512, 460, (c) => {
+    const body = c.createLinearGradient(0, 40, 0, 460);
+    body.addColorStop(0, "#7af0ff");
+    body.addColorStop(0.18, "#3ab8e8");
+    body.addColorStop(0.55, "#1a6ac8");
+    body.addColorStop(0.85, "#124a9a");
+    body.addColorStop(1, "rgba(18,74,154,0)");
+    c.fillStyle = body;
+    c.beginPath();
+    c.moveTo(0, 460);
+    c.lineTo(0, 60);
+    for (let x = 0; x <= 512; x += 128) {
+      c.bezierCurveTo(x + 30, 20, x + 80, 10, x + 104, 40);
+      c.quadraticCurveTo(x + 118, 58, x + 128, 60);
+    }
+    c.lineTo(512, 460);
+    c.closePath();
+    c.fill();
+    // streaks of light running down the face (the water rushing)
+    c.lineCap = "round";
+    for (let i = 0; i < 18; i++) {
+      const x = (i * 29 + 11) % 512;
+      c.strokeStyle = `rgba(200,245,255,${0.12 + (i % 3) * 0.08})`;
+      c.lineWidth = 4 + (i % 4) * 2;
+      c.beginPath();
+      c.moveTo(x, 90 + (i % 5) * 12);
+      c.quadraticCurveTo(x + 16, 200, x + 6, 330 + (i % 3) * 30);
+      c.stroke();
+    }
+    // the curl: thick white foam along the crest with blobs and bubbles
+    c.fillStyle = "#ffffff";
+    for (let x = 0; x <= 512; x += 128) {
+      c.beginPath();
+      c.moveTo(x, 64);
+      c.bezierCurveTo(x + 26, 12, x + 84, 0, x + 108, 36);
+      c.quadraticCurveTo(x + 96, 30, x + 84, 44);
+      c.quadraticCurveTo(x + 60, 30, x + 40, 56);
+      c.quadraticCurveTo(x + 20, 70, x, 64);
+      c.fill();
+    }
+    c.fillStyle = "rgba(255,255,255,0.9)";
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 37 + 5) % 512;
+      const y = 50 + ((i * 53) % 60);
+      c.beginPath();
+      c.arc(x, y, 3 + (i % 4) * 2.5, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "rgba(10,40,100,0.25)";
+    for (let x = 0; x <= 512; x += 128) {
+      c.beginPath();
+      c.ellipse(x + 70, 80, 40, 10, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
+  // the shadow the wave throws ahead of itself on the water
+  canvasTexture(scene, "tsunami_shade", 8, 128, (c) => {
+    const g = c.createLinearGradient(0, 0, 0, 128);
+    g.addColorStop(0, "rgba(5,20,60,0)");
+    g.addColorStop(1, "rgba(5,20,60,0.55)");
+    c.fillStyle = g;
+    c.fillRect(0, 0, 8, 128);
+  });
+  // the new land: a big island with grass, palms, rocks and a flag on top
+  canvasTexture(scene, "sea_bigisland", 900, 620, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 8;
+    c.strokeStyle = INK;
+    c.fillStyle = "rgba(255,255,255,0.55)";
+    c.beginPath();
+    c.ellipse(450, 470, 440, 140, 0, 0, Math.PI * 2);
+    c.fill();
+    const sand = c.createRadialGradient(400, 440, 20, 450, 470, 420);
+    sand.addColorStop(0, "#fff0c0");
+    sand.addColorStop(1, "#d8b070");
+    c.fillStyle = sand;
+    c.beginPath();
+    c.ellipse(450, 460, 410, 126, 0, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    const grass = c.createLinearGradient(0, 300, 0, 480);
+    grass.addColorStop(0, "#8ae05a");
+    grass.addColorStop(1, "#4aa83a");
+    c.fillStyle = grass;
+    c.beginPath();
+    c.moveTo(150, 470);
+    c.bezierCurveTo(150, 380, 300, 300, 450, 300);
+    c.bezierCurveTo(620, 300, 760, 380, 750, 470);
+    c.quadraticCurveTo(450, 520, 150, 470);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    // rocks
+    for (const [x, y, r] of [[230, 450, 34], [690, 440, 40], [600, 480, 24]]) {
+      c.fillStyle = "#9a9488";
+      c.beginPath();
+      c.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+    }
+    // palms
+    for (const [x, y, s] of [[300, 380, 1], [580, 360, 1.15], [440, 330, 0.9]]) {
+      c.strokeStyle = INK;
+      c.lineWidth = 18 * s;
+      c.beginPath();
+      c.moveTo(x, y);
+      c.quadraticCurveTo(x - 14 * s, y - 90 * s, x + 16 * s, y - 180 * s);
+      c.stroke();
+      c.strokeStyle = "#8a5a32";
+      c.lineWidth = 10 * s;
+      c.stroke();
+      c.fillStyle = "#3ac85a";
+      c.strokeStyle = INK;
+      c.lineWidth = 6;
+      for (const a of [-2.7, -2, -1.3, -0.6, 0.1]) {
+        const [tx, ty] = [x + 16 * s, y - 180 * s];
+        c.beginPath();
+        c.moveTo(tx, ty);
+        c.quadraticCurveTo(tx + Math.cos(a) * 80 * s, ty - 30 * s + Math.sin(a) * 50 * s, tx + Math.cos(a) * 130 * s, ty + 20 * s + Math.sin(a) * 40 * s);
+        c.quadraticCurveTo(tx + Math.cos(a) * 60 * s, ty + Math.sin(a) * 20 * s, tx, ty + 6);
+        c.fill();
+        c.stroke();
+      }
+    }
+    // a flag on the hill
+    c.strokeStyle = INK;
+    c.lineWidth = 7;
+    c.beginPath();
+    c.moveTo(460, 320);
+    c.lineTo(460, 170);
+    c.stroke();
+    c.fillStyle = "#ff4a5a";
+    c.beginPath();
+    c.moveTo(460, 172);
+    c.lineTo(540, 196);
+    c.lineTo(460, 222);
+    c.closePath();
+    c.fill();
+    c.stroke();
+  });
+
   // the tsunami's breaking crest (it tiles sideways)
   canvasTexture(scene, "sea_wave", 256, 220, (c) => {
     const g = c.createLinearGradient(0, 0, 0, 220);

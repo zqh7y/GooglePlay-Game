@@ -1599,6 +1599,7 @@ export class UIScene extends Phaser.Scene implements Host {
       path: [["hero", "RUN UP"], ["icon_clock", "IN TIME"], ["house_a", "THE END"]],
       hunt: [["die_A", "FIND"], ["torch3d", "TORCHES"], ["mode_boss", "BOSS"]],
       sea: [["die_S", "DODGE"], ["sea_whale", "FROM BELOW"], ["sea_island", "TSUNAMI"]],
+      ocean: [["sea_boat", "SAIL"], ["sea_island", "TSUNAMI? ISLAND!"], ["sea_bigisland", "FIND LAND"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],
       feed: [["mode_feed", "GRAB"], ["beast_cage", "FEED x6"], ["pk_heart", "FRIEND!"]],
@@ -1716,7 +1717,7 @@ export class UIScene extends Phaser.Scene implements Host {
       battle.devJump = jump;
       m.close();
       this.pickStage(stage);
-      this.time.delayedCall(regionForStage(stage).id !== this.battleScene.landId ? 900 : 200, () => this.game.events.emit("battle-start"));
+      this.time.delayedCall(900, () => this.game.events.emit("battle-start"));
     }, { size: 54 }));
   }
 
@@ -1813,7 +1814,8 @@ export class UIScene extends Phaser.Scene implements Host {
   pickStage(n: number, play = false): void {
     if (battle.mode !== "lobby") return;
     const st = Phaser.Math.Clamp(n, 1, Math.min(MAX_STAGE, stageCap()));
-    const newLand = regionForStage(st).id !== regionForStage(save.stage).id;
+    // (the lobby world is rebuilt for every stage: its look shows what is coming)
+    const newLand = st !== save.stage;
     this.game.events.emit("stage-pick", st);
     sfx.click();
     this.refreshLobby();

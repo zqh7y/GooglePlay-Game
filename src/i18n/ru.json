@@ -1127,5 +1127,22 @@
 "TSUNAMI {0}/3": "ЦУНАМИ {0}/3",
 "SAFE ON THE ISLAND": "В БЕЗОПАСНОСТИ НА ОСТРОВЕ",
 "GET ON AN ISLAND!": "НА ОСТРОВ!",
-"ISLAND!": "ОСТРОВ!"
+"ISLAND!": "ОСТРОВ!",
+"LAND HO!": "ЗЕМЛЯ!",
+"FIND LAND!": "НАЙДИ ЗЕМЛЮ!",
+"Sail the ocean and find the big island!": "Плыви по океану и найди большой остров!",
+"SAIL": "ПЛЫВИ",
+"TSUNAMI? ISLAND!": "ЦУНАМИ? ОСТРОВ!",
+"FIND LAND": "НАЙДИ ЗЕМЛЮ",
+"LAND?": "ЗЕМЛЯ?",
+"TSUNAMI! GET ON AN ISLAND!": "ЦУНАМИ! НА ОСТРОВ!",
+"TSUNAMI COMING!": "ИДЁТ ЦУНАМИ!",
+"From the {0}! Get on an island!": "С {0}! Забирайся на остров!",
+"north": "севера",
+"south": "юга",
+"west": "запада",
+"east": "востока",
+"The sea is calm. Keep looking for land!": "Море спокойно. Продолжай искать землю!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "Найди большой остров, пока не кончилось время! Берегись цунами",
+"this way!": "сюда!"
 }

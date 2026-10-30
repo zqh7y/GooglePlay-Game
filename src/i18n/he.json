@@ -1125,5 +1125,22 @@
 "TSUNAMI {0}/3": "צונאמי {0}/3",
 "SAFE ON THE ISLAND": "בטוחים על האי",
 "GET ON AN ISLAND!": "עלו על אי!",
-"ISLAND!": "אי!"
+"ISLAND!": "אי!",
+"LAND HO!": "יבשה!",
+"FIND LAND!": "מצאו יבשה!",
+"Sail the ocean and find the big island!": "שוטו באוקיינוס ומצאו את האי הגדול!",
+"SAIL": "הפליגו",
+"TSUNAMI? ISLAND!": "צונאמי? אי!",
+"FIND LAND": "מצאו יבשה",
+"LAND?": "יבשה?",
+"TSUNAMI! GET ON AN ISLAND!": "צונאמי! עלו על אי!",
+"TSUNAMI COMING!": "צונאמי מתקרב!",
+"From the {0}! Get on an island!": "מה{0}! עלו על אי!",
+"north": "צפון",
+"south": "דרום",
+"west": "מערב",
+"east": "מזרח",
+"The sea is calm. Keep looking for land!": "הים רגוע. המשיכו לחפש יבשה!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "מצאו את האי הגדול לפני שהזמן נגמר! היזהרו מצונאמי",
+"this way!": "מכאן!"
 }

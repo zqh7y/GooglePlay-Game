@@ -237,12 +237,21 @@ hour of fishing brings.
   purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
   up every 30 s (1-6). After 3:00 a storm rolls in (rain, lightning) and three tsunami waves rush in from every
   side, each faster; only the sandy islands that rise before each wave are safe. Survive all three to win.
+- **Land Ho! (stage 7, then every 6 stages)**: a big open ocean (6000 x 24000). Sail to find the big island
+  (4:00). A rough compass points near it while the sea is calm (truer as you get close, a new guess after
+  each tsunami). Tsunamis come at random from a random side: little islands rise near you and you have a few
+  seconds to get on one before the wall of water sweeps across.
+- **Tsunami waves** are towering walls of water: a curling white crest, deep blue body with streaks, a dark
+  shadow running ahead, foam and spray off the top; they rise as they come, roar and shake the screen.
+- **The lobby shows the next stage**: the camp, the ruined village, the caged beast, the road to the sea, a
+  beach with the sea, a pier and your boat for the sea stages, the crystal / air zone for later modes. It is
+  rebuilt every time you change stage.
 - **Buildings are solid**: houses, ruins and the village gate's posts block you (you slide along their walls).
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
   in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
   near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
 - **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 5 modes up to 100: the Sea,
-  Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the first Sea). The lobby button, the START popup and the map card show which one is next.
+  Land Ho!, Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the first Sea, 7 the first Land Ho!). The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.

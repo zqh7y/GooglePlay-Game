@@ -36,8 +36,9 @@ export interface Arena {
   h: number;
   /** story paths: where you start, where the path ends (y) and the strip you can walk on (x) */
   path?: { kind: PathKind; startY: number; endY: number; x0: number; x1: number };
-  /** the sea stage: open water, nothing on it */
+  /** the sea stage: open water, nothing on it (the ocean: a big one to sail across) */
   sea?: boolean;
+  ocean?: boolean;
 }
 
 /** A story path: through the woods to the village, or down to the sea. */
@@ -164,6 +165,16 @@ export const SEA_H = 2600;
 
 export function getSeaArena(land: Region): Arena {
   const a: Arena = { land, center: [SEA_W / 2, SEA_H / 2], objects: [], patches: [], w: SEA_W, h: SEA_H, sea: true };
+  useArena(a);
+  return a;
+}
+
+/** The open ocean (stage 7): a big stretch of sea to sail across looking for land. */
+export const OCEAN_W = 6000;
+export const OCEAN_H = 24000;
+
+export function getOceanArena(land: Region): Arena {
+  const a: Arena = { land, center: [OCEAN_W / 2, OCEAN_H - 600], objects: [], patches: [], w: OCEAN_W, h: OCEAN_H, sea: true, ocean: true };
   useArena(a);
   return a;
 }

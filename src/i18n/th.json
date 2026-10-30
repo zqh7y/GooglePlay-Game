@@ -1122,5 +1122,22 @@
 "TSUNAMI {0}/3": "สึนามิ {0}/3",
 "SAFE ON THE ISLAND": "ปลอดภัยบนเกาะ",
 "GET ON AN ISLAND!": "ขึ้นเกาะเร็ว!",
-"ISLAND!": "เกาะ!"
+"ISLAND!": "เกาะ!",
+"LAND HO!": "เจอแผ่นดินแล้ว!",
+"FIND LAND!": "หาแผ่นดิน!",
+"Sail the ocean and find the big island!": "ล่องเรือในมหาสมุทรและหาเกาะใหญ่ให้เจอ!",
+"SAIL": "ล่องเรือ",
+"TSUNAMI? ISLAND!": "สึนามิ? เกาะ!",
+"FIND LAND": "หาแผ่นดิน",
+"LAND?": "แผ่นดิน?",
+"TSUNAMI! GET ON AN ISLAND!": "สึนามิ! ขึ้นเกาะเร็ว!",
+"TSUNAMI COMING!": "สึนามิกำลังมา!",
+"From the {0}! Get on an island!": "มาจากทิศ{0}! ขึ้นเกาะเร็ว!",
+"north": "เหนือ",
+"south": "ใต้",
+"west": "ตะวันตก",
+"east": "ตะวันออก",
+"The sea is calm. Keep looking for land!": "ทะเลสงบแล้ว ตามหาแผ่นดินต่อ!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "หาเกาะใหญ่ให้เจอก่อนหมดเวลา! ระวังสึนามิ",
+"this way!": "ทางนี้!"
 }

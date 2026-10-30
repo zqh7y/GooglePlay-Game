@@ -3,12 +3,12 @@ import { STORY_STAGES, storyFor } from "./story";
 /**
  * Every stage has a mode. The first five are the story (see data/story.ts): 1 Path to the village,
  * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
- * round a cycle: Air Zone, Crystal, Feed the Beast, Crystal, Boss Battle, and again.
+ * round a cycle of six: the Sea (6), Land Ho! (7), Crystal, Feed the Beast, Air Zone, Boss Battle, and again.
  */
-export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea";
+export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean";
 
 /** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
-export const MODE_ORDER: StageMode[] = ["sea", "crystal", "feed", "air", "boss"];
+export const MODE_ORDER: StageMode[] = ["sea", "ocean", "crystal", "feed", "air", "boss"];
 
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
@@ -16,7 +16,7 @@ export const DICE_EVENT_DAYS = 14;
 const STORY_MODES: StageMode[] = ["path", "hunt", "feed", "boss", "path"];
 
 export const modeForStage = (stage: number): StageMode =>
-  stage <= STORY_STAGES ? STORY_MODES[Math.max(1, stage) - 1] : MODE_ORDER[(stage - 1) % MODE_ORDER.length];
+  stage <= STORY_STAGES ? STORY_MODES[Math.max(1, stage) - 1] : MODE_ORDER[(stage - STORY_STAGES - 1) % MODE_ORDER.length];
 
 export interface ModeInfo {
   name: string;
@@ -57,6 +57,10 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
   sea: {
     name: "SEA STORM", banner: "SEA STORM!", icon: "mode_sea", color: 0x3a8ae0, css: "#9ad8ff",
     goal: "Survive the sea, then the tsunami!",
+  },
+  ocean: {
+    name: "LAND HO!", banner: "FIND LAND!", icon: "mode_sea", color: 0x2a9ad8, css: "#a8e8ff",
+    goal: "Sail the ocean and find the big island!",
   },
   hunt: {
     name: "DICE HUNT", banner: "FIND THE DICE!", icon: "die_A", color: 0xffb03a, css: "#ffe0a0",

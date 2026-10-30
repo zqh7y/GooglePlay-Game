@@ -1125,5 +1125,22 @@
 "TSUNAMI {0}/3": "تسونامي {0}/3",
 "SAFE ON THE ISLAND": "آمن على الجزيرة",
 "GET ON AN ISLAND!": "اصعد إلى جزيرة!",
-"ISLAND!": "جزيرة!"
+"ISLAND!": "جزيرة!",
+"LAND HO!": "يابسة!",
+"FIND LAND!": "اعثر على اليابسة!",
+"Sail the ocean and find the big island!": "أبحر في المحيط واعثر على الجزيرة الكبيرة!",
+"SAIL": "أبحر",
+"TSUNAMI? ISLAND!": "تسونامي؟ جزيرة!",
+"FIND LAND": "اعثر على اليابسة",
+"LAND?": "يابسة؟",
+"TSUNAMI! GET ON AN ISLAND!": "تسونامي! اصعد إلى جزيرة!",
+"TSUNAMI COMING!": "تسونامي قادم!",
+"From the {0}! Get on an island!": "من {0}! اصعد إلى جزيرة!",
+"north": "الشمال",
+"south": "الجنوب",
+"west": "الغرب",
+"east": "الشرق",
+"The sea is calm. Keep looking for land!": "البحر هادئ. واصل البحث عن اليابسة!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "اعثر على الجزيرة الكبيرة قبل انتهاء الوقت! احذر التسونامي",
+"this way!": "من هنا!"
 }

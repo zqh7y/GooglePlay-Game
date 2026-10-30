@@ -1113,5 +1113,22 @@
 "TSUNAMI {0}/3": "TSUNAMI {0}/3",
 "SAFE ON THE ISLAND": "A SALVO EN LA ISLA",
 "GET ON AN ISLAND!": "¡SUBE A UNA ISLA!",
-"ISLAND!": "¡ISLA!"
+"ISLAND!": "¡ISLA!",
+"LAND HO!": "¡TIERRA A LA VISTA!",
+"FIND LAND!": "¡BUSCA TIERRA!",
+"Sail the ocean and find the big island!": "¡Navega por el océano y encuentra la gran isla!",
+"SAIL": "NAVEGA",
+"TSUNAMI? ISLAND!": "¿TSUNAMI? ¡ISLA!",
+"FIND LAND": "BUSCA TIERRA",
+"LAND?": "¿TIERRA?",
+"TSUNAMI! GET ON AN ISLAND!": "¡TSUNAMI! ¡SUBE A UNA ISLA!",
+"TSUNAMI COMING!": "¡VIENE UN TSUNAMI!",
+"From the {0}! Get on an island!": "¡Desde el {0}! ¡Sube a una isla!",
+"north": "norte",
+"south": "sur",
+"west": "oeste",
+"east": "este",
+"The sea is calm. Keep looking for land!": "El mar está en calma. ¡Sigue buscando tierra!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "¡Encuentra la gran isla antes de que acabe el tiempo! Cuidado con los tsunamis",
+"this way!": "¡por aquí!"
 }

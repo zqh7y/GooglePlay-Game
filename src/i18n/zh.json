@@ -1128,5 +1128,22 @@
 "TSUNAMI {0}/3": "海啸 {0}/3",
 "SAFE ON THE ISLAND": "岛上很安全",
 "GET ON AN ISLAND!": "快上岛！",
-"ISLAND!": "岛！"
+"ISLAND!": "岛！",
+"LAND HO!": "看到陆地了！",
+"FIND LAND!": "寻找陆地！",
+"Sail the ocean and find the big island!": "在海上航行，找到那座大岛！",
+"SAIL": "航行",
+"TSUNAMI? ISLAND!": "海啸？上岛！",
+"FIND LAND": "寻找陆地",
+"LAND?": "陆地？",
+"TSUNAMI! GET ON AN ISLAND!": "海啸！快上岛！",
+"TSUNAMI COMING!": "海啸来了！",
+"From the {0}! Get on an island!": "从{0}边来！快上岛！",
+"north": "北",
+"south": "南",
+"west": "西",
+"east": "东",
+"The sea is calm. Keep looking for land!": "海面平静了，继续寻找陆地！",
+"Find the big island before the clock runs out! Watch out for tsunamis": "在时间用完前找到大岛！小心海啸",
+"this way!": "这边！"
 }

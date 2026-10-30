@@ -1120,5 +1120,22 @@
 "TSUNAMI {0}/3": "쓰나미 {0}/3",
 "SAFE ON THE ISLAND": "섬 위는 안전",
 "GET ON AN ISLAND!": "섬으로 올라가요!",
-"ISLAND!": "섬!"
+"ISLAND!": "섬!",
+"LAND HO!": "육지다!",
+"FIND LAND!": "육지를 찾아요!",
+"Sail the ocean and find the big island!": "바다를 항해해 큰 섬을 찾아요!",
+"SAIL": "항해",
+"TSUNAMI? ISLAND!": "쓰나미? 섬으로!",
+"FIND LAND": "육지를 찾아요",
+"LAND?": "육지?",
+"TSUNAMI! GET ON AN ISLAND!": "쓰나미! 섬으로 올라가요!",
+"TSUNAMI COMING!": "쓰나미가 와요!",
+"From the {0}! Get on an island!": "{0}쪽에서 와요! 섬으로 올라가요!",
+"north": "북",
+"south": "남",
+"west": "서",
+"east": "동",
+"The sea is calm. Keep looking for land!": "바다가 잔잔해졌어요. 계속 육지를 찾아요!",
+"Find the big island before the clock runs out! Watch out for tsunamis": "시간이 끝나기 전에 큰 섬을 찾아요! 쓰나미 조심",
+"this way!": "이쪽!"
 }
