@@ -468,6 +468,10 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   // the lighthouse island's crabs (red and blue)
   e_crab: [160, 130, crab(0xe8543a)],
   e_crab_b: [160, 130, crab(0x3a8ad8)],
+  // the volcano's magma slimes and fire bats
+  e_magma: [140, 132, slime(0xff6a1a)],
+  e_magma_b: [140, 132, slime(0xc8301a)],
+  e_firebat: [170, 110, bat(0xd8431a)],
 };
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {

@@ -31,12 +31,13 @@ import { makePlaceTextures } from "../art/places";
 import { makeStoryTextures } from "../art/story";
 import { makeSeaTextures } from "../art/sea";
 import { makeLightTextures } from "../art/light";
+import { makeVolcanoTextures } from "../art/volcano";
 import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, onIsle, toIsle } from "../game/arena";
+import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
@@ -73,6 +74,12 @@ const DOOR_MS = 1500;
 /** the lighthouse beam: how far it reaches and how fast it turns (degrees per second) */
 const BEAM_LEN = 3200;
 const BEAM_SPIN = 60;
+/** the Volcano: time to beat the Magma King; how tough it is (x a stage boss); standing on a geyser to fire it, its recharge, how long the armour stays cracked */
+const VOLC_MS = 240000;
+const KING_HP = 1.35;
+const VENT_MS = 2500;
+const VENT_CD = 12000;
+const CRACK_MS = 8000;
 
 /** A tsunami wave: the wall of water and the shadow it throws ahead; `side` is where it comes from (0 top, 1 bottom, 2 left, 3 right). */
 interface Wave {
@@ -347,7 +354,7 @@ interface Bullet {
 
 /** Rocks the boss throws at you. */
 /** How a danger zone hits: what (if anything) falls on it, and what it looks like when it lands. */
-type StrikeStyle = "slam" | "goo" | "thunder" | "pumpkin" | "ice" | "rock" | "root" | "toxic" | "sand" | "magic";
+type StrikeStyle = "slam" | "goo" | "thunder" | "pumpkin" | "ice" | "rock" | "root" | "toxic" | "sand" | "magic" | "lava";
 type ImpactKind = "dust" | "splat" | "bolt" | "blast" | "ice" | "rock" | "root";
 const STRIKE_LOOK: Record<StrikeStyle, { color: number; fall?: string; impact: ImpactKind }> = {
   slam: { color: 0xff4a3a, impact: "dust" },
@@ -360,6 +367,7 @@ const STRIKE_LOOK: Record<StrikeStyle, { color: number; fall?: string; impact: I
   toxic: { color: 0xb04aff, impact: "splat" },
   sand: { color: 0xe8b060, impact: "rock" },
   magic: { color: 0xd04aff, fall: "orb", impact: "blast" },
+  lava: { color: 0xff6a1a, fall: "lava_bomb", impact: "blast" },
 };
 
 /** A danger zone on the ground that hits when its time comes. */
@@ -579,6 +587,8 @@ export class BattleScene extends Phaser.Scene {
   private whirl = { t: 9000, list: [] as { x: number; y: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Ellipse; life: number; hurtT: number }[] };
   /** the Lighthouse: the fire bowls, the lighthouse, its beam, the storm's lightning and rain */
   private light = this.freshLight();
+  /** the Volcano: the Magma King, its phase and armour, the geysers, the shrinking floor, the timers */
+  private volc = this.freshVolc();
   /** things you cannot walk through (houses, ruins, the gate's posts) */
   private solids: Phaser.Geom.Rectangle[] = [];
   private shieldImg!: Phaser.GameObjects.Image;
@@ -689,6 +699,15 @@ export class BattleScene extends Phaser.Scene {
     super("Battle");
   }
 
+  private freshVolc() {
+    return {
+      king: null as Enemy | null, phase: 0, armor: true, crackT: 0, clock: 0, bombT: 3000, meteorT: 9000, slimeT: 2500, hotT: 200,
+      k: 1, ring: null as Phaser.GameObjects.Graphics | null, ringK: 1, steam: null as Phaser.GameObjects.Image | null, steamT: 0, saidArmor: 0,
+      vents: [] as { x: number; y: number; p: number; cd: number; img: Phaser.GameObjects.Image }[],
+      lava: [] as Phaser.GameObjects.TileSprite[], jump: "start" as typeof battle.devJump,
+    };
+  }
+
   private freshLight() {
     return {
       bowls: [] as { x: number; y: number; lit: boolean; p: number; img: Phaser.GameObjects.Image; ember: Phaser.GameObjects.Image; ambushed: boolean }[],
@@ -721,6 +740,7 @@ export class BattleScene extends Phaser.Scene {
     makeStoryTextures(this);
     makeSeaTextures(this);
     makeLightTextures(this);
+    makeVolcanoTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     // the story is at night: the lobby too (a little lighter than the fights)
     const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
@@ -765,6 +785,7 @@ export class BattleScene extends Phaser.Scene {
     this.side = { phase: "calm", t: 0, dur: 0, sides: [], waves: [] };
     this.whirl = { t: 9000, list: [] };
     this.light = this.freshLight();
+    this.volc = this.freshVolc();
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -773,7 +794,7 @@ export class BattleScene extends Phaser.Scene {
     const onPath = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "path";
     const own = !this.rush && !data?.event && !!data?.autostart ? modeForStage(save.stage) : null;
     this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village")
-      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : getArena(this.land.id);
+      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : own === "volcano" ? getCraterArena(this.land) : getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
@@ -791,7 +812,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island || !!this.arena.crater,
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -1018,7 +1039,7 @@ export class BattleScene extends Phaser.Scene {
   /** Where the hero stands when a fight starts: by the crystal, or at the bottom of a story path. */
   private heroStart(): [number, number] {
     const [cx, cy] = this.arena.center;
-    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island ? [cx, cy] : [cx, cy + 260];
+    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island || this.arena.crater ? [cx, cy] : [cx, cy + 260];
   }
 
   /** The beginners' Dice Rain event: a Dice Rain run at your stage. */
@@ -1036,7 +1057,7 @@ export class BattleScene extends Phaser.Scene {
     }
     // a story path is a map of its own: the world is rebuilt for it
     const own = modeForStage(save.stage);
-    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island))) {
+    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island) || (own === "volcano" && !this.arena.crater))) {
       this.enter("battle", () => this.scene.restart({ autostart: true }));
       return;
     }
@@ -1094,6 +1115,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
       if (this.stageMode === "boss") this.time.delayedCall(this.story ? 1500 : 900, () => this.state === "fight" && this.bossCutscene());
+      if (this.stageMode === "volcano") this.time.delayedCall(700, () => this.state === "fight" && this.kingRises());
       this.devJumpTo();
       music.play("battle");
       this.game.events.emit("stage-start");
@@ -1234,6 +1256,7 @@ export class BattleScene extends Phaser.Scene {
     const beach = this.beachLobby();
     if (a.sea) this.drawSea();
     else if (a.island) this.drawIsland(keys.tile);
+    else if (a.crater) this.drawCrater();
     else if (beach) this.add.tileSprite(0, 0, a.w, a.h, "sand_tile").setOrigin(0).setDepth(-1000);
     else this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
     // toaster mode: fewer ground patches and scenery
@@ -1246,7 +1269,7 @@ export class BattleScene extends Phaser.Scene {
     const [cx, cy] = a.center;
     if (a.path) this.drawPath();
     else if (beach) this.drawBeach();
-    else if (!a.sea && !a.island) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    else if (!a.sea && !a.island && !a.crater) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
     if (!beach) a.objects.forEach((o, i) => {
       if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
@@ -1274,7 +1297,44 @@ export class BattleScene extends Phaser.Scene {
     this.crystal.setVisible(false);
     glow.setVisible(false);
     this.crystalSparkle.stop();
-    if (!this.rush && !a.path && !a.sea && !a.island) this.refreshSign();
+    if (!this.rush && !a.path && !a.sea && !a.island && !a.crater) this.refreshSign();
+  }
+
+  /**
+   * The volcano's crater: a sea of molten lava, the oval ash floor with a dark rocky rim, the lava lake
+   * in the middle (the Magma King's home), smoke rising from it and embers in the air.
+   */
+  private drawCrater(): void {
+    const a = this.arena;
+    const c = a.crater!;
+    const V = this.volc;
+    const oval = (o: { cx: number; cy: number; rx: number; ry: number }) => this.make.graphics({}, false).fillStyle(0xffffff).fillEllipse(o.cx, o.cy, o.rx * 2, o.ry * 2).createGeometryMask();
+    const sea = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-1000);
+    this.tweens.add({ targets: sea, tilePositionX: 256, tilePositionY: -256, duration: 16000, repeat: -1 });
+    this.add.tileSprite(0, 0, a.w, a.h, "ash_tile").setOrigin(0).setDepth(-996).setMask(oval(c));
+    this.add.ellipse(c.cx, c.cy, c.rx * 2 + 20, c.ry * 2 + 20).setStrokeStyle(40, 0x24161a, 0.95).setDepth(-995);
+    const edge = this.add.ellipse(c.cx, c.cy, c.rx * 2 + 70, c.ry * 2 + 70).setStrokeStyle(12, 0xffa030, 0.8).setDepth(-995);
+    this.tweens.add({ targets: edge, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const lake = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-993).setMask(oval(c.lake));
+    this.tweens.add({ targets: lake, tilePositionX: -256, duration: 9000, repeat: -1 });
+    this.add.ellipse(c.lake.cx, c.lake.cy, c.lake.rx * 2 + 30, c.lake.ry * 2 + 30).setStrokeStyle(30, 0x24161a, 0.95).setDepth(-992);
+    V.lava = [sea, lake];
+    // the lava glows through the night
+    this.nightGlow(c.lake.cx, c.lake.cy, 10, 0.75);
+    for (let i = 0; i < 12; i++) {
+      const t = (i / 12) * Math.PI * 2;
+      this.nightGlow(c.cx + Math.cos(t) * c.rx * 1.12, c.cy + Math.sin(t) * c.ry * 1.12, 7, 0.55);
+    }
+    if (effectsOn()) {
+      this.add.particles(c.lake.cx, c.lake.cy - 80, "puff", {
+        x: { min: -300, max: 300 }, lifespan: 3200, speedY: { min: -160, max: -80 }, speedX: { min: -30, max: 30 },
+        scale: { start: 1.6, end: 4 }, alpha: { start: 0.45, end: 0 }, tint: [0x4a3a3a, 0x6a5a58], frequency: 140,
+      }).setDepth(TOP + 40);
+      this.add.particles(0, 0, "spark", {
+        x: { min: -this.scale.width * 0.6, max: this.scale.width * 1.6 }, y: { min: 0, max: this.scale.height * 1.6 }, lifespan: 3000,
+        speedY: { min: -120, max: -50 }, speedX: { min: -30, max: 30 }, scale: { start: 0.5, end: 0 }, tint: [0xff8a1a, 0xffd040, 0xff5a1a], frequency: 60,
+      }).setScrollFactor(0).setDepth(TOP + 61);
+    }
   }
 
   /**
@@ -1365,7 +1425,7 @@ export class BattleScene extends Phaser.Scene {
   /** The lobby before a sea stage is the beach: the sea starts above you. */
   private beachLobby(): boolean {
     const m = modeForStage(save.stage);
-    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && (m === "sea" || m === "ocean" || m === "light");
+    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && !this.arena.crater && (m === "sea" || m === "ocean" || m === "light" || m === "volcano");
   }
 
   /**
@@ -1405,7 +1465,7 @@ export class BattleScene extends Phaser.Scene {
    */
   private drawPreview(): void {
     const m = modeForStage(save.stage);
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || (this.beachLobby() && m !== "light")) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || (this.beachLobby() && m !== "light" && m !== "volcano")) return;
     const [cx, cy] = this.arena.center;
     // in the open space to the right of where you stand (clear of the lobby's cards)
     const [x, y] = [cx + 360, cy + 640];
@@ -1450,6 +1510,17 @@ export class BattleScene extends Phaser.Scene {
       add(this.topGlow(lh.x, y - 385, 1.4, 0xffe9a0));
       for (const dx of [-200, 200]) add(this.add.image(x + dx, y + 60, "brazier").setOrigin(0.5, 1).setScale(0.6).setDepth(y + 60));
       add(this.sign(x, y + 330, "LIGHTHOUSE", "light it up!", "#ffe0a0"));
+    } else if (m === "volcano") {
+      // the volcano smoking across the island, and the Magma King waiting in it
+      const [x, y] = [cx - 330, cy + 760];
+      const v = add(this.add.image(x, y, "volcano_mini").setOrigin(0.5, 1).setScale(1.05).setDepth(y));
+      const glow = add(this.add.image(x, y - 380, "glow").setTint(0xff7a1a).setScale(2.4).setAlpha(0.6).setDepth(y + 1));
+      this.tweens.add({ targets: glow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 });
+      if (effectsOn()) add(this.add.particles(x, y - 390, "puff", {
+        lifespan: 2600, speedY: { min: -120, max: -60 }, speedX: { min: -20, max: 40 }, scale: { start: 1, end: 3 }, alpha: { start: 0.6, end: 0 }, tint: 0x5a4a4a, frequency: 220,
+      }).setDepth(y + 2));
+      this.tweens.add({ targets: v, scaleY: 1.08, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      add(this.sign(x, y + 280, "THE VOLCANO", "the Magma King waits", "#ffb08a"));
     } else if (m === "path" && save.stage >= 5) {
       // the road out of the village down to the sea
       add(this.add.tileSprite(cx, cy - 400, 420, 1400, "path_dirt").setOrigin(0.5, 1).setScale(2, 1).setDepth(-860));
@@ -1503,7 +1574,7 @@ export class BattleScene extends Phaser.Scene {
    * the blocks between, and at stage 2 two of them still burnt out.
    */
   private drawPlace(): void {
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.land.id !== "village" || this.beachLobby()) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.land.id !== "village" || this.beachLobby()) return;
     const [cx, cy] = this.arena.center;
     if (save.stage <= 1) {
       const [fx, fy] = [cx + 380, cy + 420];
@@ -1648,6 +1719,13 @@ export class BattleScene extends Phaser.Scene {
     // on a path: somewhere along the open strip (not deep in the woods)
     if (p) return [Phaser.Math.Clamp(cx + Math.cos(a) * d, p.x0 + 60, p.x1 - 60), Phaser.Math.Clamp(cy + Math.sin(a) * d, p.endY + 200, p.startY + 100)];
     if (this.arena.island) return toIsle(this.arena, clampX(cx + Math.cos(a) * d), clampY(cy + Math.sin(a) * d), 220);
+    if (this.arena.crater) {
+      // on the crater floor, out of the lava lake
+      const c = this.arena.crater;
+      let [x, y] = toOval(c, cx + Math.cos(a) * d, cy + Math.sin(a) * d, 220);
+      if (inOval(c.lake, x, y, -200)) [x, y] = [c.lake.cx + (x - c.lake.cx) * 2.2, c.lake.cy + (y - c.lake.cy) * 2.2 + 300];
+      return toOval(c, x, y, 220);
+    }
     return [clampX(cx + Math.cos(a) * d), clampY(cy + Math.sin(a) * d)];
   }
 
@@ -2663,6 +2741,8 @@ export class BattleScene extends Phaser.Scene {
       let ny = p ? Math.min(clampY(this.hero.y + vy * step), p.startY + 150) : clampY(this.hero.y + vy * step);
       // the island: the sea stops you at the shore
       if (this.arena.island && !onIsle(this.arena, nx, ny, 110)) [nx, ny] = toIsle(this.arena, nx, ny, 110);
+      // the crater: the rim stops you (the lava beyond it is too deep)
+      if (this.arena.crater && !inOval(this.arena.crater, nx, ny, 90)) [nx, ny] = toOval(this.arena.crater, nx, ny, 90);
       // buildings are solid: slide along their walls
       if (this.solids.length && this.blocked(nx, ny)) {
         if (!this.blocked(nx, this.hero.y)) ny = this.hero.y;
@@ -2851,7 +2931,7 @@ export class BattleScene extends Phaser.Scene {
       this.minute = minute;
       questEvent("wave");
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
-      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light";
+      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light" || this.stageMode === "volcano";
       if (own && this.state === "fight" && !this.arena.sea) {
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
       } else if (!own && minute < MINUTES) {
@@ -2867,7 +2947,7 @@ export class BattleScene extends Phaser.Scene {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
-    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light") this.bossCutscene();
+    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light" && this.stageMode !== "volcano") this.bossCutscene();
   }
 
   private types(): Record<"a" | "b" | "f", EnemyType> {
@@ -2876,6 +2956,13 @@ export class BattleScene extends Phaser.Scene {
         a: { tex: "e_octo", stats: WALKER_A, fx: 0xb46ad8 },
         b: { tex: "e_octo_r", stats: WALKER_B, fx: 0xff7a5a },
         f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
+      };
+    }
+    if (this.stageMode === "volcano") {
+      return {
+        a: { tex: "e_magma", stats: WALKER_A, fx: 0xff6a1a },
+        b: { tex: "e_magma_b", stats: WALKER_B, fx: 0xc8301a },
+        f: { tex: "e_firebat", stats: FLYER, fx: 0xff8a3a, flying: true },
       };
     }
     if (this.stageMode === "light") {
@@ -2902,7 +2989,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawn(delta: number): void {
-    if (this.state !== "fight" || this.stageMode === "boss") return;
+    // (the volcano sends its own slimes, see volcanoTick)
+    if (this.state !== "fight" || this.stageMode === "boss" || this.stageMode === "volcano") return;
     // the tsunami washes the monsters away
     if (this.stageMode === "sea" && this.sea.tsunami > 0) return;
     if (this.stageMode === "ocean" && this.side.phase === "wave") return;
@@ -2922,7 +3010,6 @@ export class BattleScene extends Phaser.Scene {
           e.speedMult *= 0.7;
           if (!e.type.flying) this.sea.under.add(e);
         }
-        if (this.arena.island) this.crabby(e);
         e.huntHero = !atCrystal;
         e.raider = atCrystal;
       }
@@ -2932,9 +3019,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.eliteTimer <= 0 && this.elapsed > 50000) {
       this.eliteTimer = 25000 - this.minute * 2500;
       const [x, y] = this.spawnPoint();
-      const el = this.addEnemy(this.types().b, x, y, true, true, 1, this.mobStage());
-      el.huntHero = true;
-      if (this.arena.island) this.crabby(el);
+      this.addEnemy(this.types().b, x, y, true, true, 1, this.mobStage()).huntHero = true;
     }
   }
 
@@ -2974,7 +3059,7 @@ export class BattleScene extends Phaser.Scene {
   /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
   private mobStage(): number {
     // (the lighthouse island's crabs: as strong as the sea's octopi; the storm is the hard part)
-    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : save.stage;
+    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : this.arena.crater ? Math.min(save.stage, 4) : save.stage;
   }
 
   /** On a path monsters step out of the woods on either side, mostly up ahead of you (some block the path). */
@@ -3017,7 +3102,6 @@ export class BattleScene extends Phaser.Scene {
         const [x, y] = toIsle(this.arena, this.hero.x + Math.cos(a) * v.width * 0.55, this.hero.y + Math.sin(a) * v.height * 0.45, 160);
         const e = this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage());
         e.huntHero = true;
-        this.crabby(e);
       }
       return;
     }
@@ -3072,6 +3156,7 @@ export class BattleScene extends Phaser.Scene {
       e.badge = this.add.image(x, y, `mut_${muts[0]}`).setScale(type.boss ? 1.7 : 1.15);
       this.announceMutations(muts);
     }
+    if (!type.boss && (this.arena.island || this.arena.crater)) this.soften(e);
     this.enemies.push(e);
     return e;
   }
@@ -3166,6 +3251,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "sea") this.seaStart();
     if (m === "ocean") this.oceanStart();
     if (m === "light") this.lightStart();
+    if (m === "volcano") this.volcanoStart();
     if (m === "hunt") this.huntStart();
   }
 
@@ -3213,6 +3299,12 @@ export class BattleScene extends Phaser.Scene {
       this.beast.hunger = 1;
     }
     if (m === "crystal") this.crystalDieAt = at + CRYSTAL_DIE_MS;
+    if (m === "volcano") {
+      // the Magma King starts weaker: phase 2, phase 3, or almost down
+      this.volc.jump = j;
+      this.toast(`DEV: ${j === "mid" ? "phase 2" : j === "end" ? "phase 3" : "almost down"}`, "#e6b8ff");
+      return;
+    }
     if (m === "light") {
       // the middle: two bowls lit; near the end: three; the boss: all four and the lighthouse
       const n = j === "mid" ? 2 : j === "end" ? 3 : 4;
@@ -3796,12 +3888,15 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** Island crabs dig up out of the sand, pinch softer and walk slower than monsters (the lightning is the real danger). */
-  private crabby(e: Enemy): void {
+  /**
+   * Island crabs and the volcano's magma slimes dig up out of the sand (or the ash), pinch softer and walk
+   * slower than monsters: the storm and the Magma King are the real danger there.
+   */
+  private soften(e: Enemy): void {
     e.dmg *= 0.6;
     e.speedMult *= 0.75;
     if (e.type.flying || !effectsOn()) return;
-    this.puff.setParticleTint(0xe8d0a0);
+    this.puff.setParticleTint(this.arena.crater ? 0xff8a3a : 0xe8d0a0);
     this.puff.explode(6, e.img.x, e.img.y);
   }
 
@@ -3817,7 +3912,6 @@ export class BattleScene extends Phaser.Scene {
       const [x, y] = toIsle(this.arena, b.x + Math.cos(a) * 520, b.y + Math.sin(a) * 380, 160);
       const e = this.addEnemy(i % 3 ? this.types().a : this.types().b, x, y, false, true, 1, this.mobStage());
       e.huntHero = true;
-      this.crabby(e);
     }
   }
 
@@ -3986,6 +4080,327 @@ export class BattleScene extends Phaser.Scene {
       g.lineStyle(10, 0xffd24a, 0.5 + 0.3 * Math.sin(t / 150)).strokeEllipse(L.tx, L.ty + 70, 380, 290);
       if (k > 0) g.lineStyle(14, 0xffffff, 1).beginPath().arc(L.tx, L.ty - 420, 80, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k).strokePath();
     }
+  }
+
+  // ── The Volcano (stage 9): the Magma King in its crater, in three phases
+
+  /** The crater at night: the water geysers round the floor, the clock (4:00), and the King's walk frames made ahead. */
+  private volcanoStart(): void {
+    const c = this.arena.crater;
+    if (!c) return;
+    const V = this.volc;
+    if (!this.night) this.night = new Night(this, 0.4, TOP + 8700, 0x200808);
+    this.hasLantern = true;
+    if (!this.heldLantern) this.holdLantern(false);
+    for (const [x, y] of c.vents) {
+      const img = this.add.image(x, y, "geyser").setOrigin(0.5, 0.75).setDepth(y - 60);
+      V.vents.push({ x, y, p: 0, cd: 0, img });
+    }
+    battle.limit = VOLC_MS;
+    battle.left = VOLC_MS;
+    for (let i = 0; i < 3; i++) this.time.delayedCall(200 + i * 300, () => bossFrame(this, "b_magmaking", i));
+  }
+
+  /** The lake bubbles, the ground shakes, and the Magma King rises out of the lava. */
+  private kingRises(): void {
+    const c = this.arena.crater!;
+    const V = this.volc;
+    this.state = "cutscene";
+    battle.bossFight = true;
+    this.joy = { ...NO_JOY };
+    this.game.events.emit("boss-warning");
+    music.play("calm");
+    const cam = this.cameras.main;
+    const [kx, ky] = [c.lake.cx, c.lake.cy + 60];
+    cam.stopFollow();
+    cam.pan(kx, ky - 250, 900, "Sine.easeInOut");
+    cam.zoomTo(0.5, 900, "Sine.easeInOut");
+    sfx.alarm();
+    for (const t of [300, 900, 1500]) this.time.delayedCall(t, () => {
+      cam.shake(400, 0.012);
+      sfx.thunder();
+      this.puff.setParticleTint(0xff8a3a);
+      this.puff.explode(14, kx + Phaser.Math.Between(-300, 300), ky + Phaser.Math.Between(-150, 150));
+    });
+    this.time.delayedCall(1700, () => {
+      const king = this.addEnemy({ tex: "b_magmaking", stats: BOSS, fx: 0xff5a1a, boss: true, moves: ["ring", "rocks", "stomp"], special: "quake" }, kx, ky, false, false);
+      king.hp = king.maxHp = Math.round(monsterHp(BOSS.hp, save.stage, 1) * HEALING_BOSS_HP * KING_HP);
+      king.dmg *= 0.3;
+      king.speedMult = 0;
+      king.huntHero = true;
+      king.phaseT = 3000;
+      king.r = 150;
+      this.tweens.add({ targets: king.img, scale: 2.3, duration: 900, delay: 300, ease: "Back.out" });
+      V.king = king;
+      this.bigBoss = king;
+      this.boom(kx, ky - 100, 3);
+      this.splashLava(kx, ky, 40);
+      cam.flash(300, 255, 140, 60);
+      cam.shake(700, 0.02);
+      buzz(300);
+      music.play("boss");
+      this.game.events.emit("boss-intro", { name: "MAGMA KING", tex: "b_magmaking", moves: [`${BOSS_SPECIALS.quake}!`, "Lava Bombs", BOSS_MOVES.ring, BOSS_MOVES.rocks] });
+      // the developer can start it weaker
+      const jump = V.jump;
+      V.jump = "start";
+      if (jump !== "start") king.hp = king.maxHp * (jump === "mid" ? 0.6 : jump === "end" ? 0.3 : 0.08);
+    });
+    this.time.delayedCall(3600, () => {
+      cam.pan(this.hero.x, this.hero.y - 100, 700, "Sine.easeInOut");
+      cam.zoomTo(ZOOM, 700, "Sine.easeInOut");
+    });
+    this.time.delayedCall(4400, () => {
+      cam.startFollow(this.hero, true, 0.14, 0.14);
+      if (this.state !== "cutscene") return;
+      this.state = "boss";
+      V.phase = 1;
+      this.banner("FIGHT!", "red", 700);
+      this.time.delayedCall(900, () => this.toast("Its armor is too hard! Stand on a geyser to blast it with water", "#9ae6ff"));
+    });
+  }
+
+  private volcanoTick(delta: number, fighting: boolean): void {
+    const V = this.volc;
+    const king = V.king;
+    if (V.ring && V.k !== V.ringK) this.drawLavaRing();
+    if (!fighting || !king || this.state !== "boss") return;
+    // the clock: the volcano blows in 4:00
+    V.clock += delta;
+    const left = VOLC_MS - V.clock;
+    battle.left = Math.max(0, left);
+    if (left <= 0) {
+      this.stageLost("time");
+      return;
+    }
+    this.storyReminders(left, delta);
+    const frac = king.hp / king.maxHp;
+    if (V.phase === 1 && frac <= 0.66) this.kingPhase(2);
+    else if (V.phase === 2 && frac <= 0.33) this.kingPhase(3);
+    // cracked armour: steam pours off it until it hardens again
+    if (!V.armor) {
+      V.crackT -= delta;
+      V.steam?.setPosition(king.img.x, king.img.y - 200);
+      V.steamT -= delta;
+      if (V.steamT <= 0 && effectsOn()) {
+        V.steamT = 180;
+        this.puff.setParticleTint(0xe8f4ff);
+        this.puff.explode(3, king.img.x + Phaser.Math.Between(-120, 120), king.img.y - Phaser.Math.Between(100, 380));
+      }
+      if (V.crackT <= 0) this.armorBack();
+    }
+    // the geysers: stand on a ready one to fire it at the King
+    for (const v of V.vents) {
+      v.cd -= delta;
+      const on = Math.hypot(this.hero.x - v.x, (this.hero.y - v.y) * 1.4) < 150;
+      const was = v.p;
+      if (on && v.cd <= 0 && V.armor) {
+        v.p = Math.min(1, v.p + delta / VENT_MS);
+        if (Math.floor(v.p * 5) > Math.floor(was * 5)) sfx.charge(1 + Math.floor(v.p * 5));
+        if (v.p >= 1) this.fireVent(v);
+      } else v.p = Math.max(0, v.p - delta / VENT_MS);
+    }
+    // lava bombs: one where you are heading and more round you, faster each phase
+    V.bombT -= delta;
+    if (V.bombT <= 0) {
+      V.bombT = [2400, 1900, 1500][V.phase - 1] ?? 1500;
+      const [vx, vy] = this.heroVel;
+      const n = V.phase >= 3 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const [x, y] = i === 0 ? [this.hero.x + vx * 0.7, this.hero.y + vy * 0.7] : [this.hero.x + Phaser.Math.Between(-450, 450), this.hero.y + Phaser.Math.Between(-350, 350)];
+        this.lavaBomb(x, y, i * 180);
+      }
+    }
+    // phase 3: meteor showers all over the floor
+    if (V.phase >= 3) {
+      V.meteorT -= delta;
+      if (V.meteorT <= 0) {
+        V.meteorT = 9000;
+        this.banner("METEOR SHOWER!", "red", 800);
+        sfx.alarm();
+        const c = this.arena.crater!;
+        for (let i = 0; i < 9; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 0.25 + Math.random() * 0.7;
+          this.lavaBomb(c.cx + Math.cos(a) * c.rx * d * V.k, c.cy + Math.sin(a) * c.ry * d * V.k, i * 160);
+        }
+      }
+    }
+    // magma slimes crawl up out of the lava at the edge of the floor
+    V.slimeT -= delta;
+    const cap = [6, 14, 10][V.phase - 1] ?? 10;
+    if (V.slimeT <= 0 && this.enemies.length - 1 < cap) {
+      V.slimeT = [3200, 1800, 2400][V.phase - 1] ?? 2400;
+      const c = this.arena.crater!;
+      const a = Math.atan2(this.hero.y - c.cy, this.hero.x - c.cx) + Phaser.Math.FloatBetween(-1, 1);
+      const [x, y] = [c.cx + Math.cos(a) * c.rx * V.k * 0.92, c.cy + Math.sin(a) * c.ry * V.k * 0.92];
+      if (Math.hypot(x - this.hero.x, y - this.hero.y) > 350) {
+        this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage()).huntHero = true;
+        this.splashLava(x, y, 6);
+      }
+    }
+    // the lava lake and the lava closing in burn you
+    const c = this.arena.crater!;
+    const hot = inOval(c.lake, this.hero.x, this.hero.y, 30) || !inOval(c, this.hero.x, this.hero.y, 0, V.k);
+    if (hot) {
+      V.hotT -= delta;
+      if (V.hotT <= 0) {
+        V.hotT = 400;
+        this.hurt(this.heroMax * 0.07);
+        this.callout("HOT!", "#ff8a3a");
+        this.splashLava(this.hero.x, this.hero.y, 4);
+      }
+    } else V.hotT = 200;
+  }
+
+  /** A lava bomb lobbed high by the King: a warning circle, then it lands and blows up. */
+  private lavaBomb(x: number, y: number, delay = 0): void {
+    const c = this.arena.crater!;
+    const [bx, by] = toOval(c, x, y, 120);
+    const go = () => this.fighting && this.addStrike(bx, by, 150, 1200, this.heroMax * 0.1, "lava", undefined, true);
+    if (delay) this.time.delayedCall(delay, go);
+    else go();
+  }
+
+  /** A splash of molten lava and embers. */
+  private splashLava(x: number, y: number, n: number): void {
+    if (!effectsOn()) return;
+    this.sparks.setParticleTint(0xff8a1a);
+    this.sparks.explode(n, x, y - 20);
+    this.puff.setParticleTint(0xff5a1a);
+    this.puff.explode(Math.ceil(n / 2), x, y);
+  }
+
+  /** A geyser fires: a column of water, and a ball of it flies over and cracks the King's armour. */
+  private fireVent(v: (typeof this.volc.vents)[number]): void {
+    const V = this.volc;
+    const king = V.king;
+    v.p = 0;
+    v.cd = V.phase >= 3 ? 8000 : VENT_CD;
+    // its spray cools you down too
+    this.heal(0.12);
+    sfx.whoosh();
+    buzz(120);
+    this.cameras.main.shake(200, 0.006);
+    const col = this.add.image(v.x, v.y - 20, "glow").setTint(0x9ae6ff).setScale(1.2, 0.4).setOrigin(0.5, 1).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 9040);
+    this.tweens.add({ targets: col, scaleY: 6, alpha: 0, duration: 700, ease: "Quad.out", onComplete: () => col.destroy() });
+    this.puff.setParticleTint(0xe8fbff);
+    this.puff.explode(24, v.x, v.y - 60);
+    this.sparks.setParticleTint(0x9ae6ff);
+    this.sparks.explode(20, v.x, v.y - 120);
+    if (!king) return;
+    const ball = this.add.image(v.x, v.y - 120, "water_ball").setScale(1.4).setDepth(TOP + 9045);
+    this.tweens.add({ targets: ball, x: king.img.x, y: king.img.y - 220, scale: 2.4, angle: 360, duration: 650, ease: "Quad.in", onComplete: () => {
+      ball.destroy();
+      if (this.enemies.includes(king) && this.state === "boss") this.crack();
+    } });
+  }
+
+  /** The water cracks the King's armour: it steams, stops for a moment and takes extra damage. */
+  private crack(): void {
+    const V = this.volc;
+    const king = V.king!;
+    V.armor = false;
+    V.crackT = CRACK_MS;
+    king.stunUntil = this.time.now + 1500;
+    this.hit(king, king.maxHp * 0.04, true);
+    this.banner("ARMOR CRACKED!", "blue", 900);
+    this.callout("HIT IT NOW!", "#9ae6ff");
+    sfx.superRoll();
+    this.cameras.main.flash(200, 200, 240, 255);
+    this.puff.setParticleTint(0xffffff);
+    this.puff.explode(30, king.img.x, king.img.y - 200);
+    V.steam?.destroy();
+    V.steam = this.add.image(king.img.x, king.img.y - 200, "glow").setTint(0x9ae6ff).setScale(4).setAlpha(0.45).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 9030);
+    this.tweens.add({ targets: V.steam, alpha: 0.2, duration: 400, yoyo: true, repeat: -1 });
+  }
+
+  /** The lava inside hardens the armour again. */
+  private armorBack(): void {
+    const V = this.volc;
+    V.armor = true;
+    V.steam?.destroy();
+    V.steam = null;
+    const king = V.king;
+    if (!king) return;
+    this.callout("ARMOR BACK!", "#ffb08a");
+    this.sparks.setParticleTint(0xff8a1a);
+    this.sparks.explode(26, king.img.x, king.img.y - 200);
+  }
+
+  /** Phase 2: the lava rises and the floor shrinks. Phase 3: the King climbs out of its lake, enraged. */
+  private kingPhase(n: number): void {
+    const V = this.volc;
+    const king = V.king!;
+    V.phase = n;
+    const cam = this.cameras.main;
+    cam.shake(900, 0.018);
+    cam.flash(250, 255, 120, 40);
+    sfx.thunder();
+    buzz(250);
+    if (n === 2) {
+      this.banner("THE LAVA RISES!", "red", 1200);
+      this.time.delayedCall(900, () => this.toast("The floor is shrinking! Magma slimes crawl out of the lava", "#ffb08a"));
+      V.ring = this.add.graphics().setDepth(-994);
+      this.tweens.add({ targets: V, k: 0.74, duration: 6000, ease: "Sine.inOut" });
+      return;
+    }
+    this.banner("ENRAGED!", "red", 1200);
+    this.time.delayedCall(900, () => this.toast("It climbs out of the lake! Meteors! The geysers fill up faster", "#ffb08a"));
+    king.speedMult = 1.15;
+    king.type.moves = ["charge", "stomp", "rocks"];
+    for (const v of V.vents) v.cd = Math.min(v.cd, 0);
+    V.meteorT = 3000;
+    const rage = this.add.image(king.img.x, king.img.y, "glow").setTint(0xff2a1a).setScale(5).setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(king.img.depth - 1);
+    king.aura?.destroy();
+    king.aura = rage;
+    this.tweens.add({ targets: rage, alpha: 0.2, duration: 300, yoyo: true, repeat: -1 });
+  }
+
+  /** The lava closing in round the edge of the floor (a thick molten band and its bright inner edge). */
+  private drawLavaRing(): void {
+    const V = this.volc;
+    const c = this.arena.crater!;
+    const g = V.ring!;
+    V.ringK = V.k;
+    const w = c.rx * (1 - V.k) + 60;
+    g.clear();
+    g.lineStyle(w, 0xe8481a, 0.95).strokeEllipse(c.cx, c.cy, c.rx * (1 + V.k) + 60, c.ry * (1 + V.k) + 60);
+    g.lineStyle(26, 0xffb030, 0.9).strokeEllipse(c.cx, c.cy, c.rx * 2 * V.k, c.ry * 2 * V.k);
+    g.lineStyle(8, 0xfff0a0, 0.9).strokeEllipse(c.cx, c.cy, c.rx * 2 * V.k - 10, c.ry * 2 * V.k - 10);
+  }
+
+  /** Rings round the geysers: blue and pulsing when ready, filling up while you stand on one, grey while refilling. */
+  private volcanoFx(g: Phaser.GameObjects.Graphics, t: number): void {
+    const V = this.volc;
+    if (this.state !== "boss") return;
+    for (const v of V.vents) {
+      const [x, y] = [v.x, v.y];
+      if (v.cd > 0) {
+        const f = 1 - v.cd / (V.phase >= 3 ? 8000 : VENT_CD);
+        g.lineStyle(8, 0x8a8a9a, 0.6).strokeEllipse(x, y, 300, 214);
+        g.lineStyle(10, 0x6ad0ff, 0.8).beginPath().arc(x, y - 230, 50, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f).strokePath();
+        continue;
+      }
+      g.lineStyle(12, 0x6ad0ff, V.armor ? 0.55 + 0.35 * Math.sin(t / 160) : 0.3).strokeEllipse(x, y, 300, 214);
+      if (v.p > 0) {
+        g.lineStyle(18, 0x111111, 0.45).strokeCircle(x, y - 240, 70);
+        g.lineStyle(12, 0x9ae6ff, 1).beginPath().arc(x, y - 240, 70, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * v.p).strokePath();
+      }
+    }
+  }
+
+  /** The King is beaten: the lava cools to dark rock and the night lifts. */
+  private volcanoCools(): void {
+    const V = this.volc;
+    V.steam?.destroy();
+    V.steam = null;
+    // white (as drawn) to a dark rock grey
+    this.tweens.addCounter({ from: 255, to: 80, duration: 2500, onUpdate: (tw) => {
+      const v = Math.round(tw.getValue() ?? 80);
+      for (const l of V.lava) l.setTint(Phaser.Display.Color.GetColor(v, Math.round(v * 0.85), Math.round(v * 0.8)));
+    } });
+    if (V.ring) this.tweens.add({ targets: V.ring, alpha: 0.3, duration: 2500 });
+    if (this.night) this.night.want = 0.25;
   }
 
   /**
@@ -4564,6 +4979,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "sea") this.seaTick(delta, fighting);
     if (m === "ocean") this.oceanTick(delta, fighting);
     if (m === "light") this.lightTick(delta, fighting);
+    if (m === "volcano") this.volcanoTick(delta, fighting);
     battle.goal = this.modeGoal();
   }
 
@@ -4585,6 +5001,13 @@ export class BattleScene extends Phaser.Scene {
       const start = this.arena.h - 600;
       const far = Math.hypot(this.hero.x - o.x, this.hero.y - o.y);
       return { frac: Phaser.Math.Clamp(1 - far / Math.hypot(this.arena.w / 2 - o.x, start - o.y), 0, 1), text: far < 2200 ? `LAND HO!  •  ${Math.round(far / 100)}m` : "FIND LAND", color: 0x7ad651, icon: "mode_sea", alarm: false };
+    }
+    if (m === "volcano") {
+      const V = this.volc;
+      if (!V.king) return { frac: 1, text: "Something stirs in the lava...", color: 0xff7a1a, icon: "mode_volcano", alarm: false };
+      const hot = V.hotT < 200;
+      const what = V.armor ? `PHASE ${V.phase}/3  •  ARMORED! Fire a geyser at it` : `PHASE ${V.phase}/3  •  ARMOR CRACKED! HIT IT! ${Math.ceil(V.crackT / 1000)}s`;
+      return { frac: Math.max(0, battle.bossFrac), text: hot ? "TOO HOT! Get off the lava!" : what, color: V.armor ? 0xff7a1a : 0x6ad0ff, icon: "mode_volcano", alarm: hot };
     }
     if (m === "light" && battle.bossFight) {
       return { frac: Math.max(0, battle.bossFrac), text: "Lure the boss into the light beam!", color: 0xffd24a, icon: "mode_light", alarm: false };
@@ -4757,6 +5180,7 @@ export class BattleScene extends Phaser.Scene {
       g.lineStyle(12, c, 0.95).beginPath().arc(hx, hy, 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * o).strokePath();
     }
     if (this.stageMode === "light") this.lightFx(g, t);
+    if (this.stageMode === "volcano") this.volcanoFx(g, t);
     // a trail of arrows on the ground from you toward the main goal, marching the way to go
     const goal = this.goalSpots()[0];
     if (goal) {
@@ -5615,6 +6039,7 @@ export class BattleScene extends Phaser.Scene {
     // the story: the night lifts a little; after the big boss your beast goes home
     if (this.night && this.stageMode !== "path") this.night.want = this.night.dark * 0.6;
     if (this.story && this.stageMode === "boss") this.beastLeaves();
+    if (this.stageMode === "volcano") this.volcanoCools();
     music.play("calm");
     // the crystal floats back down from the sky
     const [hx, hy] = this.crystalHome;
@@ -7097,6 +7522,14 @@ export class BattleScene extends Phaser.Scene {
   private hit(e: Enemy, dmg: number, quiet = false): void {
     if (!this.enemies.includes(e) || e.phased) return;
     if (e.muts.includes("armor")) dmg *= 0.5;
+    // the Magma King's rock armour: crack it with a geyser, then hit it hard
+    if (e === this.volc.king) {
+      dmg *= this.volc.armor ? 0.2 : 1.5;
+      if (this.volc.armor && !quiet && this.time.now - this.volc.saidArmor > 3500) {
+        this.volc.saidArmor = this.time.now;
+        this.callout("ARMOR! Use a geyser", "#ffb08a");
+      }
+    }
     const crit = Math.random() < critChance();
     const amount = Math.max(1, Math.round(dmg * (crit ? critDamage() : 1) * Phaser.Math.FloatBetween(0.9, 1.1)));
     e.hp -= amount;
@@ -7446,6 +7879,15 @@ export class BattleScene extends Phaser.Scene {
         const b = cold.reduce((a, c) => (d(c) < d(a) ? c : a));
         out.push({ x: b.x, y: b.y - 80, icon: "brazier", label: `FIRE ${L.bowls.length - cold.length}/${L.bowls.length}`, color: 0xffa040 });
       } else if (!L.on) out.push({ x: L.tx, y: L.ty + 40, icon: "mode_light", label: "LIGHTHOUSE", color: 0xffd24a });
+    }
+    if (this.stageMode === "volcano" && this.state === "boss" && this.volc.armor) {
+      // a geyser that is ready, to crack the Magma King's armour
+      const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
+      const ready = this.volc.vents.filter((v) => v.cd <= 0);
+      if (ready.length) {
+        const v = ready.reduce((a, c) => (d(c) < d(a) ? c : a));
+        out.push({ x: v.x, y: v.y - 40, icon: "geyser", label: "GEYSER", color: 0x6ad0ff });
+      }
     }
     if (this.stageMode === "light" && this.state === "boss" && this.light.on) {
       // the beam only reaches so far: fight the boss near the lighthouse

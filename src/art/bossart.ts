@@ -433,6 +433,74 @@ export function stoneGolem(ctx: Ctx): void {
   });
 }
 
+/** Magma King: a hulking molten rock giant, glowing lava in every crack, a burning crown and a furnace heart. */
+export function magmaKing(ctx: Ctx): void {
+  const c = 0x4a3a3a;
+  const t = toon(ctx, "#1a0c0c", 6, true);
+  groundShadow(ctx, 125, 240, 118);
+  aura(ctx, 125, 140, 110, 0xff6a1a, 0.3);
+  const crack = (pts: P[]) => {
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const [w, st] of [[11, "rgba(255,90,20,0.4)"], [5, "rgba(255,150,40,0.95)"], [2, "#fff2a0"]] as [number, string][]) {
+      ctx.lineWidth = w;
+      ctx.strokeStyle = st;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+    }
+  };
+  legs(ctx, 125, () => {
+  // stumpy legs of cooled rock, lava dripping between the plates
+  t.part(() => {
+    t.poly([[66, 192], [112, 192], [116, 240], [60, 240]], 10);
+    t.poly([[138, 192], [184, 192], [190, 240], [134, 240]], 10);
+  }, darken(c, 0.15), () => {
+    crack([[80, 204], [92, 222], [86, 236]]);
+    crack([[164, 206], [158, 226]]);
+  });
+  });
+  arms(ctx, 125, 62, 100, 0.16, () => {
+  // huge arms ending in molten fists
+  for (const d of [-1, 1]) {
+    t.part(() => t.poly([[125 + d * 60, 92], [125 + d * 108, 102], [125 + d * 116, 160], [125 + d * 74, 152]], 12), darken(c, 0.05), () => crack([[125 + d * 82, 110], [125 + d * 98, 132], [125 + d * 92, 148]]));
+    aura(ctx, 125 + d * 104, 182, 34, 0xff7a1a, 0.7);
+    t.part(() => t.poly([[125 + d * 82, 156], [125 + d * 124, 150], [125 + d * 128, 208], [125 + d * 80, 208]], 16), 0xd8431a, () => {
+      t.paint(rgba(0xffb030), () => t.E(125 + d * 102, 176, 14, 9));
+      crack([[125 + d * 88, 192], [125 + d * 118, 196]]);
+    });
+  }
+  });
+  // the torso: a cracked boulder chest
+  t.part(() => t.poly([[56, 66], [194, 66], [208, 138], [180, 204], [70, 204], [42, 138]], 22), c, () => {
+    t.paint(rgba(darken(c, 0.25)), () => {
+      t.E(70, 92, 14, 9, -0.3);
+      t.E(184, 110, 10, 14);
+    });
+    crack([[72, 110], [96, 132], [86, 168], [100, 190]]);
+    crack([[178, 104], [156, 136], [168, 172]]);
+    crack([[110, 78], [124, 96], [140, 80]]);
+  });
+  // the furnace heart, blazing
+  aura(ctx, 125, 152, 46, 0xffa020, 0.95);
+  t.part(() => t.poly([[125, 122], [150, 150], [125, 186], [100, 150]], 4), 0xffc030, () => {
+    t.paint("rgba(255,255,220,0.95)", () => t.E(125, 152, 10, 16));
+  }, 3);
+  head(ctx, 125, 84, () => {
+  // the head sunk into the shoulders, a crown of fire on top
+  for (const [x, h, w] of [[96, 46, 12], [112, 62, 14], [125, 74, 16], [138, 62, 14], [154, 46, 12]] as const) {
+    aura(ctx, x, 30 - h * 0.3, w * 1.4, 0xff8a1a, 0.6);
+    t.part(() => t.poly([[x - w, 34], [x, 34 - h], [x + w, 34]], 3), 0xff7a1a, () => t.paint("rgba(255,230,120,0.95)", () => t.poly([[x - w * 0.45, 34], [x, 34 - h * 0.55], [x + w * 0.45, 34]], 2)), 3);
+  }
+  t.part(() => t.poly([[86, 30], [164, 30], [174, 88], [76, 88]], 16), lighten(c, 0.06), () => crack([[100, 40], [112, 52]]));
+  t.gloss(100, 46, 12, 6);
+  glowEyes(t, 125, 62, 19, 0.8, 0xffe040);
+  // a glowing grin
+  t.paint("rgba(40,10,0,0.9)", () => t.poly([[100, 74], [150, 74], [142, 84], [108, 84]], 4));
+  t.paint("rgba(255,160,40,0.95)", () => t.poly([[106, 76], [144, 76], [139, 81], [111, 81]], 2));
+  });
+}
+
 /** Scarecrow: a stitched sack head with burning eyes, a torn hat, crows, straw everywhere and a lantern. */
 export function scarecrow(ctx: Ctx): void {
   const t = toon(ctx, "#24140c", 6, true);
@@ -1433,6 +1501,7 @@ export const BOSS_ART: Record<string, [number, number, (ctx: Ctx) => void]> = {
   b_mushtitan: [250, 252, mushroomTitan],
   b_batqueen: [250, 250, batQueen],
   e_golem: [250, 250, stoneGolem],
+  b_magmaking: [250, 250, magmaKing],
   b_scarecrow: [250, 250, scarecrow],
   b_thundercrow: [250, 250, thunderCrow],
   b_haybrute: [250, 256, hayBrute],

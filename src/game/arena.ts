@@ -41,6 +41,27 @@ export interface Arena {
   ocean?: boolean;
   /** the lighthouse island: an oval of land in the sea (centre, radii), the fire bowls and the lighthouse */
   island?: { cx: number; cy: number; rx: number; ry: number; bowls: Pt[]; tower: Pt };
+  /** the volcano's crater: its ash floor (an oval in a sea of lava), the lava lake in the middle, the water geysers */
+  crater?: Oval & { lake: Oval; vents: Pt[] };
+}
+
+/** An oval: centre and radii. */
+export interface Oval {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+}
+
+/** Is a point inside an oval (`margin` in from its edge; `k` shrinks it)? */
+export function inOval(o: Oval, x: number, y: number, margin = 0, k = 1): boolean {
+  return ((x - o.cx) / (o.rx * k - margin)) ** 2 + ((y - o.cy) / (o.ry * k - margin)) ** 2 <= 1;
+}
+
+/** The nearest point inside an oval (`margin` in from its edge; `k` shrinks it). */
+export function toOval(o: Oval, x: number, y: number, margin = 0, k = 1): Pt {
+  const d = Math.hypot((x - o.cx) / (o.rx * k - margin), (y - o.cy) / (o.ry * k - margin));
+  return d <= 1 ? [x, y] : [o.cx + (x - o.cx) / d, o.cy + (y - o.cy) / d];
 }
 
 /** A story path: through the woods to the village, or down to the sea. */
@@ -198,15 +219,12 @@ export function getIslandArena(land: Region): Arena {
 
 /** Is a point on the island's land (`margin` in from the shore)? */
 export function onIsle(a: Arena, x: number, y: number, margin = 0): boolean {
-  const i = a.island!;
-  return ((x - i.cx) / (i.rx - margin)) ** 2 + ((y - i.cy) / (i.ry - margin)) ** 2 <= 1;
+  return inOval(a.island!, x, y, margin);
 }
 
 /** The nearest point on the island's land (`margin` in from the shore). */
 export function toIsle(a: Arena, x: number, y: number, margin = 0): Pt {
-  const i = a.island!;
-  const k = Math.hypot((x - i.cx) / (i.rx - margin), (y - i.cy) / (i.ry - margin));
-  return k <= 1 ? [x, y] : [i.cx + (x - i.cx) / k, i.cy + (y - i.cy) / k];
+  return toOval(a.island!, x, y, margin);
 }
 
 function buildIsland(land: Region): Arena {
@@ -256,6 +274,42 @@ function buildIsland(land: Region): Arena {
     land, center: start, objects, patches, w: ISLE_W, h: ISLE_H,
     island: { cx, cy, rx: ISLE_RX, ry: ISLE_RY, bowls, tower },
   };
+}
+
+/** The volcano's crater (stage 9): an oval ash floor in a sea of lava, the lava lake in the middle. */
+export const CRATER_W = 4400;
+export const CRATER_H = 4200;
+
+const craterCache = new Map<RegionId, Arena>();
+
+export function getCraterArena(land: Region): Arena {
+  if (!craterCache.has(land.id)) craterCache.set(land.id, buildCrater(land));
+  const a = craterCache.get(land.id)!;
+  useArena(a);
+  return a;
+}
+
+function buildCrater(land: Region): Arena {
+  const rand = seeded(9090 + REGIONS.indexOf(land) * 17);
+  const [cx, cy] = [CRATER_W / 2, CRATER_H / 2];
+  const floor: Oval = { cx, cy, rx: 1800, ry: 1550 };
+  const lake: Oval = { cx, cy: cy - 150, rx: 520, ry: 360 };
+  // (well inside the floor: still safe once the lava closes in)
+  const vents: Pt[] = [[cx - 820, cy + 520], [cx + 820, cy + 520], [cx, cy - 860]];
+  const start: Pt = [cx, cy + 1150];
+  const taken = [...vents, start].map(([x, y]) => ({ x, y, r: 260 }));
+  const objects: ArenaObj[] = [];
+  // jagged rocks and old bones round the edge of the floor, a few out in the middle
+  for (let n = 0, tries = 0; n < 70 && tries < 1500; tries++) {
+    const a = rand() * Math.PI * 2;
+    const k = rand() < 0.75 ? 0.82 + rand() * 0.12 : 0.45 + rand() * 0.3;
+    const [x, y] = [cx + Math.cos(a) * floor.rx * k, cy + Math.sin(a) * floor.ry * k];
+    if (inOval(lake, x, y, -260) || taken.some((t) => Math.hypot(t.x - x, t.y - y) < t.r)) continue;
+    const r = rand();
+    objects.push({ tex: r < 0.55 ? "rock" : r < 0.7 ? "skull" : r < 0.85 ? "rock_small" : "dry_bush", x, y, flip: rand() < 0.5, scale: r < 0.55 ? 0.7 + rand() * 0.6 : undefined });
+    n++;
+  }
+  return { land, center: start, objects, patches: [], w: CRATER_W, h: CRATER_H, crater: { ...floor, lake, vents } };
 }
 
 /** The field you are on: keeps everyone inside it (set by getArena / getPathArena). */
