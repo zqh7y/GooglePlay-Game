@@ -68,20 +68,22 @@ function tone(freq: number, dur: number, type: OscillatorType = "square", vol = 
   osc.stop(t + dur + 0.02);
 }
 
-function burst(dur: number, vol: number, cutoff: number): void {
+function burst(dur: number, vol: number, cutoff: number, delay = 0, kind: BiquadFilterType = "lowpass", swell = 0): void {
   if (!ac || muted || !noise) return;
-  const t = ac.currentTime;
+  const t = ac.currentTime + delay;
   const src = ac.createBufferSource();
   src.buffer = noise;
   const filter = ac.createBiquadFilter();
-  filter.type = "lowpass";
+  filter.type = kind;
   filter.frequency.value = cutoff;
   const gain = ac.createGain();
-  gain.gain.setValueAtTime(vol, t);
+  // (a swell fades in over its first part, like a gust of wind)
+  gain.gain.setValueAtTime(swell ? 0.0001 : vol, t);
+  if (swell) gain.gain.exponentialRampToValueAtTime(vol, t + dur * swell);
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   src.connect(filter).connect(gain).connect(ac.destination);
   src.start(t);
-  src.stop(t + dur);
+  src.stop(t + dur + 0.02);
 }
 
 const NOTES = [523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760, 2093];
@@ -212,6 +214,95 @@ export const sfx = {
   hurry: () => [880, 880, 1175].forEach((f, i) => tone(f, 0.09, "square", 0.045, 0, i * 0.11)),
   /** a lost die found: a chime that rises with every one */
   found: (n: number) => [0, 4, 7].forEach((st, i) => tone(523 * Math.pow(2, (n % 12 + st) / 12), 0.14, "triangle", 0.06, 0, i * 0.05)),
+  /** a ball kicked: a soft thump and a boing */
+  kick: () => {
+    if (throttle("kick", 120)) return;
+    burst(0.08, 0.12, 900);
+    tone(220, 0.18, "sine", 0.06, 440);
+  },
+  /** water splashing */
+  splash: () => {
+    if (throttle("splash", 90)) return;
+    burst(0.35, 0.09, 3000, 0, "bandpass");
+    tone(900, 0.12, "sine", 0.025, 300, 0.03);
+  },
+  /** a big splash: something huge breaking the surface */
+  bigSplash: () => {
+    burst(0.9, 0.16, 1800);
+    burst(0.6, 0.08, 4000, 0.1, "bandpass");
+    tone(140, 0.5, "sine", 0.06, 60);
+  },
+  /** a happy little creature: a rising trill */
+  happy: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.09, "triangle", 0.05, f * 1.06, i * 0.06)),
+  /** a heavy hammer blow on wood */
+  hammer: () => {
+    if (throttle("hammer", 120)) return;
+    burst(0.12, 0.16, 700);
+    tone(160, 0.12, "square", 0.05, 90);
+  },
+  /** wood cracking and splitting apart */
+  crack: () => {
+    for (let i = 0; i < 6; i++) burst(0.06, 0.12, 2500 - i * 250, i * 0.05);
+    tone(120, 0.6, "sawtooth", 0.05, 50, 0.1);
+    burst(0.7, 0.12, 600, 0.25);
+  },
+  /** picking up something good: a sparkly arpeggio */
+  item: () => [1047, 1319, 1568, 2093, 2637].forEach((f, i) => tone(f, 0.1, "triangle", 0.05, 0, i * 0.045)),
+  /** a gem: a bright ding */
+  gem: () => {
+    tone(2093, 0.25, "sine", 0.05);
+    tone(3136, 0.2, "sine", 0.03, 0, 0.04);
+  },
+  /** helicopter rotor: a burst of chops (called again and again while flying) */
+  rotor: (fast = false) => {
+    if (throttle("rotor", 380)) return;
+    for (let i = 0; i < 5; i++) burst(0.05, 0.05, fast ? 900 : 600, i * 0.08);
+  },
+  /** a strong gust of wind: rising and falling filtered noise */
+  wind: () => {
+    if (throttle("wind", 900)) return;
+    burst(2.2, 0.1, 700, 0, "bandpass", 0.4);
+    burst(1.6, 0.05, 1500, 0.3, "bandpass", 0.5);
+  },
+  /** a deep rumble (a hurricane, an eruption) */
+  rumble: () => {
+    if (throttle("rumble", 1200)) return;
+    burst(1.4, 0.14, 220, 0, "lowpass", 0.3);
+    tone(48, 1.2, "sine", 0.07, 36);
+  },
+  /** warning beeps from the cockpit */
+  beep: () => {
+    if (throttle("beep", 500)) return;
+    [1760, 1760].forEach((f, i) => tone(f, 0.07, "square", 0.035, 0, i * 0.12));
+  },
+  /** a crash: metal bending and a big bang */
+  crash: () => {
+    burst(1.4, 0.22, 900);
+    tone(200, 0.9, "sawtooth", 0.06, 40);
+    for (let i = 0; i < 6; i++) tone(1800 - i * 200, 0.08, "square", 0.02, 900, 0.1 + i * 0.07);
+  },
+  /** a whale's song: a long low moan sliding up and down */
+  whale: () => {
+    if (throttle("whale", 2500)) return;
+    tone(180, 0.9, "sine", 0.06, 320);
+    tone(320, 0.9, "sine", 0.05, 160, 0.85);
+    tone(90, 1.6, "triangle", 0.03, 70);
+  },
+  /** a comic panel sliding in: a swish and a pop */
+  panel: () => {
+    burst(0.25, 0.07, 2600, 0, "highpass");
+    tone(500, 0.08, "sine", 0.05, 1200, 0.18);
+  },
+  /** a comic "!": a bright two-note sting */
+  sting: () => [1175, 1760].forEach((f, i) => tone(f, 0.14, "square", 0.04, 0, i * 0.09)),
+  /** a sad little fall */
+  sad: () => [659, 587, 523, 392].forEach((f, i) => tone(f, 0.14, "triangle", 0.045, 0, i * 0.1)),
+  /** a heavy footstep / thud */
+  thud: () => {
+    if (throttle("thud", 150)) return;
+    burst(0.15, 0.12, 300);
+    tone(80, 0.2, "sine", 0.07, 45);
+  },
 };
 
 // ───────────────────────── music ─────────────────────────

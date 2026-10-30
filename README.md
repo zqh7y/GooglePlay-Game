@@ -218,32 +218,41 @@ hour of fishing brings.
   took the light): a dark-blue sheet over the field with soft holes of light cut out of it round your
   lantern, torches, lit windows, the lost dice and the bosses (`src/game/night.ts`). Each starts with a
   storybook card (chapter, a line of story, three pictures) and has its own clock on the top bar:
-  1. **WAKE UP**: a long, thin path through deep woods (`getPathArena`, 2000 x 36000). Monsters step out of
-     the trees on both sides (some block the path ahead); a **lantern** lies a fifth of the way up (it
-     widens your light, and you keep it); bosses drop onto the path at **0:45** and **1:30** and are faster
-     than you (softer hits; beat or outrun them). Reach the **village** gate at the top in **2:00**.
+  1. **WAKE UP**: a thin path through deep woods (`getPathArena`, 2000 x 19950, about 180 m). Monsters step
+     out of the trees on both sides (some block the path ahead); a **lantern** lies a fifth of the way up (it
+     widens your light, and you keep it); a **hammer** lies further on, and a **fallen log** blocks the path
+     at 70% (you can't pass): stand in the glowing circle by it for **5 s** with the hammer to smash it.
+     Bosses drop onto the path at **0:32** and **1:04** and are faster than you (softer hits; beat or
+     outrun them). Reach the **village** gate at the top in **1:30**.
   2. **THE VILLAGE**: the open land with two burnt-out buildings and torches; find the **20 lost dice**
      (gold beams; the arrow points at the nearest) in **4:00**, then the village's boss comes (scaled to the
      time you took; no seals, no healing).
-  3. **THE BEAST**: Feed the Beast in the dark; if it breaks out the stage is **lost**.
+  3. **THE BEAST**: Feed the Beast (its 6 wishes, below) in the dark; if it breaks out the stage is **lost**.
   4. **BIG BOSS**: the huge boss and its 3 kids with **your beast fighting beside you** and everything maxed
      out; beat the big boss in **3:00** (its kids run when it falls). Then the beast says goodbye and goes home.
-  5. **TO THE SEA**: another path (two bosses, 2:50) down to a beach with a pier.
+  5. **TO THE SEA**: another path (the same length, its own hammer and log, two bosses, 1:35) down to a
+     beach with a pier.
+  **The little manga** (`src/data/comics.ts`): the first time you start each of the first ten stages, a
+  cream manga page flips in (about 5 s, tap to skip) and four panels ink in one by one: the new place with a
+  narration box, an extreme close-up of you with concentration lines, what you are up against with your
+  speech bubble, and you sprinting under the stage's title.
   What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
   the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
   The tutorial's roll and Boss Rush steps wait until those open.
-- **The sea (stage 6, then every 8 stages)**: a small patch of sea that fits on one screen (the camera stays
+- **The sea (stage 6, then every 9 stages)**: a small patch of sea that fits on one screen (the camera stays
   put). You ride a little boat; dice fall from the sky, whale shadows grow under you then the whale bursts up,
   purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
   up every 30 s (1-6); surprise tsunamis come from the side at 1:00 and 2:00 and whirlpools open from level 3.
   After 3:00 a storm rolls in (rain, lightning) and five tsunami waves rush in from every side, each faster
   with fewer islands; only the sandy islands that rise before each wave are safe. Survive all five to win.
-- **Land Ho! (stage 7, then every 8 stages)**: a big open ocean (6000 x 24000). Sail to find the big island
+- **Land Ho! (stage 7, then every 9 stages)**: a big open ocean (6000 x 24000) dotted with ~40 little islands
+  that are always there (tsunamis no longer raise one next to you: plan a route from island to island;
+  the warnings are shorter, 3.4 s down to 1.9 s). Sail to find the big island
   (4:00). A rough compass points near it while the sea is calm (truer as you get close, a new guess after
   each tsunami). Tsunamis come every 10-18 s from a random side and get meaner each time (less warning,
   quicker waves, fewer and farther islands; from the 3rd on, sometimes two sides at once). Whirlpools open
   near you and pull you in; dice fall from the sky.
-- **The Lighthouse (stage 8, then every 8 stages)**: you land on the island at night in a storm (an oval
+- **The Lighthouse (stage 8, then every 9 stages)**: you land on the island at night in a storm (an oval
   island with the sea round it; the shore stops you). Light the **4 fire bowls** (stand by one for 4 s; it
   cools off if you step away; crabs burst out of the sand the first time you try each one) and then go in
   the lighthouse door, all in **2:30**. Lightning strikes all the time (red circles, many aimed where you are
@@ -251,7 +260,16 @@ hour of fishing brings.
   crabs that come close and light up the night. Lighting the lighthouse heals you, lifts the night and starts
   its beam turning; the Storm then sends the stage boss. The beam burns crabs, burns the boss (8% and a
   stun each pass) and warms you up: lure the boss into it. New monsters: red and blue crabs (walk frames).
-- **The Volcano (stage 9, then every 8 stages)**: a boss stage. The crater is an oval ash floor in a sea of
+- **The Storm Flight (stage 9, then every 9 stages)**: a helicopter lands on the island and you fly it
+  through the storm for **2:00**, seen from the side, nothing but sky (storm clouds above, a floor of
+  clouds below, clouds rushing past). You sit at the controls in its glass bubble. The storm throws the
+  lighthouse's kind of **lightning strikes** at you (aimed where you are heading, rows of them later),
+  the **Storm Twister** (a tornado painted like the monsters, with an angry face) hangs down from the
+  clouds and sucks you sideways (fly under it), and **updrafts, downdrafts and headwinds** shove you
+  about (cartoon wind swooshes warn you). Storm crows dive at you; repair hearts (+20%) drift by every
+  30 s; the helicopter does not mend itself. Damaged, it smokes and the cockpit beeps. At 2:00 the
+  biggest bolt of all hits you anyway: the helicopter spins down into a volcano rising out of the clouds.
+- **The Volcano (stage 10, then every 9 stages)**: you crash-landed in it. A boss stage. The crater is an oval ash floor in a sea of
   lava with a lava lake in the middle; the **Magma King** (a new boss: a molten rock giant with a crown of
   fire and a furnace heart, walk frames, 2.3x size) rises out of the lake. Beat it in **4:00**.
   Its rock **armour** takes only 20% damage: stand on one of the 3 **water geysers** for 2.5 s to blast it
@@ -270,17 +288,29 @@ hour of fishing brings.
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
   in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
   near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
-- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 8 modes up to 100: the Sea,
-  Land Ho!, the Lighthouse, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the
-  first Sea, 7 the first Land Ho!, 8 the first Lighthouse, 9 the first Volcano). The lobby button, the START popup and the map card show which one is next.
+- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 9 modes up to 100: the Sea,
+  Land Ho!, the Lighthouse, the Storm Flight, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle
+  (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 the Storm Flight, 10 the Volcano).
+- **Bosses arrive with a close-up**: when a boss lands the camera swoops over and zooms in on it for a
+  second, then back to you; you can keep moving through every boss cutscene.
+- **The whale** (the sea): its shadow glides in under you while it sings, it bursts out in an arc
+  spouting from its blowhole, crashes down in a crown of water with rings of waves, and its tail flips
+  up as it dives.
+- **More sounds**: kicks, splashes, a whale song, hammer blows and splitting wood, gems, the beast's happy
+  trill, a helicopter rotor, wind, deep rumbles, cockpit beeps, crashes, comic panel swishes and stings, a
+  sad tune when you lose; dust puffs kick up as you run. The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.
   2. **Crystal**: the classic mode below (guard the crystal for 5:00).
-  3. **Feed the Beast**: a giant pet sits in a cage in the middle and gets hungry over 60 s. A snack shows
-     up 6 times (from 0:20, every 45 s): grab it and carry it to the cage (each feed also drops a die).
-     Feed all 6 and the cage flies off: the beast follows you and stomps monsters and the boss, but the
-     boss gets 1.8x health. If it ever starves, it breaks out, huge and angry, and hunts you.
+  3. **Feed the Beast** (2:30, then the boss): a giant pet sits in a **solid cage** in the middle (you walk
+     round it) and gets restless over 60 s. It makes **6 wishes**, one after another (its thought bubble
+     shows which): a **snack** to carry over; **water** in a heavy bucket (you walk slower, three hits
+     slosh it all out); a **ball** to kick into the cage (kicks toward the cage curl in); a **cuddle**
+     (stand by the cage 4 s); **guard** it (beat the 10 monsters creeping up on the cage); **3 gems**
+     scattered far out to bring back. Grant all 6 and the cage flies off: the beast follows you and stomps
+     monsters and the boss, but the boss gets 1.8x health. If it ever gets too restless, it breaks out,
+     huge and angry, and hunts you.
   4. **Dice Rain** (only in the beginners' Dice Rain event now; stage 4 of the cycle is Crystal again): giant dice of every tier fall from the sky all game (A common ... uSSS very rare). The
      rarer the die, the bigger its hit area and damage, the faster it falls and the bigger its show (spark
      trails, flashes, several shockwaves). A shadow and a ring show where; tier E and better leave a real

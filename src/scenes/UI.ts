@@ -8,6 +8,7 @@ import { GADGETS, GADGET_SLOTS, MAX_GADGET_LEVEL, STARTER_GADGET, gadgetIcon, ga
 import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
 import { RUSH_COOLDOWN_MS, RUSH_MS, bossForStage } from "../data/bosses";
+import { COMICS } from "../data/comics";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -271,6 +272,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["boss-warning", this.bossWarning],
       ["hurry", this.hurryFlash],
       ["mode-intro", this.modeIntro],
+      ["stage-comic", this.stageComic],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
       ["rain-drops", (n: number) => this.toast(`+${n} Rain Drops for the Dice Rain event!`, "#9ae6ff")],
@@ -1585,6 +1587,303 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */
+  /**
+   * The little manga before a new stage (about 5 s, tap to skip): a cream page flips in and four panels
+   * ink in one after another: the new place with a narration box, an extreme close-up of you with
+   * concentration lines, the thing you are up against with your speech bubble, and you sprinting under
+   * the stage's title.
+   */
+  private stageComic(stage: number): void {
+    const c = COMICS[stage];
+    const done = () => this.game.events.emit("comic-done");
+    if (!c) {
+      done();
+      return;
+    }
+    const W = this.W;
+    const H = this.H;
+    this.comicTextures();
+    const root = this.add.container(0, 0).setDepth(9500);
+    const dim = this.add.rectangle(0, 0, W, H, 0x0a0a14, 0).setOrigin(0).setInteractive();
+    root.add(dim);
+    this.tweens.add({ targets: dim, fillAlpha: 1, duration: 200 });
+    // the page: cream paper with a soft shadow, flipping in from the right
+    const m = 34;
+    const top = this.L ? Math.max(90, H * 0.05) : 90;
+    const [px, py, pw, ph] = [m, top, W - m * 2, H - top - 120];
+    const page = this.add.container(0, 0);
+    root.add(page);
+    page.add(this.add.rectangle(px + 14, py + 18, pw, ph, 0x000000, 0.35).setOrigin(0));
+    page.add(this.add.rectangle(px, py, pw, ph, 0xf6eedc).setOrigin(0).setStrokeStyle(6, 0x1a1410));
+    page.add(this.add.image(px, py, "comic_paper").setOrigin(0).setDisplaySize(pw, ph).setAlpha(0.5));
+    page.setScale(0.02, 1).setX(W - px);
+    this.tweens.add({ targets: page, scaleX: 1, x: 0, duration: 360, ease: "Cubic.out" });
+    sfx.panel();
+    // the four panels (gutters slanted, like a real page)
+    const g = 22;
+    const x0 = px + 26;
+    const x1 = px + pw - 26;
+    const yA = py + 26;
+    const hA = ph * 0.27;
+    const yB = yA + hA + g;
+    const hB = ph * 0.38;
+    const yD = yB + hB + g;
+    const hD = py + ph - 26 - yD;
+    const splitT = x0 + (x1 - x0) * 0.6;
+    const splitB = x0 + (x1 - x0) * 0.47;
+    const polys: Record<"A" | "B" | "C" | "D", [number, number][]> = {
+      A: [[x0, yA], [x1, yA], [x1, yA + hA - 18], [x0, yA + hA + 10]],
+      B: [[x0, yB + 10], [splitT - g / 2, yB + 2], [splitB - g / 2, yB + hB], [x0, yB + hB]],
+      C: [[splitT + g / 2, yB + 2], [x1, yB - 18], [x1, yB + hB], [splitB + g / 2, yB + hB]],
+      D: [[x0, yD], [x1, yD - 8], [x1, yD + hD], [x0, yD + hD]],
+    };
+    const box = (k: keyof typeof polys) => {
+      const pts = polys[k];
+      const xs = pts.map((q) => q[0]);
+      const ys = pts.map((q) => q[1]);
+      return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+    };
+    // (no masks: each panel's art is drawn freely, then the paper gutters and margins are painted over the
+    // overflow and the ink frames on top, like printing a real page; masks here cost seconds per frame)
+    const panels: Record<string, Phaser.GameObjects.Container> = {};
+    for (const k of ["A", "B", "C", "D"] as const) {
+      const holder = this.add.container(0, 0).setAlpha(0);
+      const inner = this.add.container(0, 0);
+      holder.add(inner);
+      page.add(holder);
+      panels[k] = inner;
+      inner.setData("holder", holder);
+    }
+    const V = (pts: [number, number][]) => pts.map(([qx, qy]) => new Phaser.Math.Vector2(qx, qy));
+    const covers = this.add.graphics();
+    covers.fillStyle(0xf6eedc, 1);
+    const [A, B, C, D] = [polys.A, polys.B, polys.C, polys.D];
+    // the gutters between the panels
+    covers.fillPoints(V([[x0 - 40, A[3][1]], [x1 + 40, A[2][1]], [x1 + 40, C[1][1]], [x0 - 40, B[0][1]]]), true);
+    covers.fillPoints(V([[B[1][0], B[1][1] - 30], [C[0][0], C[0][1] - 30], [C[3][0], C[3][1] + 30], [B[2][0], B[2][1] + 30]]), true);
+    covers.fillPoints(V([[x0 - 40, B[3][1]], [x1 + 40, C[2][1]], [x1 + 40, D[1][1]], [x0 - 40, D[0][1]]]), true);
+    // the page's margins, and outside the page
+    covers.fillRect(px, py, x0 - px, ph).fillRect(x1, py, px + pw - x1, ph).fillRect(px, py, pw, yA - py).fillRect(px, D[2][1], pw, py + ph - D[2][1]);
+    covers.fillStyle(0x0a0a14, 1).fillRect(0, 0, px, H).fillRect(px + pw, 0, W - px - pw, H).fillRect(0, 0, W, py).fillRect(0, py + ph, W, H - py - ph);
+    covers.lineStyle(6, 0x1a1410, 1).strokeRect(px, py, pw, ph);
+    page.add(covers);
+    const frames = this.add.graphics();
+    page.add(frames);
+    // A: the new place, wide, with a narration box
+    {
+      const b = box("A");
+      const inner = panels.A;
+      const sky = this.add.graphics();
+      sky.fillGradientStyle(lighten(c.sky, 0.25), lighten(c.sky, 0.25), c.sky, c.sky, 1).fillRect(b.x, b.y, b.w, b.h);
+      inner.add(sky);
+      inner.add(this.add.rectangle(b.x, b.y + b.h * 0.78, b.w, b.h * 0.3, 0x000000, 0.35).setOrigin(0));
+      c.place.forEach((key, i) => {
+        const tex = key === "boss" ? bossForStage(stage).tex : key;
+        if (!this.textures.exists(tex)) return;
+        const n = c.place.length;
+        const img = this.add.image(b.x + b.w * ((i + 0.5) / n) * 0.92 + b.w * 0.04, b.y + b.h * 0.95, tex).setOrigin(0.5, 1);
+        img.setScale(Math.min((b.h * 0.8) / img.height, (b.w / n) * 0.95 / img.width));
+        inner.add(img);
+        this.tweens.add({ targets: img, scale: img.scale * 1.04, duration: 1800, yoyo: true, ease: "Sine.inOut" });
+      });
+
+      const cap = text(this, b.x + 34, b.y + 30, c.caption, 34, "#111111", { stroke: false, align: "left", wrap: b.w * 0.6 }).setOrigin(0, 0);
+      inner.add(this.add.rectangle(b.x + 18, b.y + 16, cap.width + 32, cap.height + 28, 0xffffff).setOrigin(0).setStrokeStyle(6, 0x111111));
+      inner.add(cap);
+    }
+    // B: you, extreme close-up, black concentration lines, a "!" and a sweat drop
+    {
+      const b = box("B");
+      const inner = panels.B;
+      const [cx, cy] = [b.x + b.w * 0.45, b.y + b.h * 0.5];
+      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, 0xffffff).setOrigin(0));
+      inner.add(this.concentration(cx, cy, b, Math.min(b.w, b.h) * 0.34, 0x111111));
+      const hero = this.add.image(cx, cy + b.h * 0.42, "hero").setOrigin(0.5, 0.62).setScale(Math.min(b.w / 70, b.h / 90));
+      // only the part inside the panel (an extreme close-up)
+      const hs = hero.scaleX;
+      const left = hero.x - hero.width * hero.originX * hs;
+      const topY = hero.y - hero.height * hero.originY * hs;
+      const cx0 = Math.max(0, (b.x - left) / hs);
+      const cy0 = Math.max(0, (b.y - topY) / hs);
+      hero.setCrop(cx0, cy0, Math.min(hero.width - cx0, (b.x + b.w - Math.max(left, b.x)) / hs), Math.min(hero.height - cy0, (b.y + b.h - Math.max(topY, b.y)) / hs));
+      inner.add(hero);
+      // it blinks
+      this.time.delayedCall(1900, () => this.tweens.add({ targets: hero, scaleY: hero.scaleY * 0.92, duration: 70, yoyo: true }));
+      const bang = text(this, b.x + b.w * 0.82, b.y + b.h * 0.2, "!", 150, "#111111", { stroke: 10 }).setAngle(12);
+      bang.setStroke("#ffffff", 14);
+      inner.add(bang);
+      const drop = this.add.graphics({ x: b.x + b.w * 0.2, y: b.y + b.h * 0.22 });
+      drop.fillStyle(0x8ad8ff, 1).lineStyle(6, 0x111111, 1);
+      drop.beginPath();
+      drop.moveTo(0, -36);
+      drop.lineTo(20, 4);
+      drop.arc(0, 8, 21, 0.3, Math.PI - 0.3, false);
+      drop.closePath();
+      drop.fillPath();
+      drop.strokePath();
+      inner.add(drop);
+      const sfxText = text(this, b.x + b.w * 0.5, b.y + b.h * 0.88, "BA-DUMP!", 56, "#ffffff", { stroke: 12 }).setAngle(-8);
+      inner.add(sfxText);
+    }
+    // C: what you are up against, with speed lines, a big sound effect and your speech bubble
+    {
+      const b = box("C");
+      const inner = panels.C;
+      const [cx, cy] = [b.x + b.w * 0.5, b.y + b.h * 0.6];
+      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, c.pop).setOrigin(0));
+      inner.add(this.concentration(cx, cy, b, Math.min(b.w, b.h) * 0.28, 0xffffff, 0.75));
+      const key = c.place[c.place.length - 1];
+      const tex = key === "boss" ? bossForStage(stage).tex : key;
+      if (this.textures.exists(tex)) {
+        const img = this.add.image(cx, b.y + b.h * 0.98, tex).setOrigin(0.5, 1);
+        img.setScale(Math.min((b.h * 0.7) / img.height, (b.w * 0.9) / img.width));
+        inner.add(img);
+        this.tweens.add({ targets: img, scale: img.scale * 1.06, duration: 300, yoyo: true, repeat: 3 });
+      }
+      const go = text(this, b.x + b.w * 0.75, b.y + b.h * 0.62, "GO\nGO\nGO", 54, "#111111", { stroke: 0 }).setAngle(10).setAlpha(0.55);
+      inner.add(go);
+      // the speech bubble, its tail pointing back at you
+      const say = text(this, 0, 0, c.say, 36, "#111111", { stroke: false, wrap: b.w * 0.78 });
+      const bw = say.width + 50;
+      const bh = say.height + 40;
+      const bub = this.add.container(b.x + b.w * 0.52, b.y + bh / 2 + 34);
+      const bg = this.add.graphics();
+      bg.fillStyle(0xffffff, 1).lineStyle(6, 0x111111, 1);
+      bg.fillTriangle(-bw * 0.32, bh * 0.3, -bw * 0.12, bh * 0.4, -bw * 0.62, bh * 0.85);
+      bg.strokeTriangle(-bw * 0.32, bh * 0.3, -bw * 0.12, bh * 0.4, -bw * 0.62, bh * 0.85);
+      bg.fillEllipse(0, 0, bw * 1.12, bh * 1.2).strokeEllipse(0, 0, bw * 1.12, bh * 1.2);
+      bg.fillStyle(0xffffff, 1).fillTriangle(-bw * 0.3, bh * 0.28, -bw * 0.14, bh * 0.36, -bw * 0.3, bh * 0.5);
+      bub.add([bg, say]);
+      inner.add(bub);
+    }
+    // D: you sprinting under the stage's title, white speed lines streaking past
+    {
+      const b = box("D");
+      const inner = panels.D;
+      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, 0x111118).setOrigin(0));
+      // white speed lines streaking past
+      const lines = this.add.image(b.x + b.w / 2, b.y + b.h / 2, "comic_lines").setDisplaySize(b.w * 1.6, b.h).setAlpha(0.8);
+      inner.add(lines);
+      this.tweens.add({ targets: lines, x: b.x + b.w * 0.1, duration: 5000 });
+      const runner = this.add.image(b.x - 80, b.y + b.h * 0.92, "hero_w1").setOrigin(0.5, 0.95).setScale(Math.min(1.6, (b.h * 0.7) / 230));
+      inner.add(runner);
+      inner.setData("runner", runner);
+      const t1 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.3, `STAGE ${stage}`, 40, "#ffffff", { stroke: 10 });
+      const t2 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.64, stageInfo(stage).name, 70, "#ffe066", { stroke: 16 }).setAngle(-3);
+      fitText(t2, b.w * 0.62);
+      inner.add([t1, t2]);
+    }
+    // the timeline: each panel inks in with a flash and a little punch-in
+    const tl: Phaser.Time.TimerEvent[] = [];
+    const at = (ms: number, fn: () => void) => tl.push(this.time.delayedCall(ms, fn));
+    const inkIn = (k: keyof typeof polys, sound: () => void) => {
+      const holder = panels[k].getData("holder") as Phaser.GameObjects.Container;
+      const b = box(k);
+      holder.setAlpha(1);
+      frames.lineStyle(10, 0x111111, 1).strokePoints(V(polys[k]), true, true);
+      panels[k].setScale(1.04).setPosition(-(b.x + b.w / 2) * 0.04, -(b.y + b.h / 2) * 0.04);
+      this.tweens.add({ targets: panels[k], scale: 1, x: 0, y: 0, duration: 320, ease: "Back.out" });
+      const flash = this.add.polygon(0, 0, polys[k].flat(), 0xffffff, 1).setOrigin(0);
+      page.add(flash);
+      this.tweens.add({ targets: flash, alpha: 0, duration: 260, onComplete: () => flash.destroy() });
+      sound();
+    };
+    at(350, () => inkIn("A", () => sfx.panel()));
+    at(1150, () => {
+      inkIn("B", () => sfx.sting());
+      this.cameras.main.shake(120, 0.004);
+    });
+    at(1950, () => inkIn("C", () => sfx.panel()));
+    at(2750, () => {
+      inkIn("D", () => sfx.whoosh());
+      const runner = panels.D.getData("runner") as Phaser.GameObjects.Image;
+      const b = box("D");
+      this.tweens.add({ targets: runner, x: b.x + b.w * 0.2, duration: 700, ease: "Quad.out" });
+      let f = 0;
+      const run = this.time.addEvent({ delay: 110, loop: true, callback: () => runner.active && runner.setTexture((f ^= 1) ? "hero_w2" : "hero_w1") });
+      tl.push(run);
+    });
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      tl.forEach((t) => t.remove(false));
+      this.tweens.add({ targets: root, alpha: 0, duration: 260, onComplete: () => {
+        root.destroy(true);
+        done();
+      } });
+    };
+    at(5400, close);
+    this.time.delayedCall(500, () => dim.once("pointerdown", close));
+    root.add(text(this, W - 50, H - 40, "TAP TO SKIP", 30, "#ffffff").setOrigin(1, 1).setAlpha(0.75));
+  }
+
+  /**
+   * Manga concentration lines: thin black (or white) wedges pointing in at a spot, leaving the middle
+   * clear; each one stops at the edge of its panel's box (so nothing spills into the next panel).
+   */
+  private concentration(cx: number, cy: number, box: { x: number; y: number; w: number; h: number }, inner: number, color: number, alpha = 1): Phaser.GameObjects.Graphics {
+    const g = this.add.graphics();
+    g.fillStyle(color, alpha);
+    // how far a ray from the spot goes before it leaves the box
+    const reach = (a: number) => {
+      const [dx, dy] = [Math.cos(a), Math.sin(a)];
+      const tx = dx > 0 ? (box.x + box.w - cx) / dx : dx < 0 ? (box.x - cx) / dx : Infinity;
+      const ty = dy > 0 ? (box.y + box.h - cy) / dy : dy < 0 ? (box.y - cy) / dy : Infinity;
+      return Math.min(tx, ty);
+    };
+    for (let i = 0; i < 110; i++) {
+      const a = (i / 110) * Math.PI * 2 + Math.random() * 0.03;
+      const out = reach(a);
+      const r0 = Math.min(out * 0.8, inner + Math.random() * inner * 0.6);
+      const w = 0.006 + Math.random() * 0.012;
+      const o1 = reach(a - w);
+      const o2 = reach(a + w);
+      g.fillTriangle(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a - w) * o1, cy + Math.sin(a - w) * o1, cx + Math.cos(a + w) * o2, cy + Math.sin(a + w) * o2);
+    }
+    return g;
+  }
+
+  /** Paper grain, screentone dots and horizontal speed lines for the manga. */
+  private comicTextures(): void {
+    if (!this.textures.exists("comic_dots")) {
+      const tex = this.textures.createCanvas("comic_dots", 24, 24)!;
+      const cx = tex.getContext();
+      cx.fillStyle = "#ffffff";
+      for (const [x, y] of [[6, 6], [18, 18]]) {
+        cx.beginPath();
+        cx.arc(x, y, 3.2, 0, Math.PI * 2);
+        cx.fill();
+      }
+      tex.refresh();
+    }
+    if (!this.textures.exists("comic_paper")) {
+      const tex = this.textures.createCanvas("comic_paper", 128, 128)!;
+      const cx = tex.getContext();
+      for (let i = 0; i < 900; i++) {
+        cx.fillStyle = Math.random() < 0.5 ? "rgba(120,100,70,0.12)" : "rgba(255,255,255,0.25)";
+        cx.fillRect(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 2, 1 + Math.random() * 2);
+      }
+      tex.refresh();
+    }
+    if (!this.textures.exists("comic_lines")) {
+      const tex = this.textures.createCanvas("comic_lines", 512, 256)!;
+      const cx = tex.getContext();
+      for (let i = 0; i < 40; i++) {
+        const y = Math.random() * 256;
+        const len = 80 + Math.random() * 300;
+        const x = Math.random() * 512;
+        cx.strokeStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`;
+        cx.lineWidth = 1 + Math.random() * 4;
+        cx.beginPath();
+        cx.moveTo(x, y);
+        cx.lineTo(x + len, y);
+        cx.stroke();
+      }
+      tex.refresh();
+    }
+  }
+
   /** How to play this stage's mode, in pictures: three panels with an icon and a word or two. */
   private modeIntro(mode: StageMode, story = false): void {
     const ch = story ? storyFor(save.stage) : null;
@@ -1601,6 +1900,7 @@ export class UIScene extends Phaser.Scene implements Host {
       sea: [["die_S", "DODGE"], ["sea_whale", "FROM BELOW"], ["sea_island", "TSUNAMI"]],
       ocean: [["sea_boat", "SAIL"], ["sea_island", "TSUNAMI? ISLAND!"], ["sea_bigisland", "FIND LAND"]],
       light: [["brazier_lit", "LIGHT x4"], ["mode_light", "LIGHTHOUSE"], ["mode_boss", "BEAM THE BOSS"]],
+      heli: [["heli_side", "FLY 2:00"], ["twister", "TWISTERS"], ["icon_bolt", "LIGHTNING"]],
       volcano: [["geyser", "GEYSER"], ["b_magmaking", "CRACK ARMOR"], ["lava_bomb", "DODGE LAVA"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],

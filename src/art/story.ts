@@ -303,6 +303,73 @@ function torch3d(c: Ctx): void {
   c.restore();
 }
 
+/** A big fallen tree trunk lying across the path: bark, knots, moss, a broken branch and the cut rings at both ends. */
+function logBig(c: Ctx): void {
+  c.lineJoin = "round";
+  c.lineWidth = 6;
+  c.strokeStyle = INK;
+  groundShadow(c, 500, 236, 480, 26);
+  // the trunk (round: lit on top, dark underneath)
+  c.beginPath();
+  c.moveTo(70, 60);
+  c.lineTo(930, 50);
+  c.quadraticCurveTo(960, 140, 930, 226);
+  c.lineTo(70, 232);
+  c.quadraticCurveTo(40, 146, 70, 60);
+  c.closePath();
+  c.fillStyle = lin(c, 0, 50, 0, 232, ["#b8804a", "#8a5a30", "#5a3418", "#3a200c"]);
+  c.fill();
+  c.stroke();
+  // bark grooves
+  c.save();
+  c.clip();
+  c.strokeStyle = "rgba(40,20,8,0.55)";
+  c.lineWidth = 4;
+  for (let i = 0; i < 26; i++) {
+    const y = 66 + (i % 7) * 24;
+    const x = 90 + i * 32;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.quadraticCurveTo(x + 40, y + 6, x + 80, y - 2);
+    c.stroke();
+  }
+  // moss along the top
+  c.fillStyle = "rgba(110,170,60,0.85)";
+  for (let x = 110; x < 900; x += 70) {
+    c.beginPath();
+    c.ellipse(x, 60, 34, 12, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
+  // knots
+  for (const [x, y] of [[300, 150], [640, 120]]) {
+    c.beginPath();
+    c.ellipse(x, y, 20, 13, 0, 0, Math.PI * 2);
+    c.fillStyle = "#4a2a10";
+    c.fill();
+    c.stroke();
+  }
+  // a broken branch sticking up
+  poly(c, [[460, 58], [486, 56], [470, 0], [452, 4]], lin(c, 450, 0, 490, 0, ["#a8743e", "#5a3418"]));
+  // the cut ends with their rings
+  for (const x of [66, 934]) {
+    c.beginPath();
+    c.ellipse(x, 142, 36, 88, 0, 0, Math.PI * 2);
+    c.fillStyle = "#e8c48a";
+    c.fill();
+    c.stroke();
+    c.save();
+    c.strokeStyle = "rgba(140,90,40,0.7)";
+    c.lineWidth = 3;
+    for (const k of [0.75, 0.5, 0.25]) {
+      c.beginPath();
+      c.ellipse(x, 142, 36 * k, 88 * k, 0, 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.restore();
+  }
+}
+
 /**
  * Pictures for the story stages: the soft light that cuts through the night, the dirt path through
  * the woods, the village at its end (cottages with warm windows, a gate), the two burnt-out
@@ -386,6 +453,39 @@ export function makeStoryTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "torch3d", 110, 240, (c) => torch3d(c));
 
   // the lantern you find on the path: a brass lamp with glass sides and a warm flame
+  canvasTexture(scene, "log_big", 1000, 260, (c) => logBig(c));
+  canvasTexture(scene, "log_chunk", 120, 90, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 5;
+    c.strokeStyle = INK;
+    poly(c, [[10, 30], [90, 14], [112, 52], [40, 80]], lin(c, 0, 14, 0, 80, ["#b07848", "#6a4020"]));
+    c.beginPath();
+    c.ellipse(100, 34, 14, 22, 0.3, 0, Math.PI * 2);
+    c.fillStyle = "#e8c48a";
+    c.fill();
+    c.stroke();
+  });
+  // the hammer: a wooden handle with a heavy iron head
+  canvasTexture(scene, "hammer", 120, 160, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 5;
+    c.strokeStyle = INK;
+    poly(c, [[52, 50], [68, 50], [70, 152], [50, 152]], lin(c, 50, 0, 70, 0, ["#d8a060", "#8a5228"]));
+    c.save();
+    c.strokeStyle = "rgba(74,47,29,0.6)";
+    c.lineWidth = 3;
+    for (const y of [120, 132, 144]) {
+      c.beginPath();
+      c.moveTo(51, y);
+      c.lineTo(69, y + 3);
+      c.stroke();
+    }
+    c.restore();
+    poly(c, [[10, 14], [110, 14], [114, 58], [6, 58]], lin(c, 0, 14, 0, 58, ["#c8ccd8", "#7a808c", "#3a3e48"]));
+    poly(c, [[10, 14], [110, 14], [102, 6], [18, 6]], "#e8ecf4");
+    c.fillStyle = "rgba(255,255,255,0.6)";
+    c.fillRect(18, 20, 80, 6);
+  });
   canvasTexture(scene, "lantern", 90, 130, (c) => {
     c.lineJoin = "round";
     c.lineWidth = 5;

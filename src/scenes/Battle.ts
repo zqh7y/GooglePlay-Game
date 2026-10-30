@@ -7,7 +7,8 @@ import { makeComicTextures } from "../art/comic";
 import { makeModeTextures } from "../art/modes";
 import { makeBeastTextures } from "../art/beast";
 import {
-  AIR_EVERY, AIR_PREVIEW, AIR_SECS, BIG_BOSS_HP, BOSS_KIDS, FEEDS, FEED_EVERY, FEED_FIRST, FRIEND_BOSS_HP, HUNGER_MS, KID_HP, MODE_INFO, StageMode, modeForStage, stageInfo,
+  AIR_EVERY, AIR_PREVIEW, AIR_SECS, BIG_BOSS_HP, BOSS_KIDS, BeastWish, FEEDS, FEED_FIRST, FEED_GAP, FEED_MS, FRIEND_BOSS_HP, GEMS, GUARDS, HUNGER_MS, KID_HP, MODE_INFO,
+  PET_MS, StageMode, WISH_ASK, WISH_ICON, WISH_THANKS, modeForStage, stageInfo,
 } from "../data/modes";
 import { petTexture } from "../art/pets";
 import { makePickupTextures } from "../art/pickups";
@@ -32,12 +33,14 @@ import { makeStoryTextures } from "../art/story";
 import { makeSeaTextures } from "../art/sea";
 import { makeLightTextures } from "../art/light";
 import { makeVolcanoTextures } from "../art/volcano";
-import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
+import { makeSkyTextures } from "../art/sky";
+import { COMICS } from "../data/comics";
+import { HAMMER_AT, HUNT_DICE, LANTERN_AT, LOG_AT, PATH_BOSSES, SMASH_MS, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
+import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getCraterArena, getIslandArena, getOceanArena, getPathArena, getSeaArena, getSkyArena, inOval, onIsle, toIsle, toOval } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
@@ -74,6 +77,12 @@ const DOOR_MS = 1500;
 /** the lighthouse beam: how far it reaches and how fast it turns (degrees per second) */
 const BEAM_LEN = 3200;
 const BEAM_SPIN = 60;
+/** the Storm Flight: how long you must keep the helicopter in the air; where the cloud floor and the storm ceiling are (y) */
+const HELI_MS = 120000;
+const SKY_SEA = 2170;
+const SKY_CEIL = 380;
+/** the helicopter's size (the whole sky fits on the screen) */
+const HELI_SCALE = 1.75;
 /** the Volcano: time to beat the Magma King; how tough it is (x a stage boss); standing on a geyser to fire it, its recharge, how long the armour stays cracked */
 const VOLC_MS = 240000;
 const KING_HP = 1.35;
@@ -512,6 +521,9 @@ export class BattleScene extends Phaser.Scene {
     friend: boolean; escaped: boolean; stompT: number;
     /** the cage's back half, the rune ring, the glow behind the beast; timers for its moods */
     back: Phaser.GameObjects.Image; runes: Phaser.GameObjects.Image; aura: Phaser.GameObjects.Image; moodT: number; dustT: number;
+    /** its wishes in order, the one it has now (and its progress), the things lying about for it, the ball's roll, the cage's footprint */
+    wishes?: BeastWish[]; want?: BeastWish | null; wantN?: number; items?: Phaser.GameObjects.Image[]; guards?: Enemy[]; vel?: [number, number];
+    home?: [number, number]; solid?: Phaser.Geom.Rectangle;
   } | null;
   /** Air Zone poison: two drifting fog layers masked round the zone, and the mask */
   private fogLayers: Phaser.GameObjects.TileSprite[] = [];
@@ -545,6 +557,8 @@ export class BattleScene extends Phaser.Scene {
   private hasLantern = false;
   private heldLantern: Phaser.GameObjects.Image | null = null;
   private heroGlow: Phaser.GameObjects.Image | null = null;
+  /** story paths: the hammer lying on the way (then in your hand), the fallen log across the path and how far it is smashed */
+  private smash = this.freshSmash();
   /** story paths: when the bosses still to come drop in (ms) */
   private pathBosses: number[] = [];
   private pathCullT = 0;
@@ -559,8 +573,9 @@ export class BattleScene extends Phaser.Scene {
   /** night-only warm glows (shown when a story fight starts), and whether the village is drawn */
   private warmGlows: Phaser.GameObjects.Image[] = [];
   private placeDrawn = false;
-  /** the lobby's peek at the next fight (cleared when the fight starts) */
+  /** the lobby's peek at the next fight (cleared when the fight starts), and its footprint if it is solid */
   private preview: Phaser.GameObjects.GameObject[] = [];
+  private previewSolid: Phaser.Geom.Rectangle | null = null;
   /** story reminders: the last "seconds left" said, and when to check your pace again */
   private saidLeft = Infinity;
   private paceT = 12000;
@@ -587,6 +602,8 @@ export class BattleScene extends Phaser.Scene {
   private whirl = { t: 9000, list: [] as { x: number; y: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Ellipse; life: number; hurtT: number }[] };
   /** the Lighthouse: the fire bowls, the lighthouse, its beam, the storm's lightning and rain */
   private light = this.freshLight();
+  /** the Storm Flight: your helicopter, the weather (wind gusts, lightning walls, hurricanes) and their timers */
+  private heli = this.freshHeli();
   /** the Volcano: the Magma King, its phase and armour, the geysers, the shrinking floor, the timers */
   private volc = this.freshVolc();
   /** things you cannot walk through (houses, ruins, the gate's posts) */
@@ -594,6 +611,7 @@ export class BattleScene extends Phaser.Scene {
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
   private walkTimer = 0;
+  private dustT = 0;
   private walkFrame = 0;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   joy = { ...NO_JOY };
@@ -699,6 +717,28 @@ export class BattleScene extends Phaser.Scene {
     super("Battle");
   }
 
+  private freshHeli() {
+    return {
+      body: null as Phaser.GameObjects.Image | null, blade: null as Phaser.GameObjects.Image | null, blur: null as Phaser.GameObjects.Image | null,
+      back: null as Phaser.GameObjects.Image | null, pilot: null as Phaser.GameObjects.Image | null,
+      tail: null as Phaser.GameObjects.Image | null, far: null as Phaser.GameObjects.TileSprite | null, sea: null as Phaser.GameObjects.TileSprite | null,
+      isle: null as Phaser.GameObjects.Image | null, puffs: [] as { img: Phaser.GameObjects.Image; v: number }[],
+      rain: null as Phaser.GameObjects.Particles.ParticleEmitter | null, flash: null as Phaser.GameObjects.Rectangle | null,
+      tilt: 0, spin: 0, speed: 1, smokeT: 0, beepT: 0, boltT: 3000, stormT: 12000, gustT: 9000, crowT: 6000, flashT: 4000, repairT: 18000,
+      puffT: 0, sprayT: 0,
+      gust: null as { kind: "down" | "up" | "head"; t: number; warn: number; fx: Phaser.GameObjects.GameObject[] } | null,
+      storms: [] as { img: Phaser.GameObjects.Image; top: boolean; tip: number; hurtT: number; v: number }[],
+      falling: false,
+    };
+  }
+
+  private freshSmash() {
+    return {
+      hammer: null as Phaser.GameObjects.GameObject[] | null, has: false, held: null as Phaser.GameObjects.Image | null,
+      log: null as Phaser.GameObjects.Image | null, x: 0, y: 0, solid: null as Phaser.Geom.Rectangle | null, p: 0, broken: false, swingT: 0, saidNeed: 0,
+    };
+  }
+
   private freshVolc() {
     return {
       king: null as Enemy | null, phase: 0, armor: true, crackT: 0, clock: 0, bombT: 3000, meteorT: 9000, slimeT: 2500, hotT: 200,
@@ -741,6 +781,7 @@ export class BattleScene extends Phaser.Scene {
     makeSeaTextures(this);
     makeLightTextures(this);
     makeVolcanoTextures(this);
+    makeSkyTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     // the story is at night: the lobby too (a little lighter than the fights)
     const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
@@ -774,6 +815,7 @@ export class BattleScene extends Phaser.Scene {
     this.warmGlows = [];
     this.placeDrawn = false;
     this.preview = [];
+    this.previewSolid = null;
     this.saidLeft = Infinity;
     this.paceT = 12000;
     this.ambientT = 6000;
@@ -786,6 +828,8 @@ export class BattleScene extends Phaser.Scene {
     this.whirl = { t: 9000, list: [] };
     this.light = this.freshLight();
     this.volc = this.freshVolc();
+    this.smash = this.freshSmash();
+    this.heli = this.freshHeli();
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -794,7 +838,7 @@ export class BattleScene extends Phaser.Scene {
     const onPath = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "path";
     const own = !this.rush && !data?.event && !!data?.autostart ? modeForStage(save.stage) : null;
     this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village")
-      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : own === "volcano" ? getCraterArena(this.land) : getArena(this.land.id);
+      : own === "sea" ? getSeaArena(this.land) : own === "ocean" ? getOceanArena(this.land) : own === "light" ? getIslandArena(this.land) : own === "volcano" ? getCraterArena(this.land) : own === "heli" ? getSkyArena(this.land) : getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
@@ -812,7 +856,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island || !!this.arena.crater,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea || !!this.arena.island || !!this.arena.crater || !!this.arena.sky,
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -1039,7 +1083,7 @@ export class BattleScene extends Phaser.Scene {
   /** Where the hero stands when a fight starts: by the crystal, or at the bottom of a story path. */
   private heroStart(): [number, number] {
     const [cx, cy] = this.arena.center;
-    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island || this.arena.crater ? [cx, cy] : [cx, cy + 260];
+    return this.arena.path ? [cx, this.arena.path.startY] : this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky ? [cx, cy] : [cx, cy + 260];
   }
 
   /** The beginners' Dice Rain event: a Dice Rain run at your stage. */
@@ -1055,9 +1099,22 @@ export class BattleScene extends Phaser.Scene {
       this.startRun();
       return;
     }
+    // the first time into one of the first ten stages: its little manga plays first
+    if (!this.eventRun && !this.rush && COMICS[save.stage] && !save.comics.includes(save.stage)) {
+      save.comics.push(save.stage);
+      persist();
+      this.entering = true;
+      this.joy = { ...NO_JOY };
+      this.game.events.once("comic-done", () => {
+        this.entering = false;
+        this.begin();
+      });
+      this.game.events.emit("stage-comic", save.stage);
+      return;
+    }
     // a story path is a map of its own: the world is rebuilt for it
     const own = modeForStage(save.stage);
-    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island) || (own === "volcano" && !this.arena.crater))) {
+    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea) || (own === "ocean" && !this.arena.ocean) || (own === "light" && !this.arena.island) || (own === "volcano" && !this.arena.crater) || (own === "heli" && !this.arena.sky))) {
       this.enter("battle", () => this.scene.restart({ autostart: true }));
       return;
     }
@@ -1101,7 +1158,7 @@ export class BattleScene extends Phaser.Scene {
     this.stats = freshStats();
     battle.stats = this.stats;
     battle.mode = "run";
-    if (this.arena.sea && !this.arena.ocean) this.seaCamera(900);
+    if ((this.arena.sea && !this.arena.ocean) || this.arena.sky) this.seaCamera(900);
     else this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
@@ -1257,6 +1314,7 @@ export class BattleScene extends Phaser.Scene {
     if (a.sea) this.drawSea();
     else if (a.island) this.drawIsland(keys.tile);
     else if (a.crater) this.drawCrater();
+    else if (a.sky) this.drawSky();
     else if (beach) this.add.tileSprite(0, 0, a.w, a.h, "sand_tile").setOrigin(0).setDepth(-1000);
     else this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
     // toaster mode: fewer ground patches and scenery
@@ -1269,7 +1327,7 @@ export class BattleScene extends Phaser.Scene {
     const [cx, cy] = a.center;
     if (a.path) this.drawPath();
     else if (beach) this.drawBeach();
-    else if (!a.sea && !a.island && !a.crater) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    else if (!a.sea && !a.island && !a.crater && !a.sky) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
     if (!beach) a.objects.forEach((o, i) => {
       if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
@@ -1297,7 +1355,29 @@ export class BattleScene extends Phaser.Scene {
     this.crystal.setVisible(false);
     glow.setVisible(false);
     this.crystalSparkle.stop();
-    if (!this.rush && !a.path && !a.sea && !a.island && !a.crater) this.refreshSign();
+    if (!this.rush && !a.path && !a.sea && !a.island && !a.crater && !a.sky) this.refreshSign();
+  }
+
+  /**
+   * The storm, from the side, nothing but sky: storm clouds along the top, a floor of fluffy clouds far
+   * below (both rushing past: you are flying right), slanting rain and lightning flashes.
+   */
+  private drawSky(): void {
+    const a = this.arena;
+    const H = this.heli;
+    this.add.image(0, 0, "sky_side").setOrigin(0).setDisplaySize(a.w, a.h).setDepth(-1000);
+    // far-off lightning in the clouds now and then lights the whole sky
+    H.flash = this.add.rectangle(0, 0, a.w, a.h, 0xeef4ff, 0).setOrigin(0).setDepth(-995);
+    H.far = this.add.tileSprite(0, 0, a.w, 420, "cloudbank").setOrigin(0).setDepth(-980).setTileScale(1.4);
+    // one row of cloud tops, solid cloud below it (deep enough to hide the volcano's foot when it rises)
+    H.sea = this.add.tileSprite(-300, SKY_SEA - 160, a.w + 600, 460 * 1.3, "cloudfloor").setOrigin(0).setDepth(-960).setTileScale(1.3);
+    this.add.rectangle(-300, SKY_SEA - 160 + 440, a.w + 600, 1600, 0x6a7298).setOrigin(0).setDepth(-960);
+    if (effectsOn()) {
+      H.rain = this.add.particles(0, 0, "puff", {
+        x: { min: -200, max: a.w + 600 }, y: { min: -200, max: a.h }, lifespan: 420, speedY: { min: 1700, max: 2000 }, speedX: -700,
+        scaleX: 0.07, scaleY: 0.9, rotate: 20, alpha: { start: 0.5, end: 0 }, tint: 0xcfe0ff, frequency: 9,
+      }).setDepth(TOP + 60);
+    }
   }
 
   /**
@@ -1425,7 +1505,7 @@ export class BattleScene extends Phaser.Scene {
   /** The lobby before a sea stage is the beach: the sea starts above you. */
   private beachLobby(): boolean {
     const m = modeForStage(save.stage);
-    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && !this.arena.crater && (m === "sea" || m === "ocean" || m === "light" || m === "volcano");
+    return !this.rush && !this.arena.path && !this.arena.sea && !this.arena.island && !this.arena.crater && !this.arena.sky && (m === "sea" || m === "ocean" || m === "light" || m === "heli" || m === "volcano");
   }
 
   /**
@@ -1465,7 +1545,7 @@ export class BattleScene extends Phaser.Scene {
    */
   private drawPreview(): void {
     const m = modeForStage(save.stage);
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || (this.beachLobby() && m !== "light" && m !== "volcano")) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky || (this.beachLobby() && m !== "light" && m !== "heli" && m !== "volcano")) return;
     const [cx, cy] = this.arena.center;
     // in the open space to the right of where you stand (clear of the lobby's cards)
     const [x, y] = [cx + 360, cy + 640];
@@ -1480,6 +1560,9 @@ export class BattleScene extends Phaser.Scene {
       pet.setScale(230 / pet.height);
       this.tweens.add({ targets: pet, scaleY: pet.scaleY * 1.05, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       add(this.add.image(x, y, "cage_front").setOrigin(0.5, 520 / 620).setDepth(y + 1).setScale(0.6));
+      // you can't walk through the cage (it goes when the fight starts)
+      this.solid(x, y + 20, 290, 120);
+      this.previewSolid = this.solids[this.solids.length - 1];
     } else if (m === "crystal") {
       const glow = add(this.add.image(x, y - 160, "glow").setTint(this.land.crystal).setScale(2.2).setAlpha(0.6).setDepth(y - 1));
       this.tweens.add({ targets: glow, alpha: 0.9, scale: 2.6, duration: 1300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
@@ -1510,6 +1593,15 @@ export class BattleScene extends Phaser.Scene {
       add(this.topGlow(lh.x, y - 385, 1.4, 0xffe9a0));
       for (const dx of [-200, 200]) add(this.add.image(x + dx, y + 60, "brazier").setOrigin(0.5, 1).setScale(0.6).setDepth(y + 60));
       add(this.sign(x, y + 330, "LIGHTHOUSE", "light it up!", "#ffe0a0"));
+    } else if (m === "heli") {
+      // the helicopter waiting on its pad, its blades turning slowly
+      const [x, y] = [cx - 330, cy + 720];
+      add(this.add.image(x, y + 20, "helipad").setDepth(y - 100));
+      const body = add(this.add.image(x, y - 60, "heli_side").setScale(1.2).setDepth(y));
+      const blade = add(this.add.image(x + 55, y - 60 - 118, "heli_blade").setScale(1.2).setDepth(y + 1));
+      this.tweens.add({ targets: blade, scaleX: -1.2, duration: 260, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      this.tweens.add({ targets: [body, blade], y: "-=10", duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      add(this.sign(x, y + 330, "HELICOPTER", "fly through the storm", "#b8c8ff"));
     } else if (m === "volcano") {
       // the volcano smoking across the island, and the Magma King waiting in it
       const [x, y] = [cx - 330, cy + 760];
@@ -1574,7 +1666,7 @@ export class BattleScene extends Phaser.Scene {
    * the blocks between, and at stage 2 two of them still burnt out.
    */
   private drawPlace(): void {
-    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.land.id !== "village" || this.beachLobby()) return;
+    if (this.rush || this.arena.path || this.arena.sea || this.arena.island || this.arena.crater || this.arena.sky || this.land.id !== "village" || this.beachLobby()) return;
     const [cx, cy] = this.arena.center;
     if (save.stage <= 1) {
       const [fx, fy] = [cx + 380, cy + 420];
@@ -1731,6 +1823,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Dice (they pay for rolls), power-ups and skill orbs are spread all over the field. */
   private placePickups(): void {
+    if (this.arena.sky) return;
     const p = this.arena.path;
     if (p) {
       // a path: dice and power-ups along the way
@@ -1882,8 +1975,9 @@ export class BattleScene extends Phaser.Scene {
         if (p.quest) this.huntDie();
         break;
       case "heart":
-        this.heal(0.4);
-        this.toast("+40% health", "#ff9ab0");
+        // (in the storm flight it is a quick repair, not a full fix)
+        this.heal(this.stageMode === "heli" ? 0.2 : 0.4);
+        this.toast(this.stageMode === "heli" ? "REPAIRED! +20%" : "+40% health", "#ff9ab0");
         break;
       case "magnet":
         this.food.forEach((g) => (g.pulled = true));
@@ -2727,7 +2821,9 @@ export class BattleScene extends Phaser.Scene {
     }
     const roaming = this.roaming;
     if (roaming && save.afk && Math.hypot(vx, vy) < 0.05) [vx, vy] = this.afkStep();
-    if (!this.fighting && !roaming) vx = vy = 0;
+    // (in a fight you keep control through its cutscenes too: a boss landing, the lighthouse lighting up...)
+    const cutscene = this.state === "cutscene" && battle.mode === "run";
+    if (!this.fighting && !roaming && !cutscene) vx = vy = 0;
     const len = Math.hypot(vx, vy);
     if (len > 1) {
       vx /= len;
@@ -2735,7 +2831,9 @@ export class BattleScene extends Phaser.Scene {
     }
     if (len > 0.05) {
       this.stillFor = 0;
-      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * (this.rush ? 1 / RUSH_SLOW : 1) * delta) / 1000;
+      // (a bucket of water is heavy: you walk slower carrying it)
+      const heavy = this.beast?.want === "water" && this.beast.carried ? 0.72 : 1;
+      const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * (this.rush ? 1 / RUSH_SLOW : 1) * heavy * delta) / 1000;
       const p = this.arena.path;
       let nx = p ? Phaser.Math.Clamp(this.hero.x + vx * step, p.x0 + 40, p.x1 - 40) : clampX(this.hero.x + vx * step);
       let ny = p ? Math.min(clampY(this.hero.y + vy * step), p.startY + 150) : clampY(this.hero.y + vy * step);
@@ -2751,6 +2849,13 @@ export class BattleScene extends Phaser.Scene {
       }
       this.hero.setPosition(nx, ny).setScale(1);
       if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
+      // little puffs of dust kicked up as you run
+      this.dustT -= delta;
+      if (this.dustT <= 0 && len > 0.5 && this.fighting && !this.arena.sea && !this.arena.sky && effectsOn() && !save.settings.toaster) {
+        this.dustT = 240;
+        const d = this.add.image(nx - vx * 30, ny - 4, "puff").setTint(this.arena.crater ? 0x8a7a76 : this.arena.island ? 0xe8d8b0 : 0xd8c8a8).setScale(0.35).setAlpha(0.6).setDepth(ny - 2);
+        this.tweens.add({ targets: d, x: d.x - vx * 40, y: d.y - 20, scale: 0.9, alpha: 0, duration: 450, onComplete: () => d.destroy() });
+      }
       this.walkTimer += delta;
       if (this.walkTimer > 130) {
         this.walkTimer = 0;
@@ -2794,6 +2899,8 @@ export class BattleScene extends Phaser.Scene {
 
   /** A monster bit a pet. At zero health it is knocked out for a while. */
   private hurtPet(p: Pet, dmg: number): void {
+    // (your pets ride inside the helicopter: safe)
+    if (this.stageMode === "heli" && this.arena.sky) return;
     if (p.down > 0) return;
     p.hp -= dmg;
     p.hurtAt = this.time.now;
@@ -2931,9 +3038,12 @@ export class BattleScene extends Phaser.Scene {
       this.minute = minute;
       questEvent("wave");
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
-      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light" || this.stageMode === "volcano";
-      if (own && this.state === "fight" && !this.arena.sea) {
+      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea" || this.stageMode === "ocean" || this.stageMode === "light" || this.stageMode === "volcano" || this.stageMode === "heli";
+      if (own && this.state === "fight" && !this.arena.sea && !this.arena.sky) {
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
+      } else if (!own && this.stageMode === "feed") {
+        // feeding lasts 2:30: a swarm, and a heads-up for the last 30 s from the clock
+        this.swarm(16 + minute * 10);
       } else if (!own && minute < MINUTES) {
         sfx.alarm();
         buzz(60);
@@ -2947,7 +3057,7 @@ export class BattleScene extends Phaser.Scene {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
-    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light" && this.stageMode !== "volcano") this.bossCutscene();
+    if (this.state === "fight" && this.elapsed >= (this.stageMode === "feed" ? FEED_MS : STAGE_MS) && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea" && this.stageMode !== "ocean" && this.stageMode !== "light" && this.stageMode !== "volcano" && this.stageMode !== "heli") this.bossCutscene();
   }
 
   private types(): Record<"a" | "b" | "f", EnemyType> {
@@ -2955,6 +3065,14 @@ export class BattleScene extends Phaser.Scene {
       return {
         a: { tex: "e_octo", stats: WALKER_A, fx: 0xb46ad8 },
         b: { tex: "e_octo_r", stats: WALKER_B, fx: 0xff7a5a },
+        f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
+      };
+    }
+    if (this.stageMode === "heli") {
+      // only birds up here
+      return {
+        a: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
+        b: { tex: "e_bat_d", stats: FLYER, fx: 0x8a6ad0, flying: true },
         f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
       };
     }
@@ -2990,7 +3108,7 @@ export class BattleScene extends Phaser.Scene {
 
   private spawn(delta: number): void {
     // (the volcano sends its own slimes, see volcanoTick)
-    if (this.state !== "fight" || this.stageMode === "boss" || this.stageMode === "volcano") return;
+    if (this.state !== "fight" || this.stageMode === "boss" || this.stageMode === "volcano" || this.stageMode === "heli") return;
     // the tsunami washes the monsters away
     if (this.stageMode === "sea" && this.sea.tsunami > 0) return;
     if (this.stageMode === "ocean" && this.side.phase === "wave") return;
@@ -3059,7 +3177,7 @@ export class BattleScene extends Phaser.Scene {
   /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
   private mobStage(): number {
     // (the lighthouse island's crabs: as strong as the sea's octopi; the storm is the hard part)
-    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : this.arena.crater ? Math.min(save.stage, 4) : save.stage;
+    return this.arena.path ? Math.min(save.stage, 2) : this.arena.island ? Math.min(save.stage, 3) : this.arena.crater || this.arena.sky ? Math.min(save.stage, 4) : save.stage;
   }
 
   /** On a path monsters step out of the woods on either side, mostly up ahead of you (some block the path). */
@@ -3156,7 +3274,7 @@ export class BattleScene extends Phaser.Scene {
       e.badge = this.add.image(x, y, `mut_${muts[0]}`).setScale(type.boss ? 1.7 : 1.15);
       this.announceMutations(muts);
     }
-    if (!type.boss && (this.arena.island || this.arena.crater)) this.soften(e);
+    if (!type.boss && (this.arena.island || this.arena.crater || this.arena.sky)) this.soften(e);
     this.enemies.push(e);
     return e;
   }
@@ -3216,6 +3334,8 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     this.preview = [];
+    if (this.previewSolid) this.solids = this.solids.filter((r) => r !== this.previewSolid);
+    this.previewSolid = null;
     // the lobby signboard poofs away
     const sg = this.stageSign;
     if (sg) {
@@ -3252,6 +3372,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "ocean") this.oceanStart();
     if (m === "light") this.lightStart();
     if (m === "volcano") this.volcanoStart();
+    if (m === "heli") this.heliStart();
     if (m === "hunt") this.huntStart();
   }
 
@@ -3264,7 +3385,7 @@ export class BattleScene extends Phaser.Scene {
     battle.devJump = "start";
     if (j === "start" || this.rush || this.stageMode === "boss") return;
     const m = this.stageMode;
-    const full = this.story?.limit || (m === "sea" ? SEA_MS : m === "light" ? LIGHT_MS : STAGE_MS);
+    const full = this.story?.limit || (m === "sea" ? SEA_MS : m === "light" ? LIGHT_MS : m === "feed" ? FEED_MS : m === "heli" ? HELI_MS : STAGE_MS);
     let at = j === "mid" ? full * 0.5 : j === "end" ? full - 15000 : full - 2500;
     const p = this.arena.path;
     if (p) {
@@ -3273,6 +3394,8 @@ export class BattleScene extends Phaser.Scene {
       at = j === "boss" ? (PATH_BOSSES[save.stage]?.[0] ?? 45000) - 1500 : j === "mid" ? full * 0.5 : full - 20000;
       this.hero.y = p.startY - (p.startY - p.endY) * f;
       if (f > LANTERN_AT && this.lantern) this.holdLantern(true);
+      if (f > HAMMER_AT && !this.smash.has) this.takeHammer();
+      if (f > LOG_AT && !this.smash.broken) this.logBreaks();
       this.pathBosses = this.pathBosses.filter((t) => t >= at);
     }
     if (m === "hunt") {
@@ -3517,6 +3640,7 @@ export class BattleScene extends Phaser.Scene {
       if (under && d < 320) {
         // up it comes!
         sea.under.delete(e);
+        sfx.splash();
         e.img.clearTint();
         this.tweens.add({ targets: e.img, alpha: 1, duration: 160 });
         this.tweens.add({ targets: e.img, y: e.img.y - 40, duration: 180, yoyo: true, ease: "Quad.out" });
@@ -3553,28 +3677,59 @@ export class BattleScene extends Phaser.Scene {
   private whaleAttack(): void {
     const [x, y] = [clampX(this.hero.x + Phaser.Math.Between(-140, 140)), clampY(this.hero.y + Phaser.Math.Between(-140, 140))];
     const R = 250 + this.sea.lv * 12;
-    const shadow = this.add.ellipse(x, y, R * 2, R, 0x0a1a3a, 0.45).setDepth(3).setScale(0.2);
-    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(10, 0xff4a4a, 0.9).setDepth(4);
+    const flip = Math.random() < 0.5;
+    const dir = flip ? -1 : 1;
+    // 1. a whale-shaped shadow glides in under the water and circles the spot, growing as it rises
+    const shadow = this.add.image(x - dir * 500, y + 40, "whale_shadow").setDepth(3).setScale(0.6).setAlpha(0).setFlipX(flip);
+    this.tweens.add({ targets: shadow, x, y, alpha: 1, scale: 1.1, duration: 900, ease: "Sine.out" });
+    this.tweens.add({ targets: shadow, scale: 1.5, angle: dir * 25, duration: 700, delay: 900, ease: "Quad.in" });
+    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(10, 0xff4a4a, 0.9).setDepth(4).setScale(0.6);
+    this.tweens.add({ targets: ring, scale: 1, duration: 700, ease: "Back.out" });
     this.tweens.add({ targets: ring, alpha: 0.3, duration: 160, yoyo: true, repeat: -1 });
-    this.tweens.add({ targets: shadow, scale: 1, duration: 1500, ease: "Quad.in" });
-    // bubbles boiling up over it
     const bub = effectsOn() ? this.add.particles(x, y, "puff", {
       x: { min: -R * 0.8, max: R * 0.8 }, y: { min: -R * 0.3, max: R * 0.3 }, lifespan: 500, speedY: { min: -60, max: -20 }, scale: { start: 0.2, end: 0.6 },
       alpha: { start: 0.9, end: 0 }, tint: 0xd8f4ff, frequency: 40,
     }).setDepth(5) : null;
+    sfx.whale();
     sfx.charge(2);
-    this.time.delayedCall(1500, () => {
+    this.time.delayedCall(1600, () => {
       shadow.destroy();
       ring.destroy();
       bub?.destroy();
       if (!this.fighting) return;
-      const whale = this.add.image(x, y + 60, "sea_whale").setOrigin(0.5, 0.8).setScale(0.3).setDepth(y + 50).setFlipX(Math.random() < 0.5);
-      this.tweens.add({ targets: whale, scale: 1.25, y: y - 140, angle: whale.flipX ? 12 : -12, duration: 380, ease: "Back.out" });
-      this.tweens.add({ targets: whale, y: y + 120, scaleY: 0.6, alpha: 0, delay: 700, duration: 500, ease: "Quad.in", onComplete: () => whale.destroy() });
-      this.splash(x, y, 40, 1.6);
-      this.time.delayedCall(700, () => this.splash(x, y + 20, 30, 1.8));
-      this.cameras.main.shake(450, 0.014);
-      sfx.boom();
+      // 2. it bursts up out of the water in an arc, spouting from its blowhole
+      const whale = this.add.image(x - dir * 60, y + 40, "sea_whale").setOrigin(0.5, 0.8).setScale(0.5, 0.2).setDepth(y + 50).setFlipX(flip).setAngle(-dir * 40);
+      const arc = { t: 0 };
+      this.tweens.add({
+        targets: arc, t: 1, duration: 1100, ease: "Linear",
+        onUpdate: () => {
+          const k = arc.t;
+          whale.setPosition(x - dir * 60 + dir * 260 * k, y + 40 - Math.sin(k * Math.PI) * 360);
+          whale.setAngle(-dir * 40 + dir * 85 * k);
+          const sq = k < 0.15 ? k / 0.15 : 1;
+          whale.setScale(0.5 + 0.8 * sq, 0.2 + 1.1 * sq);
+        },
+        onComplete: () => {
+          // 3. it crashes back down: a huge splash and rings of waves
+          whale.destroy();
+          this.whaleSplash(x + dir * 200, y + 30, R, 1.1);
+          // 4. its tail flips up as it dives away
+          const tail = this.add.image(x + dir * 260, y + 60, "whale_tail").setOrigin(0.5, 1).setScale(0.3, 0).setDepth(y + 60).setFlipX(flip);
+          this.tweens.add({ targets: tail, scaleX: 0.8, scaleY: 0.85, angle: dir * 10, duration: 350, delay: 250, ease: "Back.out" });
+          this.tweens.add({ targets: tail, scaleY: 0, y: y + 90, duration: 500, delay: 1000, ease: "Quad.in", onComplete: () => tail.destroy() });
+          this.time.delayedCall(1100, () => this.splash(x + dir * 260, y + 60, 12, 0.7));
+        },
+      });
+      // the spout from its blowhole on the way up
+      if (effectsOn()) this.time.delayedCall(250, () => {
+        const sp = this.add.particles(whale.x, whale.y - 160, "puff", {
+          speedY: { min: -700, max: -450 }, speedX: { min: -80, max: 80 }, gravityY: 900, lifespan: 800, scale: { start: 0.5, end: 1.2 },
+          alpha: { start: 0.9, end: 0 }, tint: 0xe8fbff, quantity: 3, frequency: 25,
+        }).setDepth(TOP + 50);
+        this.time.delayedCall(450, () => sp.stop());
+        this.time.delayedCall(1300, () => sp.destroy());
+      });
+      this.whaleSplash(x, y, R, 0.8);
       buzz(180);
       if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
         this.hurt(this.heroMax * (0.18 + this.sea.lv * 0.025));
@@ -3582,6 +3737,20 @@ export class BattleScene extends Phaser.Scene {
       }
       for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * 2);
     });
+  }
+
+  /** A whale-sized splash: a crown of water, spray, foam and rings of waves spreading out. */
+  private whaleSplash(x: number, y: number, R: number, k: number): void {
+    sfx.bigSplash();
+    this.cameras.main.shake(400, 0.012 * k);
+    const crown = this.add.image(x, y + 20, "splash_crown").setOrigin(0.5, 1).setScale(0.3 * k, 0).setDepth(y + 70);
+    this.tweens.add({ targets: crown, scaleX: 1.1 * k, scaleY: 1.1 * k, duration: 260, ease: "Back.out" });
+    this.tweens.add({ targets: crown, scaleY: 0, alpha: 0, delay: 500, duration: 400, ease: "Quad.in", onComplete: () => crown.destroy() });
+    for (let i = 0; i < 3; i++) {
+      const w = this.add.ellipse(x, y, R * 0.6, R * 0.3).setStrokeStyle(10 - i * 2, 0xffffff, 0.85).setDepth(4);
+      this.tweens.add({ targets: w, scale: 3.2 - i * 0.4, alpha: 0, delay: i * 180, duration: 1100, ease: "Quad.out", onComplete: () => w.destroy() });
+    }
+    this.splash(x, y, Math.round(36 * k), 1.6 * k);
   }
 
   /** Purple rings, then tentacles slam up out of the water. */
@@ -3711,13 +3880,41 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** A little island to shelter on pops up out of the water. */
-  private miniIsland(x: number, y: number): { x: number; y: number; r: number; objs: Phaser.GameObjects.GameObject[] } {
-    const img = this.add.image(x, y + 60, "sea_island").setOrigin(0.5, 0.75).setScale(0).setDepth(y - 5);
-    this.tweens.add({ targets: img, scale: 1, duration: 500, ease: "Back.out" });
+  private miniIsland(x: number, y: number, fixed = false): { x: number; y: number; r: number; objs: Phaser.GameObjects.GameObject[] } {
+    const img = this.add.image(x, y + 60, "sea_island").setOrigin(0.5, 0.75).setScale(fixed ? 1 : 0).setDepth(y - 5);
     const glow = this.add.ellipse(x, y + 20, 360, 130).setStrokeStyle(10, 0x7aff8a, 0.9).setDepth(y - 6);
+    if (fixed) {
+      // Land Ho!'s islands are always there: a faint ring, bright while a tsunami is coming
+      glow.setAlpha(0.25);
+      this.addStatic(img, x, y);
+      this.addStatic(glow, x, y);
+      return { x, y: y + 20, r: 150, objs: [img, glow] };
+    }
+    this.tweens.add({ targets: img, scale: 1, duration: 500, ease: "Back.out" });
     this.tweens.add({ targets: glow, alpha: 0.3, scaleX: 1.08, scaleY: 1.08, duration: 400, yoyo: true, repeat: -1 });
     this.splash(x, y + 30, 20, 1.2);
     return { x, y: y + 20, r: 150, objs: [img, glow] };
+  }
+
+  /** Land Ho!: little islands dotted all over the ocean (always there: plan your way from one to the next). */
+  private oceanIslands(): void {
+    const a = this.arena;
+    const o = this.ocean;
+    const sea = this.sea;
+    const start: [number, number] = [this.hero.x, this.hero.y];
+    for (let y = a.h - 900; y > 900; y -= 1050 + Math.random() * 250) {
+      const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+      for (let i = 0, tries = 0; i < n && tries < 30; tries++) {
+        const x = 500 + Math.random() * (a.w - 1000);
+        const yy = y + (Math.random() - 0.5) * 400;
+        if (sea.islands.some((q) => Math.hypot(q.x - x, q.y - yy) < 1100)) continue;
+        if (Math.hypot(o.x - x, o.y - yy) < 1300) continue;
+        sea.islands.push(this.miniIsland(x, yy, true));
+        i++;
+      }
+    }
+    // one close by to start with
+    if (!sea.islands.some((q) => Math.hypot(q.x - start[0], q.y - start[1]) < 800)) sea.islands.push(this.miniIsland(start[0] + 450, start[1] - 350, true));
   }
 
   // ── Land Ho! (stage 7): sail the ocean to find the big island; tsunamis come at random
@@ -3730,11 +3927,12 @@ export class BattleScene extends Phaser.Scene {
     o.y = 1500 + Math.random() * 2500;
     this.oceanGuess();
     o.img = this.add.image(o.x, o.y + 140, "sea_bigisland").setOrigin(0.5, 0.75).setDepth(o.y);
+    this.oceanIslands();
     this.tweens.add({ targets: o.img, y: o.img.y - 8, duration: 1600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.boat = this.add.image(this.hero.x, this.hero.y + 20, "sea_boat").setOrigin(0.5, 0.7).setScale(1.1);
     battle.limit = OCEAN_MS;
     o.nextT = 10000 + Math.random() * 4000;
-    this.time.delayedCall(1700, () => this.toast("Find the big island before the clock runs out! Watch out for tsunamis", "#a8e8ff"));
+    this.time.delayedCall(1700, () => this.toast("Find the big island! Stay near the little islands: a tsunami can come any time", "#a8e8ff"));
   }
 
   /** The compass's guess: off by up to a few thousand (shrinking as you get close), new after each tsunami. */
@@ -3794,7 +3992,7 @@ export class BattleScene extends Phaser.Scene {
       if (o.nextT <= 0) {
         o.count++;
         this.startSideTsunami(o.count);
-        o.nextT = Math.max(7000, 10000 + Math.random() * 8000 - o.count * 400);
+        o.nextT = Math.max(6000, 9000 + Math.random() * 7000 - o.count * 400);
       }
       return;
     }
@@ -3992,7 +4190,6 @@ export class BattleScene extends Phaser.Scene {
     this.state = "cutscene";
     // the clock stops (it goes once the boss is here)
     battle.left = Math.max(0, LIGHT_MS - this.elapsed);
-    this.joy = { ...NO_JOY };
     for (const e of [...this.enemies]) this.kill(e, true);
     const cam = this.cameras.main;
     const [lx, ly] = [L.tx, L.ty - 706];
@@ -4007,6 +4204,7 @@ export class BattleScene extends Phaser.Scene {
       sfx.superRoll();
       buzz(200);
       this.banner("THE LIGHT IS BACK!", "gold", 1400);
+      sfx.sting();
       // the light warms you back up for the boss
       this.heal(0.6);
       this.topGlow(lx, ly, 3.2, 0xffe9a0);
@@ -4082,7 +4280,344 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  // ── The Volcano (stage 9): the Magma King in its crater, in three phases
+  // ── The Storm Flight (stage 9): fly the helicopter through the storm for 2:00 (seen from the side)
+
+  /** You fly the helicopter now, at the controls in its glass bubble (your pets and gadget ride inside). */
+  private heliStart(): void {
+    const H = this.heli;
+    if (!this.arena.sky) return;
+    this.hero.setAlpha(0);
+    this.handImg.setVisible(false);
+    for (const p of this.pets) {
+      p.img.setVisible(false);
+      p.odds.setVisible(false);
+    }
+    const [x, y] = [this.hero.x, this.hero.y];
+    H.blur = this.add.image(x, y, "heli_blur").setDepth(TOP + 46).setScale(HELI_SCALE);
+    H.blade = this.add.image(x, y, "heli_blade").setDepth(TOP + 47).setScale(HELI_SCALE);
+    H.tail = this.add.image(x, y, "heli_tail").setDepth(TOP + 46).setScale(HELI_SCALE);
+    // the cabin, you at the controls (your own character), then the glass bubble and the body in front
+    H.back = this.add.image(x, y, "heli_back").setDepth(TOP + 44.5).setScale(HELI_SCALE);
+    H.pilot = this.add.image(x, y, "hero").setDepth(TOP + 44.7);
+    H.pilot.setScale((HELI_SCALE * 112) / H.pilot.height);
+    H.body = this.add.image(x, y, "heli_front").setDepth(TOP + 45).setScale(HELI_SCALE);
+    battle.limit = HELI_MS;
+    battle.left = HELI_MS;
+    sfx.rotor();
+    this.time.delayedCall(1800, () => this.toast("Fly through the storm for 2:00! Dodge the lightning, the twisters and the wind", "#b8c8ff"));
+  }
+
+  /** Where a point on the helicopter is now (it leans as it flies). */
+  private heliPoint(dx: number, dy: number): [number, number] {
+    const a = (this.heli.tilt * Math.PI) / 180;
+    const [x, y] = [dx * HELI_SCALE, dy * HELI_SCALE];
+    return [this.hero.x + x * Math.cos(a) - y * Math.sin(a), this.hero.y + x * Math.sin(a) + y * Math.cos(a)];
+  }
+
+  private heliTick(delta: number, fighting: boolean): void {
+    const H = this.heli;
+    const body = H.body;
+    if (!body || !H.blade || !H.tail || !H.blur) return;
+    const a = this.arena;
+    const dt = delta / 1000;
+    // the world rushes past: far clouds slowly, the cloud floor faster, near clouds faster still
+    const sp = dt * H.speed;
+    if (H.far) H.far.tilePositionX += 40 * sp;
+    if (H.sea) H.sea.tilePositionX += 300 * sp;
+    H.puffT -= delta;
+    if (H.puffT <= 0) {
+      H.puffT = 700 + Math.random() * 900;
+      const front = Math.random() < 0.35;
+      const img = this.add.image(a.w + 300, SKY_CEIL + Math.random() * (SKY_SEA - SKY_CEIL - 300), "cloud_puff")
+        .setScale(0.8 + Math.random() * 1.2).setAlpha(front ? 0.45 : 0.75).setDepth(front ? TOP + 55 : -970);
+      H.puffs.push({ img, v: front ? 900 + Math.random() * 300 : 240 + Math.random() * 260 });
+    }
+    H.puffs = H.puffs.filter((p) => {
+      p.img.x -= p.v * sp;
+      if (p.img.x > -400) return true;
+      p.img.destroy();
+      return false;
+    });
+    if (!H.falling) {
+      // nose down flying forward, nose up backing off; blades flicker round, a gentle bob
+      const [vx, vy] = this.heroVel;
+      H.tilt += (Phaser.Math.Clamp(vx / 30 + vy / 80, -16, 16) - H.tilt) * Math.min(1, delta / 150);
+      const bob = Math.sin(this.time.now / 260) * 6;
+      body.setPosition(this.hero.x, this.hero.y + bob).setAngle(H.tilt);
+      H.back?.setPosition(this.hero.x, this.hero.y + bob).setAngle(H.tilt);
+      if (H.pilot) {
+        const [px, py] = this.heliPoint(46, 4);
+        // you, bobbing at the controls
+        H.pilot.setPosition(px, py + bob + Math.sin(this.time.now / 180) * 2).setAngle(H.tilt);
+      }
+      H.spin += delta * 0.045;
+      const [bx, by] = this.heliPoint(46, -86);
+      H.blade.setPosition(bx, by + bob).setAngle(H.tilt).setScale(HELI_SCALE * Math.cos(H.spin), HELI_SCALE);
+      H.blur.setPosition(bx, by + bob).setAngle(H.tilt).setScale(HELI_SCALE * 0.8, HELI_SCALE * 0.6);
+      const [tx, ty] = this.heliPoint(-124, -12);
+      H.tail.setPosition(tx, ty + bob).setAngle(H.tail.angle + delta * 1.4);
+      if (this.state !== "won" && this.state !== "lost") sfx.rotor(this.heroHp / this.heroMax < 0.3);
+      // damaged: black smoke from the engine, sparks, the cockpit beeps
+      const hp = this.heroHp / this.heroMax;
+      H.smokeT -= delta;
+      if (hp < 0.55 && H.smokeT <= 0 && effectsOn()) {
+        H.smokeT = hp < 0.3 ? 60 : 130;
+        const [ex, ey] = this.heliPoint(-40, -30);
+        const pf = this.add.image(ex, ey, "puff").setTint(hp < 0.3 ? 0x2a2a2a : 0x6a6a72).setScale(0.6).setAlpha(0.8).setDepth(TOP + 44);
+        this.tweens.add({ targets: pf, x: pf.x - 360, y: pf.y - 60, scale: 2.4, alpha: 0, duration: 900, onComplete: () => pf.destroy() });
+        if (hp < 0.3 && Math.random() < 0.3) {
+          this.sparks.setParticleTint(0xffa040);
+          this.sparks.explode(3, ex, ey);
+        }
+      }
+      H.beepT -= delta;
+      if (hp < 0.3 && H.beepT <= 0 && this.fighting) {
+        H.beepT = 900;
+        sfx.beep();
+      }
+      // skimming the cloud tops stirs up wisps
+      H.sprayT -= delta;
+      if (this.hero.y > SKY_SEA - 260 && H.sprayT <= 0 && effectsOn()) {
+        H.sprayT = 90;
+        this.puff.setParticleTint(0xe8ecff);
+        this.puff.explode(2, this.hero.x + Phaser.Math.Between(-80, 80), SKY_SEA - 60);
+      }
+    }
+    // far-off lightning lights up the sky
+    H.flashT -= delta;
+    if (H.flashT <= 0 && H.flash) {
+      H.flashT = 2200 + Math.random() * 3500;
+      this.tweens.add({ targets: H.flash, fillAlpha: 0.3, duration: 60, yoyo: true, repeat: 1 });
+      if (Math.random() < 0.5) sfx.thunder();
+    }
+    if (!fighting || this.state !== "fight") return;
+    const left = HELI_MS - this.elapsed;
+    battle.left = Math.max(0, left);
+    if (left <= 0) {
+      this.heliFinale();
+      return;
+    }
+    this.storyReminders(left, delta);
+    const k = this.elapsed / HELI_MS;
+    // lightning: the same strikes as the lighthouse's storm, aimed where you are heading; rows of them later on
+    H.boltT -= delta;
+    if (H.boltT <= 0) {
+      H.boltT = 2200 - 1000 * k;
+      const [vx, vy] = this.heroVel;
+      const dmg = this.heroMax * 0.12;
+      if (k > 0.25 && Math.random() < 0.3) {
+        const horiz = Math.random() < 0.5;
+        for (let i = -2; i <= 2; i++) {
+          const [x, y] = horiz ? [this.hero.x + i * 260, this.hero.y + Phaser.Math.Between(-60, 60)] : [this.hero.x + Phaser.Math.Between(-60, 60), this.hero.y + i * 230];
+          this.time.delayedCall((i + 2) * 110, () => this.fighting && this.addStrike(clampX(x), clampY(y), 140, 1100, dmg, "thunder", undefined, true));
+        }
+      } else {
+        const n = k > 0.5 && Math.random() < 0.4 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const [x, y] = i === 0 ? [this.hero.x + vx * 0.6, this.hero.y + vy * 0.6] : [this.hero.x + Phaser.Math.Between(-450, 450), this.hero.y + Phaser.Math.Between(-400, 400)];
+          this.addStrike(clampX(x), clampY(y), 150, 1100, dmg, "thunder", undefined, true);
+        }
+      }
+    }
+    this.gustTick(delta, k);
+    this.tornadoTick(delta, k);
+    // storm crows fly in from ahead
+    H.crowT -= delta;
+    if (H.crowT <= 0 && this.enemies.length < 6 + k * 8) {
+      H.crowT = 2800 - 1200 * k;
+      const e = this.addEnemy(this.pickType(), a.w - 80, SKY_CEIL + 150 + Math.random() * (SKY_SEA - SKY_CEIL - 450), false, true, 1, this.mobStage());
+      e.huntHero = true;
+    }
+    // a repair heart now and then (grab it to patch the helicopter up)
+    H.repairT -= delta;
+    if (H.repairT <= 0) {
+      H.repairT = 30000;
+      this.addPickup("heart", 300 + Math.random() * (a.w - 600), SKY_CEIL + 300 + Math.random() * (SKY_SEA - SKY_CEIL - 700), 14000);
+      this.toast("A repair heart! Grab it", "#ffb0d0");
+    }
+    // the volcano comes up over the cloud floor near the end
+    if (k > 0.6 && !H.isle) {
+      H.isle = this.add.image(a.w + 500, SKY_SEA + 120, "volcano_pro").setOrigin(0.5, 1).setScale(0.3).setDepth(-965);
+      this.toast("Land ahead... a volcano?!", "#ffb08a");
+    }
+    if (H.isle && !H.falling) {
+      H.isle.x = Math.max(a.w * 0.72, H.isle.x - 60 * dt);
+      H.isle.setScale(Math.min(0.6, H.isle.scale + 0.006 * dt));
+    }
+  }
+
+  /** Wind: swooshes warn you, then an updraft, a downdraft or a headwind shoves the helicopter for a few seconds. */
+  private gustTick(delta: number, k: number): void {
+    const H = this.heli;
+    const a = this.arena;
+    if (!H.gust) {
+      H.gustT -= delta;
+      if (H.gustT > 0) return;
+      H.gustT = 10000 - 4000 * k;
+      const kind = (["down", "up", "head"] as const)[Math.floor(Math.random() * 3)];
+      const fx: Phaser.GameObjects.GameObject[] = [];
+      const [dx, dy] = kind === "down" ? [0, 1] : kind === "up" ? [0, -1] : [-1, 0];
+      // cartoon wind swooshes start to blow the way it will push
+      const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+      for (let i = 0; i < 4; i++) {
+        const [x, y] = kind === "head" ? [a.w * 0.8, SKY_CEIL + (SKY_SEA - SKY_CEIL) * (0.15 + i * 0.23)] : [a.w * (0.15 + i * 0.23), kind === "down" ? SKY_CEIL + 150 : SKY_SEA - 150];
+        const w = this.add.image(x, y, "wind_curl").setAngle(ang).setScale(0.4).setAlpha(0).setDepth(TOP + 80);
+        this.tweens.add({ targets: w, alpha: 1, scale: 1.2, duration: 300, delay: i * 90, ease: "Back.out" });
+        this.tweens.add({ targets: w, x: x + dx * 120, y: y + dy * 120, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        fx.push(w);
+      }
+      H.gust = { kind, t: 3800 - 600 * k, warn: 1500, fx };
+      this.banner(kind === "down" ? "DOWNDRAFT!" : kind === "up" ? "UPDRAFT!" : "HEADWIND!", "blue", 900);
+      sfx.wind();
+      return;
+    }
+    const g = H.gust;
+    const [dx, dy] = g.kind === "down" ? [0, 1] : g.kind === "up" ? [0, -1] : [-1, 0];
+    if (g.warn > 0) {
+      g.warn -= delta;
+      if (g.warn <= 0) {
+        g.fx.forEach((o) => o.destroy());
+        g.fx = [];
+        // swooshes rush across the whole sky while it blows
+        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const sweep = this.time.addEvent({ delay: 160, loop: true, callback: () => {
+          const [sx, sy] = dx ? [a.w + 200, SKY_CEIL + Math.random() * (SKY_SEA - SKY_CEIL)] : [Math.random() * a.w, dy > 0 ? SKY_CEIL - 100 : SKY_SEA + 100];
+          const w = this.add.image(sx, sy, "wind_curl").setAngle(ang).setScale(0.7 + Math.random() * 0.5).setAlpha(0.9).setDepth(TOP + 63);
+          this.tweens.add({ targets: w, x: sx + dx * 2200, y: sy + dy * 2200, duration: 900, onComplete: () => w.destroy() });
+        } });
+        g.fx.push({ destroy: () => sweep.remove(false) } as unknown as Phaser.GameObjects.GameObject);
+        sfx.wind();
+        this.cameras.main.shake(g.t, 0.003);
+      }
+      return;
+    }
+    g.t -= delta;
+    const push = (280 + 140 * k) * (delta / 1000);
+    this.hero.x = clampX(this.hero.x + dx * push);
+    this.hero.y = clampY(this.hero.y + dy * push);
+    if (g.t <= 0) {
+      g.fx.forEach((o) => o.destroy());
+      H.gust = null;
+    }
+  }
+
+  /** The Storm Twister: tornadoes hanging from the storm clouds, some reaching far down (fly under them, fast). */
+  private tornadoTick(delta: number, k: number): void {
+    const H = this.heli;
+    const a = this.arena;
+    if (this.elapsed > 12000) H.stormT -= delta;
+    if (H.stormT <= 0 && H.storms.length < (k > 0.6 ? 2 : 1)) {
+      H.stormT = 11000 - 4500 * k;
+      const span = SKY_SEA - SKY_CEIL;
+      const tip = SKY_CEIL + span * (0.45 + Math.random() * (0.2 + 0.15 * k));
+      const root = SKY_CEIL - 220;
+      const img = this.add.image(a.w + 300, root, "twister").setOrigin(0.5, 0).setDepth(TOP + 35);
+      img.setScale(1, (tip - root) / 1000);
+      H.storms.push({ img, top: true, tip, hurtT: 0, v: 280 + 120 * k });
+      this.banner("TWISTER! FLY UNDER IT!", "purple", 1000);
+      sfx.rumble();
+    }
+    H.storms = H.storms.filter((st) => {
+      const img = st.img;
+      img.x -= st.v * (delta / 1000);
+      // it sways and squashes as it spins
+      img.setAngle(Math.sin(this.time.now / 320 + st.tip) * 4);
+      img.scaleX = 1 + Math.sin(this.time.now / 110) * 0.05;
+      if (effectsOn() && Math.random() < 0.25) {
+        this.puff.setParticleTint(0x9aa4c8);
+        this.puff.explode(1, img.x + Phaser.Math.Between(-30, 30), st.tip);
+      }
+      if (img.x < -400) {
+        img.destroy();
+        return false;
+      }
+      // how wide it is at your height (wide up top, thin at its tip)
+      const [y0, y1] = [SKY_CEIL - 220, st.tip];
+      const hy = this.hero.y;
+      if (hy > y1 + 160) return true;
+      const f = Phaser.Math.Clamp((hy - y0) / (y1 - y0), 0, 1);
+      const w = 175 * Math.pow(1 - f, 1.25) + 30;
+      const dx = img.x - this.hero.x;
+      if (Math.abs(dx) < w + 260) {
+        // it sucks you sideways toward it
+        this.hero.x = clampX(this.hero.x + Math.sign(dx) * (140 + 260 * (1 - Math.min(1, Math.abs(dx) / (w + 260)))) * (delta / 1000));
+      }
+      st.hurtT -= delta;
+      if (Math.abs(dx) < w && hy < y1 + 40 && st.hurtT <= 0) {
+        st.hurtT = 450;
+        this.hurt(this.heroMax * 0.1);
+        this.callout("SPINNING!", "#c8d4ff");
+        if (this.heli.body) this.tweens.add({ targets: [this.heli.body, this.heli.back], angle: "+=360", duration: 420 });
+      }
+      return true;
+    });
+  }
+
+  /** 2:00 survived... then the biggest bolt of all hits you: the helicopter spins down into the volcano. */
+  private heliFinale(): void {
+    const H = this.heli;
+    const a = this.arena;
+    const parts = [H.body!, H.blade!, H.blur!, H.tail!, ...(H.back ? [H.back] : []), ...(H.pilot ? [H.pilot] : [])];
+    this.state = "cutscene";
+    battle.left = 0;
+    for (const e of [...this.enemies]) this.kill(e, true);
+    this.clearBossAttacks();
+    H.storms.forEach((st) => this.tweens.add({ targets: st.img, alpha: 0, duration: 400, onComplete: () => st.img.destroy() }));
+    H.storms = [];
+    H.gust?.fx.forEach((o) => o.destroy());
+    H.gust = null;
+    if (!H.isle) H.isle = this.add.image(a.w + 500, SKY_SEA + 120, "volcano_pro").setOrigin(0.5, 1).setScale(0.4).setDepth(-965);
+    this.banner("YOU MADE IT... ?!", "gold", 1000);
+    // the last bolt: a warning right on you, then the hit
+    const warn = this.add.image(this.hero.x, this.hero.y, "bx_warn").setTint(0xffd23f).setScale(1.4, 1).setDepth(TOP + 48);
+    this.tweens.add({ targets: warn, alpha: 0.3, duration: 120, yoyo: true, repeat: 4, onComplete: () => warn.destroy() });
+    sfx.alarm();
+    this.time.delayedCall(1250, () => {
+      H.falling = true;
+      this.impact(this.hero.x, this.hero.y + 60, 300, "bolt", 0xffd23f);
+      sfx.crash();
+      buzz(400);
+      this.cameras.main.flash(400, 255, 255, 255);
+      this.cameras.main.shake(800, 0.02);
+      this.banner("LIGHTNING STRIKE!", "red", 1200);
+      H.body!.setTint(0x6a6a72);
+      H.speed = 2.5;
+      const smoke = effectsOn() ? this.add.particles(0, 0, "puff", {
+        follow: H.body!, lifespan: 1000, speedX: { min: -320, max: -180 }, speedY: { min: -120, max: -40 }, scale: { start: 0.8, end: 2.8 },
+        alpha: { start: 0.85, end: 0 }, tint: [0x2a2a2a, 0x4a4a4a, 0xff7a2a], frequency: 30,
+      }).setDepth(TOP + 44) : null;
+      // the volcano rises up through the clouds below, its crater glowing; you spin down into it
+      const isle = H.isle!;
+      this.tweens.add({ targets: isle, x: a.w * 0.55, y: a.h + 120, scale: 1.9, duration: 2400, ease: "Sine.inOut" });
+      const crater: [number, number] = [a.w * 0.55, a.h + 120 - 598 * 1.9];
+      const fume = effectsOn() ? this.add.particles(crater[0], crater[1], "puff", {
+        lifespan: 1800, speedY: { min: -260, max: -140 }, speedX: { min: -40, max: 40 }, scale: { start: 1.2, end: 4 }, alpha: { start: 0.6, end: 0 },
+        tint: [0x5a4a4a, 0xff8a3a], frequency: 70,
+      }).setDepth(-964) : null;
+      this.time.delayedCall(2500, () => fume?.destroy());
+      this.time.delayedCall(900, () => {
+        sfx.beep();
+        this.banner("MAYDAY! MAYDAY!", "red", 1000);
+      });
+      this.tweens.add({ targets: parts, angle: "+=1080", duration: 3000, ease: "Quad.in" });
+      this.tweens.add({ targets: parts, x: crater[0], y: crater[1], scale: 0.3, duration: 2900, delay: 300, ease: "Quad.in" });
+      this.time.delayedCall(3300, () => {
+        smoke?.destroy();
+        parts.forEach((p) => p.setVisible(false));
+        this.boom(crater[0], crater[1], 3);
+        sfx.boom();
+        this.cameras.main.flash(500, 255, 140, 40);
+        this.cameras.main.shake(700, 0.02);
+        this.sparks.setParticleTint(0xff8a1a);
+        this.sparks.explode(60, crater[0], crater[1]);
+        this.banner("INTO THE VOLCANO!", "red", 1400);
+        H.speed = 0.2;
+        this.time.delayedCall(900, () => this.stageWon());
+      });
+    });
+  }
+
+  // ── The Volcano (stage 10): the Magma King in its crater, in three phases
 
   /** The crater at night: the water geysers round the floor, the clock (4:00), and the King's walk frames made ahead. */
   private volcanoStart(): void {
@@ -4098,6 +4633,7 @@ export class BattleScene extends Phaser.Scene {
     }
     battle.limit = VOLC_MS;
     battle.left = VOLC_MS;
+    this.time.delayedCall(300, () => this.toast("You crash-landed in the volcano's crater! Something is waking up...", "#ffb08a"));
     for (let i = 0; i < 3; i++) this.time.delayedCall(200 + i * 300, () => bossFrame(this, "b_magmaking", i));
   }
 
@@ -4107,7 +4643,6 @@ export class BattleScene extends Phaser.Scene {
     const V = this.volc;
     this.state = "cutscene";
     battle.bossFight = true;
-    this.joy = { ...NO_JOY };
     this.game.events.emit("boss-warning");
     music.play("calm");
     const cam = this.cameras.main;
@@ -4336,6 +4871,7 @@ export class BattleScene extends Phaser.Scene {
     cam.shake(900, 0.018);
     cam.flash(250, 255, 120, 40);
     sfx.thunder();
+    sfx.rumble();
     buzz(250);
     if (n === 2) {
       this.banner("THE LAVA RISES!", "red", 1200);
@@ -4411,9 +4947,12 @@ export class BattleScene extends Phaser.Scene {
   private startSideTsunami(level: number): void {
     const sea = this.sea;
     const st = this.side;
-    for (const isl of sea.islands) isl.objs.forEach((ob) => ob.destroy());
-    sea.islands = [];
-    const n = level >= 5 ? 2 : 3;
+    const ocean = this.stageMode === "ocean";
+    if (!ocean) {
+      for (const isl of sea.islands) isl.objs.forEach((ob) => ob.destroy());
+      sea.islands = [];
+    }
+    const n = ocean ? 0 : level >= 5 ? 2 : 3;
     for (let tries = 0; sea.islands.length < n && tries < 120; tries++) {
       const ang = Math.random() * Math.PI * 2;
       const d = 500 + Math.min(400, level * 60) + Math.random() * 500;
@@ -4425,7 +4964,12 @@ export class BattleScene extends Phaser.Scene {
     st.sides = [first];
     if (level >= 3 && Math.random() < 0.55) st.sides.push([1, 0, 3, 2, 2, 3, 0, 1][first * 2 + Math.floor(Math.random() * 2)]);
     st.phase = "warn";
-    st.t = Math.max(2200, 4200 - level * 300);
+    // (on the open ocean the islands are always there, so the warning is shorter)
+    st.t = ocean ? Math.max(1900, 3600 - level * 250) : Math.max(2200, 4200 - level * 300);
+    if (ocean) for (const isl of sea.islands) {
+      const glow = isl.objs[1];
+      this.tweens.add({ targets: glow, alpha: 1, scaleX: 1.12, scaleY: 1.12, duration: 300, yoyo: true, repeat: 8 });
+    }
     st.dur = Math.max(2600, 4200 - level * 250);
     st.waves = [];
     const names = st.sides.map((x) => ["north", "south", "west", "east"][x]);
@@ -4433,6 +4977,7 @@ export class BattleScene extends Phaser.Scene {
     this.toast(`From the ${names.join(" and ")}! Get on an island!`, "#9ad8ff");
     this.game.events.emit("hurry", true);
     sfx.alarm();
+    sfx.rumble();
     this.tweens.add({ targets: this.gloom, fillAlpha: 0.25, duration: 800 });
   }
 
@@ -4473,8 +5018,15 @@ export class BattleScene extends Phaser.Scene {
     for (const wv of st.waves) this.dropWave(wv.w);
     st.waves = [];
     st.phase = "calm";
-    for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, y: "+=40", duration: 700, onComplete: () => isl.objs.forEach((ob) => ob.destroy()) });
-    sea.islands = [];
+    if (this.stageMode === "ocean") {
+      for (const isl of sea.islands) {
+        this.tweens.killTweensOf(isl.objs[1]);
+        (isl.objs[1] as Phaser.GameObjects.Ellipse).setAlpha(0.25).setScale(1);
+      }
+    } else {
+      for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, y: "+=40", duration: 700, onComplete: () => isl.objs.forEach((ob) => ob.destroy()) });
+      sea.islands = [];
+    }
     this.tweens.add({ targets: this.gloom, fillAlpha: 0, duration: 1200 });
     return true;
   }
@@ -4495,6 +5047,7 @@ export class BattleScene extends Phaser.Scene {
       this.tweens.add({ targets: ring, scale: 0.5, alpha: 0.1, duration: 900, repeat: -1 });
       w.list.push({ x, y, img, ring, life: 9000, hurtT: 0 });
       this.toast("WHIRLPOOL! Don't get sucked in!", "#9ad8ff");
+      sfx.splash();
       sfx.whoosh();
     }
     w.list = w.list.filter((p) => {
@@ -4617,7 +5170,118 @@ export class BattleScene extends Phaser.Scene {
       this.lantern = [img, glow, this.topGlow(x, ly - 60, 2.6, 0xffd24a)];
       this.lamps.push({ x, y: ly - 60, r: 260 });
     }
+    this.placeLogAndHammer();
     this.time.delayedCall(2600, () => this.toast(this.story!.goal, "#c8f0a0"));
+  }
+
+  /**
+   * A fallen tree lies right across the path further up (you can't get past it), and a hammer lies on
+   * the path before it: pick it up, then stand in the circle by the log for 5 s to smash it.
+   */
+  private placeLogAndHammer(): void {
+    const p = this.arena.path!;
+    const S = this.smash;
+    const mid = this.arena.w / 2;
+    const len = p.startY - p.endY;
+    // the hammer, glinting on the path
+    const hy = p.startY - len * HAMMER_AT;
+    const hx = mid - 140;
+    const glow = this.add.image(hx, hy - 60, "glow").setTint(0xc8e0ff).setScale(1.6).setAlpha(0.8).setDepth(hy - 1).setBlendMode(Phaser.BlendModes.ADD);
+    const img = this.add.image(hx, hy, "hammer").setOrigin(0.5, 1).setDepth(hy).setAngle(-25);
+    this.tweens.add({ targets: img, y: hy - 26, angle: 25, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.tweens.add({ targets: glow, scale: 2.2, alpha: 0.4, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    S.hammer = [img, glow, this.topGlow(hx, hy - 60, 2.2, 0xc8e0ff)];
+    // the log, solid across the whole path
+    S.y = p.startY - len * LOG_AT;
+    S.x = mid;
+    S.log = this.add.image(mid, S.y, "log_big").setOrigin(0.5, 0.9).setDepth(S.y).setScale(0.95, 1);
+    this.solid(mid, S.y + 10, p.x1 - p.x0 + 300, 150);
+    S.solid = this.solids[this.solids.length - 1];
+    this.nightGlow(mid, S.y + 240, 3, 0.5);
+  }
+
+  /** The hammer goes in your hand (it rides on your shoulder until you smash something). */
+  private takeHammer(): void {
+    const S = this.smash;
+    S.has = true;
+    if (S.hammer) {
+      this.tweens.killTweensOf(S.hammer);
+      S.hammer.forEach((o) => o.destroy());
+    }
+    S.hammer = null;
+    S.held = this.add.image(this.hero.x, this.hero.y, "hammer").setOrigin(0.5, 0.9).setScale(0.75);
+    this.sparks.setParticleTint(0xc8e0ff);
+    this.sparks.explode(26, this.hero.x, this.hero.y - 120);
+    sfx.item();
+    this.banner("HAMMER!", "gold", 900);
+    this.toast("A fallen tree blocks the path ahead: smash it!", "#c8f0a0");
+  }
+
+  /** At the log with the hammer: whack it for 5 s (step away and it waits), then it splits apart. */
+  private smashTick(delta: number): void {
+    const S = this.smash;
+    if (S.held) {
+      // on your shoulder, or swinging while you smash
+      const dir = this.hero.flipX ? -1 : 1;
+      const swinging = S.p > 0 && this.inSmashRing();
+      const sw = swinging ? Math.sin(this.time.now / 70) * 70 : 0;
+      S.held.setPosition(this.hero.x - dir * 40, this.hero.y - 120).setAngle(dir * (-35 + sw)).setFlipX(dir < 0).setDepth(this.hero.y + 3);
+    }
+    if (S.broken || !S.log) return;
+    if (!S.has) {
+      if (S.hammer && Math.hypot(this.hero.x - (S.hammer[0] as Phaser.GameObjects.Image).x, this.hero.y - (S.hammer[0] as Phaser.GameObjects.Image).y) < 170) this.takeHammer();
+      else if (this.hero.y < S.y + 420 && this.time.now - S.saidNeed > 4000) {
+        S.saidNeed = this.time.now;
+        this.callout("FIND THE HAMMER!", "#ffb0a0");
+        sfx.error();
+      }
+      return;
+    }
+    if (!this.inSmashRing()) return;
+    const was = S.p;
+    S.p = Math.min(1, S.p + delta / SMASH_MS);
+    // a whack every half second: wood chips, a shake, a thunk
+    if (Math.floor(S.p * 10) > Math.floor(was * 10)) {
+      sfx.hammer();
+      this.cameras.main.shake(90, 0.004);
+      this.tweens.add({ targets: S.log, x: S.x + Phaser.Math.Between(-10, 10), duration: 50, yoyo: true });
+      this.puff.setParticleTint(0xc89060);
+      this.puff.explode(6, this.hero.x + Phaser.Math.Between(-80, 80), S.y - 40);
+      this.sparks.setParticleTint(0xe8c48a);
+      this.sparks.explode(5, this.hero.x, S.y - 60);
+    }
+    if (S.p >= 1) this.logBreaks();
+  }
+
+  private inSmashRing(): boolean {
+    const S = this.smash;
+    return Math.hypot(this.hero.x - S.x, (this.hero.y - (S.y + 230)) * 1.3) < 170;
+  }
+
+  /** The log splits: chunks fly off into the woods and the path is open again. */
+  private logBreaks(): void {
+    const S = this.smash;
+    S.broken = true;
+    this.solids = this.solids.filter((r) => r !== S.solid);
+    const log = S.log!;
+    S.log = null;
+    sfx.crack();
+    buzz(200);
+    this.cameras.main.shake(400, 0.014);
+    this.boom(S.x, S.y - 80, 2.2);
+    for (let i = 0; i < 12; i++) {
+      const ch = this.add.image(S.x + (i - 5.5) * 70, S.y - 80, "log_chunk").setDepth(S.y + 50).setAngle(Phaser.Math.Between(0, 360));
+      const side = i < 6 ? -1 : 1;
+      this.tweens.add({ targets: ch, x: ch.x + side * Phaser.Math.Between(300, 700), y: ch.y - Phaser.Math.Between(150, 400), angle: ch.angle + side * 540, duration: 600, ease: "Quad.out" });
+      this.tweens.add({ targets: ch, y: "+=420", alpha: 0, delay: 600, duration: 500, ease: "Quad.in", onComplete: () => ch.destroy() });
+    }
+    this.tweens.add({ targets: log, scaleX: 1.2, scaleY: 0.3, alpha: 0, duration: 300, onComplete: () => log.destroy() });
+    this.puff.setParticleTint(0xc89060);
+    this.puff.explode(40, S.x, S.y - 40);
+    this.banner("SMASHED! THE WAY IS OPEN!", "green", 1000);
+    // the hammer did its job: it goes in your pack
+    if (S.held) this.tweens.add({ targets: S.held, alpha: 0, scale: 0.2, duration: 400, onComplete: () => S.held?.destroy() });
+    S.held = null;
   }
 
   /** The lantern goes into your hand: the dark pulls back round you. */
@@ -4648,6 +5312,7 @@ export class BattleScene extends Phaser.Scene {
     const p = this.arena.path!;
     const [hx, hy] = [this.hero.x, this.hero.y];
     if (this.lantern && Math.hypot(hx - this.lantern[0].x, hy - this.lantern[0].y) < 160) this.holdLantern(true);
+    this.smashTick(delta);
     // path bosses charge in bursts: 4 s quicker than you, then 6 s slower (outrun it or fight it)
     for (const [b, born] of this.pathChargers) {
       if (!this.enemies.includes(b)) {
@@ -4696,6 +5361,7 @@ export class BattleScene extends Phaser.Scene {
       onComplete: () => {
         faller.destroy();
         if (!this.fighting) return;
+        sfx.thud();
         this.cameras.main.shake(400, 0.015);
         this.boom(x, y - 60, 2.4);
         // the one before (if you could not beat it) gives up and flies off: never two at once
@@ -4713,7 +5379,8 @@ export class BattleScene extends Phaser.Scene {
         boss.dmg *= 0.35;
         this.pathChargers.set(boss, this.elapsed);
         boss.huntHero = true;
-        boss.phaseT = 1800;
+        boss.phaseT = 2600;
+        this.focusBoss(x, y);
       },
     });
   }
@@ -4980,6 +5647,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "ocean") this.oceanTick(delta, fighting);
     if (m === "light") this.lightTick(delta, fighting);
     if (m === "volcano") this.volcanoTick(delta, fighting);
+    if (m === "heli") this.heliTick(delta, fighting);
     battle.goal = this.modeGoal();
   }
 
@@ -4990,7 +5658,9 @@ export class BattleScene extends Phaser.Scene {
     if (m === "path" && p) {
       const f = Phaser.Math.Clamp((p.startY - this.hero.y) / (p.startY - p.endY), 0, 1);
       const where = p.kind === "sea" ? "SEA" : "VILLAGE";
-      return { frac: f, text: `${where} ${Math.floor(f * 100)}%${this.hasLantern ? "" : "  •  find the lantern"}`, color: 0x8ad65a, icon: p.kind === "sea" ? "icon_fish" : "house_a", alarm: battle.left >= 0 && battle.left < 15000 };
+      const S = this.smash;
+      const todo = !this.hasLantern ? "  •  find the lantern" : !S.has && !S.broken ? "  •  find the hammer" : !S.broken ? "  •  smash the log" : "";
+      return { frac: f, text: `${where} ${Math.floor(f * 100)}%${todo}`, color: 0x8ad65a, icon: p.kind === "sea" ? "icon_fish" : "house_a", alarm: battle.left >= 0 && battle.left < 15000 };
     }
     if (m === "ocean") {
       const o = this.ocean;
@@ -5001,6 +5671,11 @@ export class BattleScene extends Phaser.Scene {
       const start = this.arena.h - 600;
       const far = Math.hypot(this.hero.x - o.x, this.hero.y - o.y);
       return { frac: Phaser.Math.Clamp(1 - far / Math.hypot(this.arena.w / 2 - o.x, start - o.y), 0, 1), text: far < 2200 ? `LAND HO!  •  ${Math.round(far / 100)}m` : "FIND LAND", color: 0x7ad651, icon: "mode_sea", alarm: false };
+    }
+    if (m === "heli") {
+      const low = battle.hp < 0.3;
+      const f = Math.min(1, this.elapsed / HELI_MS);
+      return { frac: f, text: low ? "MAYDAY! Dodge everything!" : this.heli.gust ? "WIND! Hold on!" : "SURVIVE THE STORM", color: low ? 0xf26464 : 0x6a8ad8, icon: "mode_heli", alarm: low };
     }
     if (m === "volcano") {
       const V = this.volc;
@@ -5045,8 +5720,10 @@ export class BattleScene extends Phaser.Scene {
     if (m === "feed" && b) {
       if (b.friend) return { frac: 1, text: "The beast is your friend!", color: 0x7ad651, icon: "mode_feed", alarm: false };
       if (b.escaped) return { frac: 0, text: "THE BEAST ESCAPED! Run!", color: 0xf26464, icon: "mode_feed", alarm: true };
-      const what = b.carried ? "bring it to the cage!" : b.food ? "grab the snack!" : "hunger";
-      return { frac: b.hunger, text: `FED ${b.fed}/${FEEDS}  •  ${what}`, color: b.hunger > 0.35 ? 0xffa040 : 0xf26464, icon: "mode_feed", alarm: b.hunger < 0.3 };
+      const w = b.want;
+      const what = b.carried ? "bring it to the cage!" : w === "snack" ? "grab the snack!" : w === "water" ? "fetch the water!" : w === "ball" ? "kick the ball to the cage!"
+        : w === "pet" ? `cuddle it! ${Math.ceil((PET_MS - (b.wantN ?? 0)) / 1000)}s` : w === "guard" ? `monsters left: ${b.guards?.length ?? 0}` : w === "gems" ? `gems ${b.wantN ?? 0}/${GEMS}` : "happy";
+      return { frac: b.hunger, text: `WISHES ${b.fed}/${FEEDS}  •  ${what}`, color: b.hunger > 0.35 ? 0xffa040 : 0xf26464, icon: w ? WISH_ICON[w] : "mode_feed", alarm: b.hunger < 0.3 };
     }
     if (m === "dice") return { frac: 1, text: this.eventRun ? `DODGED ${this.rain.dodged}  •  ${this.rain.drops} DROPS` : `DICE DODGED: ${this.rain.dodged}`, color: 0xffe066, icon: "mode_dice", alarm: false };
     if (m === "boss") {
@@ -5180,6 +5857,23 @@ export class BattleScene extends Phaser.Scene {
       g.lineStyle(12, c, 0.95).beginPath().arc(hx, hy, 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * o).strokePath();
     }
     if (this.stageMode === "light") this.lightFx(g, t);
+    // the smash circle in front of the fallen log, filling while you whack it
+    const S = this.smash;
+    if (S.log && !S.broken && this.arena.path) {
+      const [rx, ry] = [S.x, S.y + 230];
+      g.lineStyle(12, S.has ? 0xffd24a : 0x8a8a8a, 0.55 + 0.3 * Math.sin(t / 180)).strokeEllipse(rx, ry, 340, 262);
+      if (S.p > 0) {
+        g.lineStyle(18, 0x111111, 0.45).strokeCircle(rx, S.y - 330, 70);
+        g.lineStyle(12, 0xffd24a, 1).beginPath().arc(rx, S.y - 330, 70, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * S.p).strokePath();
+      }
+    }
+    // the beast's wishes: how much water is left in the bucket, how long the cuddle has to go
+    const bw = this.beast;
+    if (bw?.want === "water" && bw.carried) drawBar(g, this.hero.x - 70, this.hero.y - 370, 140, 18, 1 - (bw.wantN ?? 0) / 3, 0x6ad0ff);
+    if (bw?.want === "pet" && (bw.wantN ?? 0) > 0) {
+      g.lineStyle(18, 0x111111, 0.45).strokeCircle(bw.img.x, bw.img.y - 560, 60);
+      g.lineStyle(12, 0xff7ab8, 1).beginPath().arc(bw.img.x, bw.img.y - 560, 60, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, (bw.wantN ?? 0) / PET_MS)).strokePath();
+    }
     if (this.stageMode === "volcano") this.volcanoFx(g, t);
     // a trail of arrows on the ground from you toward the main goal, marching the way to go
     const goal = this.goalSpots()[0];
@@ -5396,14 +6090,23 @@ export class BattleScene extends Phaser.Scene {
     const cage = this.add.image(cx, cy + 70, "cage_front").setOrigin(0.5, 520 / 620).setDepth(cy + 41);
     cage.once("destroy", () => back.destroy());
     const bar = this.add.graphics().setDepth(cy + 42);
-    this.feedSign = this.sign(cx + 470, cy + 260, "FEED ME!", `0/${FEEDS} snacks`, "#ffd29a");
+    this.feedSign = this.sign(cx + 470, cy + 260, "HELP ME!", `0/${FEEDS} wishes`, "#ffd29a");
     for (const [dx, dy] of [[-380, 190], [-300, 260], [360, 120]]) this.addStatic(this.add.image(cx + dx, cy + dy, "food_bowl").setDepth(cy + dy), cx + dx, cy + dy);
     // a thought bubble: what the beast wants
     const tg = this.add.graphics();
     tg.fillStyle(0xffffff, 1).fillEllipse(0, 0, 170, 130).fillCircle(-60, 90, 18).fillCircle(-84, 124, 10);
     tg.lineStyle(6, 0x111111, 1).strokeEllipse(0, 0, 170, 130).strokeCircle(-60, 90, 18).strokeCircle(-84, 124, 10);
     this.beastThought = this.add.container(cx + 250, cy - 520, [tg, this.add.image(0, 0, "mode_feed").setScale(0.8)]).setDepth(cy + 600).setVisible(false);
-    this.beast = { img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0, back, runes, aura, moodT: 2000, dustT: 0 };
+    // the cage is solid: you walk round it, not through it
+    this.solid(cx, cy + 100, 470, 190);
+    const solid = this.solids[this.solids.length - 1];
+    // a snack first, then the rest in any order
+    const wishes: BeastWish[] = ["snack", ...shuffle<BeastWish>(["water", "ball", "pet", "guard", "gems"])];
+    this.beast = {
+      img, cage, bar, tex, hunger: 1, fed: 0, foodAt: FEED_FIRST, food: null, carried: false, friend: false, escaped: false, stompT: 0, back, runes, aura, moodT: 2000, dustT: 0,
+      wishes, want: null, wantN: 0, items: [], guards: [], vel: [0, 0], solid,
+    };
+    battle.limit = FEED_MS;
     // at night its cage glows (the runes light it up)
     if (this.night) this.nightGlow(cx, cy - 160, 5, 0.6);
   }
@@ -5415,7 +6118,7 @@ export class BattleScene extends Phaser.Scene {
       if (fighting) this.friendTick(delta);
       return;
     }
-    const [cx, cy] = this.arena.center;
+    const [cx] = this.arena.center;
     if (this.state === "fight") {
       // the story's beast is a little more patient (losing it loses the stage)
       b.hunger -= delta / (HUNGER_MS * (this.story ? 1.35 : 1));
@@ -5423,38 +6126,10 @@ export class BattleScene extends Phaser.Scene {
         this.beastEscape();
         return;
       }
-      if (!b.food && b.fed < FEEDS && this.elapsed >= b.foodAt) {
-        b.foodAt += FEED_EVERY;
-        const [x, y] = this.randomSpot(1200, 2200, [cx, cy]);
-        b.food = this.add.image(x, y - 60, "mode_feed").setScale(0).setDepth(y);
-        this.tweens.add({ targets: b.food, scale: 1.6, duration: 400, ease: "Back.out" });
-        this.tweens.add({ targets: b.food, angle: { from: -10, to: 10 }, duration: 400, yoyo: true, repeat: -1 });
-        this.tweens.add({ targets: b.food, y: y - 110, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-        // a glow, a shadow and a beam of light so you can't miss it
-        const glow = this.add.image(x, y - 80, "glow").setTint(0xffa040).setScale(1.6).setAlpha(0.7).setDepth(y - 2);
-        const shadow = this.add.ellipse(x, y, 110, 34, 0x000000, 0.3).setDepth(y - 3);
-        const beam = this.add.image(x, y, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(90, 600).setTint(0xffc070).setBlendMode(Phaser.BlendModes.ADD).setDepth(y - 1);
-        this.tweens.add({ targets: [glow, beam], alpha: 0.35, duration: 500, yoyo: true, repeat: -1 });
-        const top = this.night ? this.topGlow(x, y - 80, 2.2, 0xffa040) : null;
-        b.food.once("destroy", () => [glow, shadow, beam, top].forEach((o) => o?.destroy()));
-        b.food.setData("fx", [glow, shadow, beam, ...(top ? [top] : [])]);
-        this.toast("A snack appeared! Bring it to the beast", "#ffd29a");
-        sfx.gift();
-      }
+      battle.left = Math.max(0, FEED_MS - this.elapsed);
+      if (!b.want && b.fed < FEEDS && this.elapsed >= b.foodAt) this.wishStart(b.wishes?.[b.fed] ?? "snack");
     }
-    if (b.food) {
-      if (!b.carried && Math.hypot(this.hero.x - b.food.x, this.hero.y - b.food.y) < 130) {
-        b.carried = true;
-        this.tweens.killTweensOf(b.food);
-        (b.food.getData("fx") as Phaser.GameObjects.GameObject[]).forEach((o) => o.destroy());
-        b.food.setScale(1.3).setAngle(0);
-        sfx.coin();
-      }
-      if (b.carried) {
-        b.food.setPosition(this.hero.x, this.hero.y - 250).setDepth(this.hero.y + 5);
-        if (Math.hypot(this.hero.x - cx, this.hero.y - cy) < 380) this.feedBeast();
-      }
-    }
+    if (b.want && this.state === "fight") this.wishTick(delta);
     // the hunger bar over the cage; a starving beast rattles the bars
     b.bar.clear();
     drawBar(b.bar, cx - 200, b.cage.y - 600, 400, 30, b.hunger, b.hunger > 0.35 ? 0xffa040 : 0xf26464);
@@ -5511,12 +6186,210 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private feedBeast(): void {
+  /** The beast asks for something: its thought bubble shows it, and what it needs turns up on the map. */
+  private wishStart(w: BeastWish): void {
     const b = this.beast!;
-    const food = b.food!;
+    const [cx, cy] = this.arena.center;
+    b.want = w;
+    b.wantN = 0;
+    b.items = [];
+    b.guards = [];
+    b.vel = [0, 0];
+    const th = this.beastThought;
+    if (th) {
+      const icon = th.list[1] as Phaser.GameObjects.Image;
+      icon.setTexture(WISH_ICON[w]);
+      icon.setScale(90 / Math.max(icon.width, icon.height));
+      th.setVisible(true).setScale(0.3);
+      this.tweens.add({ targets: th, scale: 1, duration: 300, ease: "Back.out" });
+    }
+    this.toast(WISH_ASK[w], "#ffd29a");
+    sfx.gift();
+    if (w === "snack" || w === "water") {
+      b.food = this.wishItem(w === "snack" ? "mode_feed" : "beast_bucket", ...this.randomSpot(1100, 2000, [cx, cy]));
+      b.home = [b.food.x, b.food.y + 60];
+    }
+    if (w === "ball") b.items = [this.wishItem("beast_ball", ...this.randomSpot(900, 1500, [cx, cy]), false)];
+    if (w === "gems") for (let i = 0; i < GEMS; i++) b.items!.push(this.wishItem("icon_gem", ...this.randomSpot(900, 2000, [cx, cy])));
+    if (w === "guard") {
+      // monsters creep up on the cage from all round
+      for (let i = 0; i < GUARDS && this.enemies.length < MAX_MONSTERS; i++) {
+        const a = (i / GUARDS) * Math.PI * 2;
+        const e = this.addEnemy(this.pickType(), clampX(cx + Math.cos(a) * 800), clampY(cy + Math.sin(a) * 600), false, true, 1, this.mobStage());
+        e.toCrystal = false;
+        b.guards!.push(e);
+      }
+      this.callout("EEK!", "#ffd29a");
+    }
+  }
+
+  /** Something for the beast lying on the map: bobbing, glowing, with a beam of light so you can't miss it. */
+  private wishItem(tex: string, x: number, y: number, bob = true): Phaser.GameObjects.Image {
+    const it = this.add.image(x, y - 60, tex).setScale(0).setDepth(y);
+    const s = 150 / Math.max(it.width, it.height);
+    this.tweens.add({ targets: it, scale: s, duration: 400, ease: "Back.out" });
+    if (bob) {
+      this.tweens.add({ targets: it, angle: { from: -10, to: 10 }, duration: 400, yoyo: true, repeat: -1 });
+      this.tweens.add({ targets: it, y: y - 110, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    }
+    const glow = this.add.image(x, y - 80, "glow").setTint(0xffa040).setScale(1.6).setAlpha(0.7).setDepth(y - 2);
+    const shadow = this.add.ellipse(x, y, 110, 34, 0x000000, 0.3).setDepth(y - 3);
+    const beam = this.add.image(x, y, "zone_pillar").setOrigin(0.5, 1).setDisplaySize(90, 600).setTint(0xffc070).setBlendMode(Phaser.BlendModes.ADD).setDepth(y - 1);
+    this.tweens.add({ targets: [glow, beam], alpha: 0.35, duration: 500, yoyo: true, repeat: -1 });
+    const top = this.night ? this.topGlow(x, y - 80, 2.2, 0xffa040) : null;
+    const fx = [glow, shadow, beam, ...(top ? [top] : [])];
+    it.once("destroy", () => fx.forEach((o) => o.destroy()));
+    it.setData("fx", fx).setData("scale", s);
+    return it;
+  }
+
+  /** Picking a wish item up: its glow and beam go, it bobs no more. */
+  private grabItem(it: Phaser.GameObjects.Image): void {
+    this.tweens.killTweensOf(it);
+    (it.getData("fx") as Phaser.GameObjects.GameObject[]).forEach((o) => o.destroy());
+    it.setData("fx", []).setAngle(0);
+    sfx.coin();
+  }
+
+  /** Doing what the beast wants: carry, kick, cuddle, guard or collect. */
+  private wishTick(delta: number): void {
+    const b = this.beast!;
+    const [cx, cy] = this.arena.center;
+    const atCage = (x: number, y: number, r = 380) => Math.hypot(x - cx, y - cy) < r;
+    const w = b.want!;
+    // carry the snack or the bucket (or the gems, once you have all three) back to the cage
+    if (b.food) {
+      if (!b.carried && Math.hypot(this.hero.x - b.food.x, this.hero.y - b.food.y) < 130) {
+        b.carried = true;
+        this.grabItem(b.food);
+        b.food.setScale((b.food.getData("scale") as number) * 0.85);
+      }
+      if (b.carried) {
+        b.food.setPosition(this.hero.x, this.hero.y - 250 + (w === "water" ? Math.sin(this.time.now / 90) * 6 : 0)).setDepth(this.hero.y + 5);
+        if (atCage(this.hero.x, this.hero.y)) this.wishDone();
+      }
+      return;
+    }
+    if (w === "ball") {
+      const ball = b.items![0];
+      const v = b.vel!;
+      const d = Math.hypot(this.hero.x - ball.x, this.hero.y - 40 - ball.y);
+      if (d < 120) {
+        if (ball.getData("fx").length) this.grabItem(ball);
+        // a kick: the way you are running (or straight away from you)
+        let [kx, ky] = this.heroVel;
+        if (Math.hypot(kx, ky) < 60) [kx, ky] = [ball.x - this.hero.x, ball.y - this.hero.y + 40];
+        // a kick anywhere toward the cage curls right in (help aiming)
+        let a = Math.atan2(ky, kx);
+        const toCage = Math.atan2(cy - ball.y, cx - ball.x);
+        const off = Phaser.Math.Angle.Wrap(toCage - a);
+        if (Math.abs(off) < 1.75) a = toCage;
+        b.vel = [Math.cos(a) * 1150, Math.sin(a) * 1150];
+        sfx.kick();
+        this.puff.setParticleTint(0xffffff);
+        this.puff.explode(5, ball.x, ball.y + 30);
+        this.tweens.add({ targets: ball, scaleY: ball.scaleY * 0.8, duration: 70, yoyo: true });
+      }
+      const step = delta / 1000;
+      ball.x += b.vel![0] * step;
+      ball.y += b.vel![1] * step;
+      // it bounces off the edges of the field
+      const a = this.arena;
+      if (ball.x < EDGE || ball.x > a.w - EDGE) b.vel![0] *= -0.8;
+      if (ball.y < EDGE + 80 || ball.y > a.h - EDGE) b.vel![1] *= -0.8;
+      ball.setPosition(clampX(ball.x), clampY(ball.y));
+      const f = Math.pow(0.986, delta / 16.7);
+      b.vel = [b.vel![0] * f, b.vel![1] * f];
+      ball.setAngle(ball.angle + b.vel![0] * step * 0.5).setDepth(ball.y + 60);
+      if (atCage(ball.x, ball.y, 420)) {
+        this.tweens.add({ targets: ball, x: b.img.x, y: b.img.y - 260, scale: 0.4, duration: 300, onComplete: () => ball.destroy() });
+        b.items = [];
+        this.wishDone();
+      }
+      void v;
+      return;
+    }
+    if (w === "pet") {
+      if (atCage(this.hero.x, this.hero.y, 360)) {
+        const was = b.wantN!;
+        b.wantN = was + delta;
+        if (Math.floor(b.wantN / 500) > Math.floor(was / 500)) {
+          const h = this.add.image(b.img.x + Phaser.Math.Between(-140, 140), b.img.y - 220, "pk_heart").setScale(0.25).setDepth(b.img.y + 100);
+          this.tweens.add({ targets: h, y: h.y - 200, scale: 0.8, alpha: 0, duration: 900, onComplete: () => h.destroy() });
+          sfx.charge(1 + Math.floor(b.wantN / 500));
+        }
+        if (b.wantN >= PET_MS) this.wishDone();
+      } else b.wantN = Math.max(0, b.wantN! - delta * 0.5);
+      return;
+    }
+    if (w === "guard") {
+      b.guards = b.guards!.filter((e) => this.enemies.includes(e));
+      // they go for the cage (and for you, if you get close)
+      for (const e of b.guards) e.huntHero = Math.hypot(e.img.x - this.hero.x, e.img.y - this.hero.y) < 500;
+      if (!b.guards.length) this.wishDone();
+      return;
+    }
+    if (w === "gems") {
+      for (const g of [...b.items!]) {
+        if (Math.hypot(this.hero.x - g.x, this.hero.y - g.y) < 130) {
+          this.grabItem(g);
+          b.items = b.items!.filter((o) => o !== g);
+          b.wantN = (b.wantN ?? 0) + 1;
+          this.sparks.setParticleTint(0x7ae6ff);
+          this.sparks.explode(16, g.x, g.y);
+          sfx.gem();
+          this.callout(`${b.wantN}/${GEMS}`, "#9ae6ff");
+          if (b.wantN >= GEMS) {
+            // all three: carry them home in your hands
+            b.food = g;
+            b.carried = true;
+            g.setScale((g.getData("scale") as number) * 0.85);
+          } else g.destroy();
+        }
+      }
+    }
+  }
+
+  /** Carrying water and you get hit: it spills, and the bucket is back at the well. */
+  private spillWater(): void {
+    const b = this.beast;
+    if (!b || b.want !== "water" || !b.carried || !b.food || !b.home) return;
+    if (this.time.now - (b.food.getData("slosh") ?? 0) < 400) return;
+    b.food.setData("slosh", this.time.now);
+    // each hit sloshes some out; the third empties it
+    b.wantN = (b.wantN ?? 0) + 1;
+    this.puff.setParticleTint(0x6ad0ff);
+    this.puff.explode(6, this.hero.x, this.hero.y - 220);
+    sfx.splash();
+    if (b.wantN < 3) {
+      this.callout(b.wantN === 1 ? "SLOSH!" : "CAREFUL!", "#9ad8ff");
+      return;
+    }
+    b.wantN = 0;
+    b.carried = false;
+    const it = b.food;
+    this.puff.setParticleTint(0x6ad0ff);
+    this.puff.explode(16, this.hero.x, this.hero.y - 200);
+    this.callout("SPILLED!", "#9ad8ff");
+    sfx.splash();
+    it.destroy();
+    b.food = this.wishItem("beast_bucket", b.home[0], b.home[1]);
+    this.toast("The water spilled! Go back for the bucket", "#9ad8ff");
+  }
+
+  /** A wish granted: the beast is happy and full again, and it says so. */
+  private wishDone(): void {
+    const b = this.beast!;
+    const w = b.want ?? "snack";
+    const food = b.food;
     b.food = null;
     b.carried = false;
-    this.tweens.add({ targets: food, x: b.img.x, y: b.img.y - 220, scale: 0.3, duration: 300, onComplete: () => food.destroy() });
+    b.want = null;
+    b.foodAt = this.elapsed + FEED_GAP;
+    for (const it of b.items ?? []) it.destroy();
+    b.items = [];
+    if (food) this.tweens.add({ targets: food, x: b.img.x, y: b.img.y - 220, scale: 0.3, duration: 300, onComplete: () => food.destroy() });
+    this.beastThought?.setVisible(false);
     b.hunger = 1;
     b.fed++;
     b.aura.setTint(0xff7ab8).setAlpha(0.9);
@@ -5531,19 +6404,21 @@ export class BattleScene extends Phaser.Scene {
     }
     const fs = this.feedSign;
     if (fs) {
-      (fs.list[2] as Phaser.GameObjects.Text).setText(`${b.fed}/${FEEDS} snacks`);
+      (fs.list[2] as Phaser.GameObjects.Text).setText(`${b.fed}/${FEEDS} wishes`);
       this.tweens.add({ targets: fs, scale: 1.2, duration: 120, yoyo: true });
     }
     sfx.levelUp();
     this.addDie(rollDiceTier(save.stage + 5), b.img.x + 260, b.img.y + 160, 30000);
+    sfx.happy();
     if (b.fed >= FEEDS) this.beastFriend();
-    else this.callout(`YUM! ${b.fed}/${FEEDS}`, "#ffd29a");
+    else this.callout(`${WISH_THANKS[w]} ${b.fed}/${FEEDS}`, "#ffd29a");
   }
 
   /** Fed all 6 times: the cage flies off and the beast fights on your side. */
   private beastFriend(): void {
     const b = this.beast!;
     b.friend = true;
+    this.solids = this.solids.filter((r) => r !== b.solid);
     b.bar.clear();
     this.beastThought?.destroy();
     this.beastThought = null;
@@ -5600,6 +6475,9 @@ export class BattleScene extends Phaser.Scene {
   private beastEscape(): void {
     const b = this.beast!;
     b.escaped = true;
+    this.solids = this.solids.filter((r) => r !== b.solid);
+    for (const it of b.items ?? []) it.destroy();
+    b.items = [];
     b.bar.clear();
     this.beastThought?.destroy();
     this.beastThought = null;
@@ -5622,6 +6500,7 @@ export class BattleScene extends Phaser.Scene {
       this.tweens.add({ targets: piece, y: "+=380", alpha: 0, delay: 900, duration: 500, ease: "Quad.in", onComplete: () => piece.destroy() });
     }
     this.boom(ox, oy, 2.4);
+    sfx.crash();
     this.impact(cage.x, cage.y - 40, 320, "blast", 0xff3a3a);
     this.puff.setParticleTint(0x9aa4b8);
     this.puff.explode(40, cage.x, cage.y);
@@ -5854,7 +6733,8 @@ export class BattleScene extends Phaser.Scene {
   private bossCutscene(): void {
     this.state = "cutscene";
     battle.bossFight = true;
-    this.joy = { ...NO_JOY };
+    battle.left = -1;
+    battle.limit = 0;
     for (const e of [...this.enemies]) this.kill(e, true);
     this.bullets.forEach((b) => b.img.destroy());
     this.bullets = [];
@@ -5945,6 +6825,25 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * A boss just landed: the camera swoops over and zooms in on it for a second, then back to you
+   * (you can keep moving meanwhile). Not on the sea, whose camera never moves.
+   */
+  private focusBoss(x: number, y: number): void {
+    if ((this.arena.sea && !this.arena.ocean) || this.arena.sky) return;
+    const cam = this.cameras.main;
+    const back = cam.zoom;
+    cam.stopFollow();
+    cam.pan(x, y - 160, 380, "Sine.easeOut");
+    cam.zoomTo(Math.min(1, back * 1.45), 380, "Sine.easeOut");
+    sfx.whoosh();
+    this.time.delayedCall(1250, () => {
+      cam.pan(this.hero.x, this.hero.y - 100, 380, "Sine.easeInOut");
+      cam.zoomTo(back, 380, "Sine.easeInOut");
+    });
+    this.time.delayedCall(1660, () => cam.startFollow(this.hero, true, 0.14, 0.14));
+  }
+
   /** The boss falls out of the sky next to you: thud, dust, title card, boss music. */
   private dropBoss(): void {
     const [x, y] = this.randomSpot(550, 700, [this.hero.x, this.hero.y]);
@@ -5957,6 +6856,8 @@ export class BattleScene extends Phaser.Scene {
       onComplete: () => {
         faller.destroy();
         shadow.destroy();
+        sfx.thud();
+        sfx.rumble();
         this.cameras.main.shake(600, 0.02);
         buzz(250);
         this.boom(x, y - 60, 3);
@@ -5986,6 +6887,7 @@ export class BattleScene extends Phaser.Scene {
           this.toast("Your beast is with you, so the boss is extra strong!", "#ffd29a");
         }
         this.bigBoss = boss;
+        this.focusBoss(boss.img.x, boss.img.y);
         if (this.stageMode === "boss") this.bossKids(boss, x, y);
         // the story's big boss is the chapter's whole fight (with everything maxed out): it lasts
         if (this.story && this.stageMode === "boss") {
@@ -6085,6 +6987,7 @@ export class BattleScene extends Phaser.Scene {
     // the Rain Drops you earned are yours even if you fall
     if (this.eventRun) this.bankRain(0);
     sfx.error();
+    this.time.delayedCall(400, () => sfx.sad());
     buzz(300);
     music.play("calm");
     if (reason === "hero") {
@@ -6167,7 +7070,8 @@ export class BattleScene extends Phaser.Scene {
     const fighting = this.fighting;
     if (fighting) {
       // you slowly heal between hits; the crystal never heals by itself
-      if (time - this.hurtAt > 3000) this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.01 * (delta / 1000));
+      // (no mending a helicopter in the air)
+      if (time - this.hurtAt > 3000 && this.stageMode !== "heli") this.heroHp = Math.min(this.heroMax, this.heroHp + this.heroMax * 0.01 * (delta / 1000));
     }
     battle.hp = this.heroHp / this.heroMax;
     battle.crystal = this.crystalHp / this.crystalMax;
@@ -7360,6 +8264,16 @@ export class BattleScene extends Phaser.Scene {
 
   private hurt(dmg: number): void {
     if (this.time.now < this.phasingUntil) return;
+    this.spillWater();
+    const hb = this.heli.body;
+    if (hb && !this.heli.falling) {
+      hb.setTintFill(0xff5a5a);
+      this.time.delayedCall(90, () => hb.clearTint());
+      this.sparks.setParticleTint(0xffd24a);
+      this.sparks.explode(8, hb.x, hb.y - 40);
+      const pl = this.heli.pilot;
+      if (pl) this.tweens.add({ targets: pl, angle: pl.angle + Phaser.Math.Between(-15, 15), duration: 80, yoyo: true });
+    }
     this.heroHp -= dmg;
     this.stats.hurt += dmg;
     this.hurtAt = this.time.now;
@@ -7853,7 +8767,10 @@ export class BattleScene extends Phaser.Scene {
     const p = this.arena.path;
     if (p && this.state === "fight") {
       // the lantern first (it is on the way), then the end of the path
+      const S = this.smash;
       if (this.lantern) out.push({ x: this.lantern[0].x, y: this.lantern[0].y - 60, icon: "lantern", label: "LANTERN", color: 0xffd24a });
+      else if (!S.has && S.hammer) out.push({ x: (S.hammer[0] as Phaser.GameObjects.Image).x, y: (S.hammer[0] as Phaser.GameObjects.Image).y - 60, icon: "hammer", label: "HAMMER", color: 0xc8e0ff });
+      else if (S.log && !S.broken) out.push({ x: S.x, y: S.y + 185, icon: "log_big", label: "SMASH!", color: 0xffd24a });
       else out.push({ x: this.arena.w / 2, y: p.endY, icon: p.kind === "sea" ? "icon_fish" : "house_a", label: p.kind === "sea" ? "THE SEA" : "VILLAGE", color: 0x8ad65a });
     }
     if (this.stageMode === "ocean" && this.state === "fight") {
@@ -7904,8 +8821,20 @@ export class BattleScene extends Phaser.Scene {
     }
     const b = this.beast;
     if (b && !b.friend && !b.escaped) {
-      if (b.food && !b.carried) out.push({ x: b.food.x, y: b.food.y, icon: "mode_feed", label: "SNACK!", color: 0xffa040 });
-      if (b.carried) out.push({ x: b.cage.x, y: b.cage.y - 120, icon: b.tex, label: "FEED IT!", color: 0xffa040 });
+      const w = b.want;
+      const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
+      if (b.food && !b.carried) out.push({ x: b.food.x, y: b.food.y, icon: WISH_ICON[w ?? "snack"], label: w === "water" ? "WATER!" : "SNACK!", color: 0xffa040 });
+      if (b.carried) out.push({ x: b.cage.x, y: b.cage.y - 120, icon: b.tex, label: "BRING IT!", color: 0xffa040 });
+      if (w === "ball" && b.items?.[0]) out.push({ x: b.items[0].x, y: b.items[0].y, icon: "beast_ball", label: "KICK IT!", color: 0xffa040 });
+      if (w === "pet") out.push({ x: b.cage.x, y: b.cage.y - 120, icon: "pk_heart", label: "CUDDLE!", color: 0xff7ab8 });
+      if (w === "guard" && b.guards?.length) {
+        const e = b.guards.reduce((a, c) => (d(c.img) < d(a.img) ? c : a));
+        out.push({ x: e.img.x, y: e.img.y - 60, icon: "icon_sword", label: "PROTECT!", color: 0xff6a5a });
+      }
+      if (w === "gems" && !b.carried && b.items?.length) {
+        const g = b.items.reduce((a, c) => (d(c) < d(a) ? c : a));
+        out.push({ x: g.x, y: g.y, icon: "icon_gem", label: `GEM ${b.wantN ?? 0}/${GEMS}`, color: 0x7ae6ff });
+      }
     }
     return out;
   }

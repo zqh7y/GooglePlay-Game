@@ -3,13 +3,13 @@ import { STORY_STAGES, storyFor } from "./story";
 /**
  * Every stage has a mode. The first five are the story (see data/story.ts): 1 Path to the village,
  * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
- * round a cycle of eight: the Sea (6), Land Ho! (7), the Lighthouse (8), the Volcano (9), Crystal, Feed the
- * Beast, Air Zone, Boss Battle, and again.
+ * round a cycle of nine: the Sea (6), Land Ho! (7), the Lighthouse (8), the Storm Flight (9), the Volcano (10),
+ * Crystal, Feed the Beast, Air Zone, Boss Battle, and again.
  */
-export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean" | "light" | "volcano";
+export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean" | "light" | "heli" | "volcano";
 
 /** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
-export const MODE_ORDER: StageMode[] = ["sea", "ocean", "light", "volcano", "crystal", "feed", "air", "boss"];
+export const MODE_ORDER: StageMode[] = ["sea", "ocean", "light", "heli", "volcano", "crystal", "feed", "air", "boss"];
 
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
@@ -67,6 +67,10 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
     name: "LIGHTHOUSE", banner: "LIGHT IT UP!", icon: "mode_light", color: 0xffb03a, css: "#ffe0a0",
     goal: "Light the 4 fire bowls and the lighthouse!",
   },
+  heli: {
+    name: "STORM FLIGHT", banner: "FLY!", icon: "mode_heli", color: 0x6a8ad8, css: "#b8c8ff",
+    goal: "Fly the helicopter through the storm for 2:00!",
+  },
   volcano: {
     name: "THE VOLCANO", banner: "MAGMA KING!", icon: "mode_volcano", color: 0xff5a1a, css: "#ffb08a",
     goal: "Beat the Magma King in the volcano!",
@@ -90,10 +94,32 @@ export const AIR_PREVIEW = 8000;
 /** seconds of air outside the zone */
 export const AIR_SECS = 9;
 
-/** Feed the Beast: 6 snacks, one every 45 s from 0:20; a full beast gets hungry in 60 s. */
+/**
+ * Feed the Beast: the beast asks for 6 different things, one after another (the first at 0:08, each
+ * 5 s after the last is done); a happy beast gets restless again in 60 s. The stage lasts 2:30.
+ */
 export const FEEDS = 6;
-export const FEED_FIRST = 20000;
-export const FEED_EVERY = 45000;
+export const FEED_FIRST = 8000;
+export const FEED_GAP = 5000;
+export const FEED_MS = 150000;
+/** what the beast can ask for */
+export type BeastWish = "snack" | "water" | "ball" | "pet" | "guard" | "gems";
+export const WISH_ICON: Record<BeastWish, string> = {
+  snack: "mode_feed", water: "beast_bucket", ball: "beast_ball", pet: "pk_heart", guard: "icon_sword", gems: "icon_gem",
+};
+export const WISH_ASK: Record<BeastWish, string> = {
+  snack: "It's hungry! Bring it the snack",
+  water: "It's thirsty! Carry the water bucket (don't get hit: it spills!)",
+  ball: "It wants to play! Kick the ball into its cage",
+  pet: "It's lonely! Stand by the cage to cuddle it",
+  guard: "It's scared! Beat the monsters round the cage",
+  gems: "It loves shiny things! Find 3 gems and bring them",
+};
+export const WISH_THANKS: Record<BeastWish, string> = { snack: "YUM!", water: "GLUG GLUG!", ball: "WHEE!", pet: "PURR...", guard: "PHEW!", gems: "SHINY!" };
+/** cuddling takes this long; guarding means beating this many monsters; this many gems */
+export const PET_MS = 4000;
+export const GUARDS = 10;
+export const GEMS = 3;
 export const HUNGER_MS = 60000;
 /** a beast fed 6 times helps you, so the boss is tougher */
 export const FRIEND_BOSS_HP = 1.8;

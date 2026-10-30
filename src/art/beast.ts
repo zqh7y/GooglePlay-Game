@@ -368,7 +368,74 @@ function toxicBubble(c: Ctx): void {
   c.stroke();
 }
 
+/** The beast's wishes: a wooden bucket of water, and a striped beach ball. */
+function bucket(c: Ctx): void {
+  c.lineJoin = "round";
+  c.lineWidth = 6;
+  c.strokeStyle = INK;
+  // the handle
+  c.beginPath();
+  c.arc(64, 54, 44, Math.PI * 1.05, Math.PI * 1.95);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(22, 52);
+  c.lineTo(32, 118);
+  c.quadraticCurveTo(64, 128, 96, 118);
+  c.lineTo(106, 52);
+  c.closePath();
+  c.fillStyle = linear(c, 22, 0, 106, 0, [[0, "#d89a5a"], [0.5, "#b0703a"], [1, "#6a3a18"]]);
+  c.fill();
+  c.stroke();
+  c.lineWidth = 4;
+  for (const y of [72, 100]) {
+    c.beginPath();
+    c.moveTo(26 + (y - 52) * 0.15, y);
+    c.quadraticCurveTo(64, y + 8, 102 - (y - 52) * 0.15, y);
+    c.strokeStyle = "#5a5f6a";
+    c.stroke();
+  }
+  c.strokeStyle = INK;
+  c.lineWidth = 5;
+  c.beginPath();
+  c.ellipse(64, 52, 42, 12, 0, 0, Math.PI * 2);
+  c.fillStyle = radial(c, 58, 50, 40, [[0, "#e8fbff"], [0.5, "#6ad0ff"], [1, "#1a6ac8"]]);
+  c.fill();
+  c.stroke();
+  c.fillStyle = "rgba(255,255,255,0.85)";
+  c.beginPath();
+  c.ellipse(52, 48, 10, 3, -0.2, 0, Math.PI * 2);
+  c.fill();
+}
+
+function beachBall(c: Ctx): void {
+  const [x, y, r] = [64, 64, 54];
+  const cols = ["#ff5a5a", "#ffffff", "#3a8ad8", "#ffffff", "#ffd23f", "#ffffff"];
+  for (let i = 0; i < 6; i++) {
+    c.beginPath();
+    c.moveTo(x, y);
+    c.arc(x, y, r, (i / 6) * Math.PI * 2, ((i + 1) / 6) * Math.PI * 2);
+    c.closePath();
+    c.fillStyle = cols[i];
+    c.fill();
+  }
+  c.fillStyle = radial(c, x - 18, y - 20, r * 1.3, [[0, "rgba(255,255,255,0.55)"], [0.4, "rgba(255,255,255,0)"], [1, "rgba(0,0,30,0.35)"]]);
+  c.beginPath();
+  c.arc(x, y, r, 0, Math.PI * 2);
+  c.fill();
+  c.lineWidth = 6;
+  c.strokeStyle = INK;
+  c.stroke();
+  c.beginPath();
+  c.arc(x, y, 9, 0, Math.PI * 2);
+  c.fillStyle = "#ffffff";
+  c.fill();
+  c.lineWidth = 4;
+  c.stroke();
+}
+
 export function makeBeastTextures(scene: Phaser.Scene): void {
+  canvasTexture(scene, "beast_bucket", 128, 132, bucket);
+  canvasTexture(scene, "beast_ball", 128, 128, beachBall);
   canvasTexture(scene, "cage_back", 600, 620, cageBack);
   canvasTexture(scene, "cage_front", 600, 620, cageFront);
   canvasTexture(scene, "cage_base2", 660, 260, cageBase);

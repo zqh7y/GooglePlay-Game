@@ -178,6 +178,92 @@ export function makeSeaTextures(scene: Phaser.Scene): void {
     c.stroke();
   });
   // a tentacle slamming up out of the water
+  // the whale's shadow under the water: a long dark body with flippers and a tail
+  canvasTexture(scene, "whale_shadow", 560, 220, (c) => {
+    const g = c.createRadialGradient(240, 110, 10, 260, 110, 260);
+    g.addColorStop(0, "rgba(8,20,48,0.85)");
+    g.addColorStop(1, "rgba(8,20,48,0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.ellipse(240, 110, 210, 70, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(8,20,48,0.6)";
+    c.beginPath();
+    c.moveTo(420, 110);
+    c.quadraticCurveTo(480, 100, 520, 50);
+    c.quadraticCurveTo(510, 110, 548, 168);
+    c.quadraticCurveTo(480, 120, 420, 110);
+    c.fill();
+    for (const d of [-1, 1]) {
+      c.beginPath();
+      c.ellipse(220, 110 + d * 72, 60, 18, d * 0.5, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
+  // the tail fluke rising out of the water as it dives
+  canvasTexture(scene, "whale_tail", 300, 240, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 8;
+    c.strokeStyle = INK;
+    const g = c.createLinearGradient(0, 0, 0, 240);
+    g.addColorStop(0, "#5a8ad8");
+    g.addColorStop(1, "#1a3a7a");
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(130, 236);
+    c.quadraticCurveTo(126, 150, 120, 110);
+    c.quadraticCurveTo(60, 100, 14, 40);
+    c.quadraticCurveTo(80, 60, 150, 70);
+    c.quadraticCurveTo(220, 60, 286, 40);
+    c.quadraticCurveTo(240, 100, 180, 110);
+    c.quadraticCurveTo(174, 150, 170, 236);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = "rgba(255,255,255,0.35)";
+    c.beginPath();
+    c.ellipse(80, 66, 40, 8, 0.4, 0, Math.PI * 2);
+    c.fill();
+    // water streaming off its edge
+    c.strokeStyle = "rgba(220,245,255,0.9)";
+    c.lineWidth = 5;
+    for (const x of [40, 90, 210, 260]) {
+      c.beginPath();
+      c.moveTo(x, 70);
+      c.lineTo(x + 4, 130);
+      c.stroke();
+    }
+  });
+  // a crown of water thrown up by a big splash
+  canvasTexture(scene, "splash_crown", 420, 240, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 6;
+    c.strokeStyle = "#1a5a9a";
+    const g = c.createLinearGradient(0, 0, 0, 240);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(1, "#8ad8ff");
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(10, 220);
+    const spikes = 9;
+    for (let i = 0; i <= spikes; i++) {
+      const x = 10 + (i / spikes) * 400;
+      const h = 60 + ((i * 37) % 5) * 30;
+      c.quadraticCurveTo(x - 22, 220 - h * 0.4, x, 220 - h);
+      c.quadraticCurveTo(x + 10, 220 - h * 0.5, x + 22, 200);
+    }
+    c.lineTo(410, 230);
+    c.quadraticCurveTo(210, 250, 10, 220);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#ffffff";
+    for (let i = 0; i < 10; i++) {
+      c.beginPath();
+      c.arc(20 + i * 42, 30 + ((i * 53) % 60), 6 + (i % 3) * 3, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
   canvasTexture(scene, "sea_tentacle", 120, 300, (c) => {
     c.lineJoin = "round";
     c.lineCap = "round";

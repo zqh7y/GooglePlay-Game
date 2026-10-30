@@ -69,6 +69,8 @@ export interface SaveData {
   newPets: string[];
   /** monster mutations already announced */
   mutSeen: string[];
+  /** stages whose little manga (the comic before the stage) has been shown */
+  comics: number[];
   /** how many dice one press of ROLL uses (each die is one roll) */
   rollBatch: number;
   /** free roam on autopilot: the hero walks to the dice lying around the lobby */
@@ -183,6 +185,7 @@ function fresh(): SaveData {
     giftCount: 0,
     newPets: [],
     mutSeen: [],
+    comics: [],
     rollBatch: 1,
     afk: false,
     bossRushBest: 0,

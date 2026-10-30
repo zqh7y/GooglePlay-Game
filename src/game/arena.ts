@@ -43,6 +43,8 @@ export interface Arena {
   island?: { cx: number; cy: number; rx: number; ry: number; bowls: Pt[]; tower: Pt };
   /** the volcano's crater: its ash floor (an oval in a sea of lava), the lava lake in the middle, the water geysers */
   crater?: Oval & { lake: Oval; vents: Pt[] };
+  /** the storm flight: a patch of stormy sky that fits on one screen (you fly the helicopter in it) */
+  sky?: boolean;
 }
 
 /** An oval: centre and radii. */
@@ -131,7 +133,7 @@ function buildArena(land: Region): Arena {
 
 /** Story paths: a long, thin field (PATH_W x PATH_H) with deep woods down both sides. */
 export const PATH_W = 2000;
-export const PATH_H = 36000;
+export const PATH_H = 19950;
 /** the open strip in the middle you walk along */
 export const PATH_HALF = 380;
 
@@ -276,7 +278,15 @@ function buildIsland(land: Region): Arena {
   };
 }
 
-/** The volcano's crater (stage 9): an oval ash floor in a sea of lava, the lava lake in the middle. */
+/** The storm flight (stage 9): open sky, the same size as the sea stage (it fits on one screen). */
+export function getSkyArena(land: Region): Arena {
+  // (you start on the left, the storm comes at you from the right)
+  const a: Arena = { land, center: [450, 1300], objects: [], patches: [], w: SEA_W, h: SEA_H, sky: true };
+  useArena(a);
+  return a;
+}
+
+/** The volcano's crater (stage 10): an oval ash floor in a sea of lava, the lava lake in the middle. */
 export const CRATER_W = 4400;
 export const CRATER_H = 4200;
 

@@ -1,7 +1,7 @@
 /**
  * The story: the first five stages are chapters, each with its own map and goal, played at night
  * (the Storm took the light). After stage 5 the stages go round the usual modes.
- *   1 WAKE UP      a long path through the dark woods: reach the village in 2:00 (a lantern on the way)
+ *   1 WAKE UP      a path through the dark woods: reach the village in 1:30 (a lantern on the way, a fallen log to smash)
  *   2 THE VILLAGE  find the 20 dice lost in the ruined village in 4:00, then beat its boss
  *   3 THE BEAST    feed the caged beast: it must not break out
  *   4 BIG BOSS     the huge boss and its 3 kids, with the beast on your side: 3:00
@@ -28,8 +28,8 @@ export interface StoryChapter {
 export const STORY: Record<number, StoryChapter> = {
   1: {
     title: "WAKE UP", tale: "You wake up alone in the dark woods. Monsters are coming out of the trees... Run to the village!",
-    goal: "Reach the village!", limit: 120000, dark: 0.62,
-    steps: [["hero", "RUN UP"], ["lantern", "LANTERN"], ["house_a", "VILLAGE"]],
+    goal: "Reach the village!", limit: 90000, dark: 0.62,
+    steps: [["lantern", "LANTERN"], ["hammer", "HAMMER"], ["log_big", "SMASH THE LOG"]],
   },
   2: {
     title: "THE VILLAGE", tale: "The Storm wrecked the village and its dice are lost in the dark. Find all 20 before time runs out!",
@@ -48,16 +48,20 @@ export const STORY: Record<number, StoryChapter> = {
   },
   5: {
     title: "TO THE SEA", tale: "Your beast went home. Follow the path through the woods down to the sea!",
-    goal: "Reach the sea!", limit: 170000, dark: 0.6,
-    steps: [["hero", "RUN UP"], ["mode_boss", "2 BOSSES"], ["icon_fish", "THE SEA"]],
+    goal: "Reach the sea!", limit: 95000, dark: 0.6,
+    steps: [["hammer", "HAMMER"], ["log_big", "SMASH THE LOG"], ["icon_fish", "THE SEA"]],
   },
 };
 
 export const storyFor = (stage: number): StoryChapter | null => STORY[stage] ?? null;
 
 /** Story paths: when the bosses come down the path (ms into the run) and where the lantern lies (share of the way). */
-export const PATH_BOSSES: Record<number, number[]> = { 1: [45000, 90000], 5: [50000, 105000] };
+export const PATH_BOSSES: Record<number, number[]> = { 1: [32000, 64000], 5: [34000, 68000] };
 export const LANTERN_AT = 0.2;
+/** the hammer lies on the path a bit further on; a fallen log blocks it after that (stand at it this long to smash it) */
+export const HAMMER_AT = 0.42;
+export const LOG_AT = 0.7;
+export const SMASH_MS = 5000;
 /** the village: dice to find */
 export const HUNT_DICE = 20;
 
