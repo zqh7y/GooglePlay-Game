@@ -31,7 +31,15 @@ export interface Arena {
   center: Pt;
   objects: ArenaObj[];
   patches: Patch[];
+  /** size of the field (the open lands are ARENA x ARENA; story paths are long and thin) */
+  w: number;
+  h: number;
+  /** story paths: where you start, where the path ends (y) and the strip you can walk on (x) */
+  path?: { kind: PathKind; startY: number; endY: number; x0: number; x1: number };
 }
+
+/** A story path: through the woods to the village, or down to the sea. */
+export type PathKind = "village" | "sea";
 
 export function seeded(seed: number): () => number {
   let s = seed;
@@ -42,6 +50,12 @@ const cache = new Map<RegionId, Arena>();
 
 /** The arena of a land (the same every time, so it is built once). */
 export function getArena(id: RegionId): Arena {
+  const a = arenaFor(id);
+  useArena(a);
+  return a;
+}
+
+function arenaFor(id: RegionId): Arena {
   if (!cache.has(id)) cache.set(id, buildArena(REGIONS.find((r) => r.id === id)!));
   return cache.get(id)!;
 }
@@ -86,8 +100,68 @@ function buildArena(land: Region): Arena {
 
   const patches: Patch[] = [];
   for (let n = 0; n < 90; n++) patches.push({ x: 300 + rand() * (ARENA - 600), y: 300 + rand() * (ARENA - 600), r: 90 + rand() * 120 });
-  return { land, center: [c, c], objects, patches };
+  return { land, center: [c, c], objects, patches, w: ARENA, h: ARENA };
 }
 
-export const clampX = (x: number) => Math.max(EDGE, Math.min(ARENA - EDGE, x));
-export const clampY = (y: number) => Math.max(EDGE + 80, Math.min(ARENA - EDGE / 2, y));
+/** Story paths: a long, thin field (PATH_W x PATH_H) with deep woods down both sides. */
+export const PATH_W = 2000;
+export const PATH_H = 36000;
+/** the open strip in the middle you walk along */
+export const PATH_HALF = 380;
+
+const pathCache = new Map<string, Arena>();
+
+/** The long path through the woods of a land, ending at the village or the sea. */
+export function getPathArena(land: Region, kind: PathKind): Arena {
+  const key = `${land.id}_${kind}`;
+  if (!pathCache.has(key)) pathCache.set(key, buildPath(land, kind));
+  const a = pathCache.get(key)!;
+  useArena(a);
+  return a;
+}
+
+function buildPath(land: Region, kind: PathKind): Arena {
+  const rand = seeded(777 + REGIONS.indexOf(land) * 31 + (kind === "sea" ? 5 : 0));
+  const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)];
+  const [w, h] = [PATH_W, PATH_H];
+  const mid = w / 2;
+  const x0 = mid - PATH_HALF;
+  const x1 = mid + PATH_HALF;
+  // the end of the path: the village (or the beach) fills the top of the field
+  const endY = 1500;
+  const startY = h - 450;
+  const objects: ArenaObj[] = [];
+  const trees = land.trees.filter((t) => t !== "rock");
+  // deep woods down both sides: rows of trees, thick near the edge, thinning toward the path
+  for (let y = endY + 200; y < h + 60; y += 115) {
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 6; k++) {
+        const d = PATH_HALF + 70 + k * 108 + rand() * 60;
+        if (k === 0 && rand() < 0.35) continue;
+        objects.push({ tex: pick(trees), x: mid + side * d, y: y + (rand() - 0.5) * 60, flip: rand() < 0.5, scale: 0.9 + rand() * 0.35 });
+      }
+    }
+  }
+  // the edge of the path: bushes, flowers and stumps, a few rocks on it
+  for (let y = endY + 200; y < h; y += 70) {
+    for (const side of [-1, 1]) if (rand() < 0.7) objects.push({ tex: pick(land.plants), x: mid + side * (PATH_HALF - 10 + rand() * 50), y: y + rand() * 40, flip: rand() < 0.5 });
+    if (rand() < 0.06) objects.push({ tex: "rock", x: x0 + 80 + rand() * (x1 - x0 - 160), y, scale: 0.6 + rand() * 0.2 });
+  }
+  // the sides of the top: trees all the way up beside the village (or the beach)
+  for (let y = 120; y < endY + 200; y += 110) {
+    for (const side of [-1, 1]) objects.push({ tex: pick(trees), x: mid + side * (900 + rand() * 60), y, flip: rand() < 0.5, scale: 1 + rand() * 0.2 });
+  }
+  const patches: Patch[] = [];
+  for (let y = 300; y < h; y += 260) patches.push({ x: mid + (rand() - 0.5) * 900, y: y + rand() * 120, r: 90 + rand() * 120 });
+  return { land, center: [mid, startY], objects, patches, w, h, path: { kind, startY, endY, x0, x1 } };
+}
+
+/** The field you are on: keeps everyone inside it (set by getArena / getPathArena). */
+let bounds = { w: ARENA, h: ARENA };
+
+export function useArena(a: Arena): void {
+  bounds = { w: a.w, h: a.h };
+}
+
+export const clampX = (x: number) => Math.max(EDGE, Math.min(bounds.w - EDGE, x));
+export const clampY = (y: number) => Math.max(EDGE + 80, Math.min(bounds.h - EDGE / 2, y));

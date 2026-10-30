@@ -1,6 +1,6 @@
 import { BOSS, MAX_STAGE, monsterHp } from "../data/balance";
 import { rushBossHp } from "../data/bosses";
-import { ITEMS, MAX_LEVEL, PET_LIST, copiesFor, owned } from "../data/items";
+import { ITEMS, MAX_LEVEL, copiesFor, owned } from "../data/items";
 import { DICE_TIERS, Tier } from "../data/tiers";
 import { TREE_BY_ID, stepsOf } from "../data/tree";
 
@@ -143,15 +143,15 @@ const STORAGE_KEY = "dice-idle-save-v3";
 export const ROLL_BATCHES = [1, 3, 10];
 /** Boss Rush boss health share before the rush moved your stage (for older saves). */
 const OLD_RUSH_HP = 0.045;
-const STARTER = PET_LIST[0].id;
 
 function fresh(): SaveData {
   return {
     cash: 0,
     gems: 10,
-    pets: { [STARTER]: { level: 1, copies: 0 } },
-    equipped: [STARTER],
-    discovered: [STARTER],
+    // no pets yet: the first ones come from rolling, which opens after the story's stage 2
+    pets: {},
+    equipped: [],
+    discovered: [],
     stage: 1,
     bestStage: 1,
     dice: noDice({ A: 10 }),

@@ -49,7 +49,8 @@ import { Reward, ShopScreen, freeGiftReady, playGiftReady, tickPlaytime } from "
 import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
-import { MODE_INFO, StageMode, modeForStage } from "../data/modes";
+import { MODE_INFO, StageMode, modeForStage, stageInfo } from "../data/modes";
+import { ROLL_OPEN, STORY_STAGES, rollOpen, storyDone, storyFor } from "../data/story";
 import type { DailyReward } from "../systems/goals";
 import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, ribbonBanner, text } from "../ui/widgets";
@@ -202,6 +203,12 @@ export class UIScene extends Phaser.Scene implements Host {
   private tutorial!: Tutorial;
   private goBtn!: Phaser.GameObjects.Container;
   private rushBtn!: Phaser.GameObjects.Container;
+  /** what the story still keeps locked: tab badges, and covers over the fishing and Boss Rush cards */
+  private navLocks: Partial<Record<Tab, Phaser.GameObjects.Image>> = {};
+  private eventLock?: Phaser.GameObjects.Container;
+  private rushLock?: Phaser.GameObjects.Container;
+  /** developer x3 speed (fights) */
+  private speedBtn!: Button;
   /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
   private rushHint!: Phaser.GameObjects.Container;
   private battleSub!: Phaser.GameObjects.Text;
@@ -242,6 +249,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.buildHeader();
     makeFishIcon(this);
     this.buildNav();
+    this.refreshLocks();
     this.input.on("pointerdown", () => unlockAudio());
     const on: [string, (...a: never[]) => void][] = [
       ["toast", this.toast],
@@ -270,7 +278,7 @@ export class UIScene extends Phaser.Scene implements Host {
     let i = 0;
     this.time.addEvent({ delay: 40, repeat: PET_LIST.length - 1, callback: () => petTexture(this, PET_LIST[i++].id) });
     this.setTab("battle", true);
-    const away = fishAway();
+    const away = storyDone(save.bestStage) ? fishAway() : { catches: [], secs: 0 };
     if (away.catches.length) this.fishAwayResult = away;
     // online: sign in and send your entry (quietly; the game works the same offline)
     window.setTimeout(() => void startOnline(), 1200);
@@ -371,8 +379,8 @@ export class UIScene extends Phaser.Scene implements Host {
     this.navBar.setVisible(lobby);
     this.gear.setVisible(lobby || this.tab !== "battle");
     this.placeTopBar(!lobby);
-    // the minimap is only for fights, not the lobby
-    this.mini.setVisible(!lobby);
+    // the minimap is only for fights, not the lobby (and not on a story path)
+    this.mini.setVisible(!lobby && !battle.path);
     this.mini.setPosition(...this.miniSpot());
     this.overlay.clear();
     if (lobby) this.refreshLobby();
@@ -383,7 +391,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.lobbyTitle.setText(`Stage ${save.stage}`);
     this.lobbyLand.setText(regionForStage(save.stage).name);
     this.lobbyBest.setText(`${save.bestStage} / ${MAX_STAGE}${save.stage < save.bestStage ? "   REPLAY" : ""}`);
-    const mode = MODE_INFO[modeForStage(save.stage)];
+    const mode = stageInfo(save.stage);
     this.battleSub.setText(`${save.stage < save.bestStage ? "Replay " : ""}Stage ${save.stage}  •  ${mode.name}`).setColor(mode.css);
     this.stagePrev.setPosition(this.lobbyTitle.x + this.lobbyTitle.width + 56, 178).setVisible(save.stage > 1);
     this.stageNext.setPosition(this.stagePrev.x + 84, 178).setVisible(save.stage < Math.min(MAX_STAGE, stageCap()));
@@ -531,12 +539,40 @@ export class UIScene extends Phaser.Scene implements Host {
         box.setScale(1);
         this.setTab(t.id);
       });
+      // ROLL and PETS open once the story's village (stage 2) is cleared
+      const lock = this.add.image(tw / 2 - 44, -navH / 2 + 40, "icon_lock").setScale(0.5).setVisible(false);
+      box.add(lock);
+      this.navLocks[t.id] = lock;
       this.nav[t.id] = { box, bg, icon, label: lbl, badge };
     });
   }
 
+  /** Is a screen still locked by the story? (says so when it is) */
+  private tabLocked(tab: Tab, say = true): boolean {
+    const locked = ((tab === "roll" || tab === "pets") && !rollOpen(save.bestStage)) || (tab === "fish" && !storyDone(save.bestStage));
+    if (locked && say) {
+      sfx.error();
+      this.toast(tab === "fish" ? `Fishing opens after Stage ${STORY_STAGES}!` : `Opens after Stage ${ROLL_OPEN - 1}!`, "#ffd0a0");
+    }
+    return locked;
+  }
+
+  /** The lock badges on the tab bar and the lobby cards. */
+  private refreshLocks(): void {
+    const roll = !rollOpen(save.bestStage);
+    const done = storyDone(save.bestStage);
+    for (const t of TABS) {
+      const locked = (t.id === "roll" || t.id === "pets") && roll;
+      this.navLocks[t.id]?.setVisible(locked);
+      this.nav[t.id]?.icon.setTint(locked ? 0x8a8a8a : 0xffffff);
+    }
+    this.eventLock?.setVisible(!done);
+    this.rushLock?.setVisible(!done);
+  }
+
   setTab(tab: Tab, quiet = false): void {
     if (tab === this.tab && !this.mapOpen && !quiet) return;
+    if (!quiet && this.tabLocked(tab)) return;
     if (!quiet) sfx.click();
     this.openModal?.close();
     if (this.mapOpen) {
@@ -667,6 +703,11 @@ export class UIScene extends Phaser.Scene implements Host {
       text(this, 0, 44, "BOSS RUSH", 42, "#ffe066", { stroke: 10 }), this.rushNum,
     ], () => {
       unlockAudio();
+      if (!storyDone(save.bestStage)) {
+        sfx.error();
+        this.toast(`Boss Rush opens after Stage ${STORY_STAGES}!`, "#ffd0a0");
+        return;
+      }
       if (rushWait() > 0) {
         sfx.error();
         this.toast(`Boss Rush is back in ${dhm(rushWait())}`, "#ffb0b0");
@@ -676,6 +717,8 @@ export class UIScene extends Phaser.Scene implements Host {
       this.confirmStart("rush");
     });
     this.tweens.add({ targets: this.rushFace, angle: { from: -6, to: 6 }, duration: 600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.rushLock = this.lockCover(336, 206, `after Stage ${STORY_STAGES}`);
+    rush.add(this.rushLock);
     this.lobby.add(rush);
     // a red comic sticker on the corner of the Boss Rush card
     this.rushHint = this.add.container(W - 92, rush.y - 92, [
@@ -776,8 +819,13 @@ export class UIScene extends Phaser.Scene implements Host {
     gunPanel.setSize(384, 140).setInteractive({ useHandCursor: true }).on("pointerup", () => this.showStats());
     this.skillBar = this.add.container(0, H - 84);
     this.streakHud = text(this, W - 200, 404, "", 30, "#ffb347");
+    // developer mode: run the fight at x3 to test quickly
+    this.speedBtn = button(this, 150, 270, 96, 64, "purple", "x1", () => {
+      battle.speed = battle.speed === 1 ? 3 : 1;
+      this.speedBtn.setLabel(`x${battle.speed}`).setColor(battle.speed > 1 ? "red" : "purple");
+    }, { size: 30 });
     this.run.add([
-      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud,
+      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
       iconButton(this, 160, 165, "icon_odds", 86, () => this.showStats()),
     ]);
@@ -791,6 +839,15 @@ export class UIScene extends Phaser.Scene implements Host {
     // low health: red, cracked screen edges (under the HUD)
     this.hurt = new HurtScreen(this, 5);
     this.countText = text(this, W / 2, H * 0.36, "", 260, "#ffe066").setStroke("#1a1030", 26).setDepth(7400).setVisible(false);
+  }
+
+  /** A dark cover with a padlock and when it opens, over a lobby card. */
+  private lockCover(w: number, h: number, str: string): Phaser.GameObjects.Container {
+    const g = this.add.graphics();
+    g.fillStyle(0x1a1020, 0.72).fillRoundedRect(-w / 2, -h / 2, w, h, 26);
+    const lock = this.add.image(0, -24, "icon_lock").setScale(1.1);
+    this.tweens.add({ targets: lock, angle: { from: -6, to: 6 }, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    return this.add.container(0, 0, [g, lock, fitText(text(this, 0, 54, str, 28, "#ffe6b8", { stroke: 7 }), w - 24)]);
   }
 
   /**
@@ -848,6 +905,8 @@ export class UIScene extends Phaser.Scene implements Host {
       c.setScale(1);
       this.setTab("fish");
     });
+    this.eventLock = this.lockCover(236, 266, `STAGE ${STORY_STAGES}`);
+    c.add(this.eventLock);
     this.eventCard = c;
     this.lobby.add(c);
     this.addBadge(x + 104, y - 112, () => eventReady() > 0 || anyFishUpgrade());
@@ -888,7 +947,9 @@ export class UIScene extends Phaser.Scene implements Host {
 
   private refreshEventCard(): void {
     const left = diceEventLeft();
-    this.diceEventCard?.setVisible(left > 0);
+    // the beginners' Dice Rain shows up once the story is done
+    this.diceEventCard?.setVisible(left > 0 && storyDone(save.bestStage));
+    this.refreshLocks();
     if (left > 0) this.diceEventTime?.setText(dhm(left));
     this.diceEventBadge?.setVisible(this.rainReady() > 0);
     const e = save.fishing.event;
@@ -1013,7 +1074,8 @@ export class UIScene extends Phaser.Scene implements Host {
     let left = Infinity;
     if (battle.mode === "run" && this.tab === "battle" && !this.mapOpen) {
       if (battle.rush) left = battle.bossFrac >= 0 ? battle.rushLeft : Infinity;
-      else if (!battle.bossFight) left = STAGE_MS - battle.time;
+      else if (battle.left >= 0) left = battle.left;
+      else if (!battle.bossFight && !battle.limit) left = STAGE_MS - battle.time;
     }
     const n = left > 0 && left <= 5000 ? Math.ceil(left / 1000) : 0;
     if (n === this.lastCount) return;
@@ -1048,10 +1110,10 @@ export class UIScene extends Phaser.Scene implements Host {
       this.dpsPill.value.setColor(dps >= rec ? "#b6ff8a" : "#ffb0a0");
       // way stronger than this stage: Boss Rush is calling (when it is ready)
       const wait = rushWait();
-      this.rushHint.setVisible(dps >= rec * 1.5 && wait === 0);
+      this.rushHint.setVisible(dps >= rec * 1.5 && wait === 0 && storyDone(save.bestStage));
       // the Boss Rush card shows its wait and dims until it is ready again
       this.rushNum.setText(wait > 0 ? `Ready in ${dhm(wait)}` : `Boss ${save.stage}  •  ${RUSH_MS / 1000}s each`);
-      this.rushBtn.setAlpha(wait > 0 ? 0.6 : 1);
+      this.rushBtn.setAlpha(wait > 0 && storyDone(save.bestStage) ? 0.6 : 1);
       const active = potionActive();
       this.potionBadge.setVisible(active);
       if (active) {
@@ -1065,6 +1127,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const W = this.W;
     const g = this.hudBars;
     g.clear();
+    this.speedBtn.setVisible(save.dev);
     // kill streak: every 50 in a row is +1% damage and attack speed
     const st = battle.streak;
     const bonus = Math.floor(st / 50);
@@ -1072,10 +1135,18 @@ export class UIScene extends Phaser.Scene implements Host {
     fitText(this.streakHud, 360);
     if (battle.rush) {
       this.rushHud(time);
-    } else if (battle.bossFrac >= 0) {
+    } else if (battle.bossFrac >= 0 && battle.bossFight) {
       drawBar(g, 24, 74, W - 48, 34, battle.bossFrac, 0xf26464);
       const healing = battle.sealsTotal > 0 && battle.seals < battle.sealsTotal;
-      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%${healing ? "  •  HEALING" : ""}`);
+      const clock = battle.left >= 0 ? `  •  ${mmss(battle.left)} LEFT` : "";
+      this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%${healing ? "  •  HEALING" : ""}${clock}`);
+    } else if (battle.limit) {
+      // a story chapter's clock: the time left, red when it runs low
+      // (the full time until the clock starts)
+      const left = battle.left >= 0 ? battle.left : battle.limit;
+      const f = 1 - left / battle.limit;
+      drawBar(g, 24, 74, W - 48, 34, f, left < 15000 ? 0xf26464 : f > 0.7 ? 0xffa64d : 0xffe0a3);
+      this.progressText.setText(`${mmss(left)} LEFT`);
     } else {
       const f = battle.time / STAGE_MS;
       drawBar(g, 24, 74, W - 48, 34, f, f > 0.8 ? 0xffa64d : 0xffe0a3);
@@ -1109,9 +1180,11 @@ export class UIScene extends Phaser.Scene implements Host {
     } else if (battle.bossFight) this.shieldText.setText("CRYSTAL TAKEN! Beat the boss").setColor("#ffd0d0");
     else this.shieldText.setText(battle.shielded ? `SHIELD ${left}s` : `OPEN  •  shield in ${left}s`).setColor(battle.shielded ? "#ffffff" : c < 0.4 ? "#ffd0d0" : "#ffffff");
     fitText(this.shieldText, 340);
-    if (goal) this.crystalIcon.setScale(goal.alarm && time % 500 < 250 ? 0.6 : 0.5);
+    // any goal icon fits the same spot, whatever its size
+    if (goal) this.crystalIcon.setScale(((goal.alarm && time % 500 < 250 ? 1.2 : 1) * 64) / Math.max(this.crystalIcon.frame.width, this.crystalIcon.frame.height));
     else this.crystalIcon.setScale(c < 0.4 && !battle.shielded && time % 500 < 250 ? 0.3 : 0.24);
-    this.progressText.setColor(c < 0.4 && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
+    const low = battle.limit ? battle.left >= 0 && battle.left < 15000 : c < 0.4;
+    this.progressText.setColor(low && time % 600 < 300 ? "#ff8a8a" : "#ffffff");
     // your gadgets
     this.gadgetSlots.forEach((slot, i) => {
       const g = battle.gadgets[i];
@@ -1321,14 +1394,17 @@ export class UIScene extends Phaser.Scene implements Host {
   private stageFailed(r: StageResult): void {
     const h = 1180;
     let choice: "revive" | "retry" | "lobby" = "lobby";
-    const title = r.reason === "hero" ? "YOU FELL!" : r.reason === "crystal" ? "CRYSTAL BROKE!" : "YOU GAVE UP";
+    const title = { hero: "YOU FELL!", crystal: "CRYSTAL BROKE!", quit: "YOU GAVE UP", time: "TIME'S UP!", beast: "THE BEAST ESCAPED!" }[r.reason];
     const m = this.showModal(modal(this, 900, h, title, "red", () => {
       this.openModal = null;
       if (choice !== "revive") this.game.events.emit("retry", choice === "retry");
     }));
     m.body.add(text(this, 0, -h / 2 + 140, `Stage ${r.stage}`, 64, "#c9663a"));
     this.statRows(m, r.stats, r.time, -h / 2 + 240);
-    m.body.add(label(this, 0, 150, "Roll new pets and buy upgrades to get stronger, then try again!", 30, "#9a7a5a", 760));
+    const tip = r.reason === "time" ? "Keep moving and don't stop to fight everything. Try again!"
+      : r.reason === "beast" ? "Bring the snacks faster: the beast must never get too hungry!"
+      : rollOpen(save.bestStage) ? "Roll new pets and buy upgrades to get stronger, then try again!" : "Buy upgrades to get stronger, then try again!";
+    m.body.add(label(this, 0, 150, tip, 30, "#9a7a5a", 760));
     let y = 290;
     if (r.canRevive) {
       m.body.add(button(this, 0, y, 560, 120, save.gems >= r.reviveGems ? "purple" : "grey", `REVIVE  ${r.reviveGems}`, () => {
@@ -1353,7 +1429,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Rows of run statistics for the defeat screen. */
   private statRows(m: Modal, st: RunStats, time: number, y0: number): number {
     const rows: [string, string, string][] = [
-      ["icon_clock", `Survived ${mmss(time)} / ${mmss(STAGE_MS)}`, "#4a2f1d"],
+      ["icon_clock", `Survived ${mmss(time)} / ${mmss(battle.limit || STAGE_MS)}`, "#4a2f1d"],
       ["icon_skull", `${fmt(st.kills)} monsters defeated`, "#4a2f1d"],
       ["icon_sword", `${fmt(st.damage)} damage dealt`, "#4a2f1d"],
       ["icon_cash", `+${fmt(Math.floor(st.earned))} money`, "#3f9a4f"],
@@ -1482,11 +1558,18 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** 5:00: the screen flashes red and a WARNING sign blinks while the storm takes the crystal. */
   /** How to play this stage's mode, in pictures: three panels with an icon and a word or two. */
-  private modeIntro(mode: StageMode): void {
+  private modeIntro(mode: StageMode, story = false): void {
+    const ch = story ? storyFor(save.stage) : null;
+    if (ch) {
+      this.storyCard(mode);
+      return;
+    }
     const W = this.W;
     const H = this.H;
     const info = MODE_INFO[mode];
     const steps: Record<StageMode, [string, string][]> = {
+      path: [["hero", "RUN UP"], ["icon_clock", "IN TIME"], ["house_a", "THE END"]],
+      hunt: [["die_A", "FIND"], ["torch3d", "TORCHES"], ["mode_boss", "BOSS"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],
       feed: [["mode_feed", "GRAB"], ["beast_cage", "FEED x6"], ["pk_heart", "FRIEND!"]],
@@ -1513,6 +1596,45 @@ export class UIScene extends Phaser.Scene implements Host {
     this.time.delayedCall(2900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
   }
 
+  /**
+   * A story chapter begins: a night-blue storybook card with the chapter number and name, a line of
+   * story, and three pictures of what to do.
+   */
+  private storyCard(mode: StageMode): void {
+    const { W, H } = this;
+    const ch = storyFor(save.stage)!;
+    const info = stageInfo(save.stage);
+    const card = this.add.container(W / 2, H * 0.42).setDepth(5400).setScale(0);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0e1430, 0.94).fillRoundedRect(-470, -330, 940, 660, 46);
+    bg.lineStyle(10, 0xffd76a, 1).strokeRoundedRect(-470, -330, 940, 660, 46);
+    bg.lineStyle(4, 0xffd76a, 0.4).strokeRoundedRect(-450, -310, 900, 620, 36);
+    card.add(bg);
+    // a few stars twinkle on the card
+    for (let i = 0; i < 12; i++) {
+      const st = this.add.image(-420 + ((i * 173) % 840), -290 + ((i * 97) % 120), "spark").setScale(0.4).setTint(0xfff3b0);
+      this.tweens.add({ targets: st, alpha: 0.2, duration: 400 + i * 70, yoyo: true, repeat: -1 });
+      card.add(st);
+    }
+    card.add([
+      text(this, 0, -262, `CHAPTER ${save.stage}`, 36, "#ffd76a", { stroke: 8 }),
+      fitText(text(this, 0, -196, ch.title, 84, "#ffffff", { stroke: 14 }), 860),
+      label(this, 0, -96, ch.tale, 32, "#e6ecff", 820),
+    ]);
+    ch.steps.forEach(([icon, word], i) => {
+      const x = -290 + i * 290;
+      const splat = this.add.image(x, 110, "paint_splash").setTint(info.color).setScale(0.95).setAngle(i * 80).setAlpha(0.85);
+      const img = this.add.image(x, 100, icon);
+      img.setScale(120 / Math.max(img.width, img.height));
+      card.add([splat, img, text(this, x, 222, word, 36, "#ffffff", { stroke: 10 })]);
+      if (i < 2) card.add(this.add.triangle(x + 145, 110, 0, 0, 0, 44, 32, 22, 0xffd76a).setStrokeStyle(6, 0x111111));
+      this.tweens.add({ targets: img, y: 88, duration: 500, yoyo: true, repeat: -1, delay: i * 160, ease: "Sine.inOut" });
+    });
+    this.tweens.add({ targets: card, scale: 1, duration: 420, ease: "Back.out" });
+    sfx.fanfare();
+    this.time.delayedCall(mode === "boss" ? 3400 : 3900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
+  }
+
   private bossWarning(): void {
     const { W, H } = this;
     const edge = this.add.graphics().setDepth(5300);
@@ -1525,7 +1647,7 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: edge, alpha: 1, duration: 300, yoyo: true, repeat: 4, onComplete: () => edge.destroy() });
     const band = this.add.rectangle(W / 2, H * 0.36, W, 220, 0x1a0808, 0.75).setDepth(5310);
     const warn = text(this, W / 2, H * 0.36 - 30, "WARNING!", 110, "#ff4a4a").setDepth(5320);
-    const sub = text(this, W / 2, H * 0.36 + 60, battle.stageMode === "crystal" ? "Something is coming for the crystal..." : battle.stageMode === "boss" ? "A HUGE boss and its 3 kids!" : "The boss is coming...", 38, "#ffe0e0").setDepth(5320);
+    const sub = text(this, W / 2, H * 0.36 + 60, battle.stageMode === "crystal" ? "Something is coming for the crystal..." : battle.stageMode === "boss" ? "A HUGE boss and its 3 kids!" : battle.stageMode === "hunt" ? "The village's boss is coming..." : "The boss is coming...", 38, "#ffe0e0").setDepth(5320);
     this.tweens.add({ targets: warn, alpha: 0.3, duration: 250, yoyo: true, repeat: 5 });
     this.time.delayedCall(2600, () => this.tweens.add({ targets: [band, warn, sub], alpha: 0, duration: 400, onComplete: () => [band, warn, sub].forEach((o) => o.destroy()) }));
     [0, 700, 1400].forEach((t) => this.time.delayedCall(t, () => sfx.alarm()));
@@ -1617,7 +1739,8 @@ export class UIScene extends Phaser.Scene implements Host {
     if (rush && rushWait() > 0) return;
     const ev = kind === "event";
     const def = bossForStage(save.stage);
-    const mode = MODE_INFO[ev ? "dice" : modeForStage(save.stage)];
+    const mode = ev ? MODE_INFO.dice : stageInfo(save.stage);
+    const chapter = ev ? null : storyFor(save.stage);
     const w = 960;
     const h = 1280;
     let go = false;
@@ -1641,7 +1764,7 @@ export class UIScene extends Phaser.Scene implements Host {
     tag.fillStyle(0x14213d, 0.55).fillRoundedRect(-chipW / 2, top + 180, chipW, 76, 38);
     b.add([tag,
       this.add.image(-chipW / 2 + 48, top + 218, rush ? "icon_clock" : mode.icon).setScale(rush ? 0.5 : 0.52),
-      fitText(text(this, 30, top + 218, rush ? `${RUSH_MS / 1000}s PER BOSS` : ev ? `EVENT  •  ${dhm(diceEventLeft())}` : mode.name, 40, rush ? "#ffe066" : mode.css, { stroke: 9 }), chipW - 130),
+      fitText(text(this, 30, top + 218, rush ? `${RUSH_MS / 1000}s PER BOSS` : ev ? `EVENT  •  ${dhm(diceEventLeft())}` : chapter ? `CHAPTER ${save.stage}: ${mode.name}` : mode.name, 40, rush ? "#ffe066" : mode.css, { stroke: 9 }), chipW - 130),
     ]);
     // the boss on a spinning sunburst
     const by = top + 500;
@@ -1660,7 +1783,9 @@ export class UIScene extends Phaser.Scene implements Host {
     const chips: [string, string, string][] = rush
       ? [["icon_clock", `${RUSH_MS / 1000}s`, "#ffffff"], ["icon_gem", "+3 / 5", "#9ae6ff"], ["icon_trophy", `${save.bossRushBest}`, "#ffe066"]]
       : [
-        [modeForStage(save.stage) === "boss" ? "mode_boss" : "icon_clock", modeForStage(save.stage) === "boss" ? "x4" : "5:00", "#ffffff"],
+        chapter
+          ? (chapter.limit ? ["icon_clock", mmss(chapter.limit), "#ffffff"] : [mode.icon, `CH. ${save.stage}`, "#ffe066"])
+          : [modeForStage(save.stage) === "boss" ? "mode_boss" : "icon_clock", modeForStage(save.stage) === "boss" ? "x4" : "5:00", "#ffffff"],
         ["icon_sword", `${fmt(dps)}/${fmt(rec)}`, dps >= rec ? "#b6ff8a" : "#ffb0a0"],
         ev ? ["die_C", "DROPS", "#9ae6ff"] : ["icon_gem", `+${gemsPerBoss()}`, "#9ae6ff"],
       ];
@@ -1855,8 +1980,13 @@ export class UIScene extends Phaser.Scene implements Host {
   // ───────────────────────── stage and land moments ─────────────────────────
 
   /** "STAGE 7 CLEAR!" with stars popping in and the money counting up. */
-  private stageClear(info: { event?: boolean; stage: number; earned: number; gems: number; dice: Record<Tier, number>; final: boolean }): void {
+  private stageClear(info: { event?: boolean; stage: number; earned: number; gems: number; dice: Record<Tier, number>; final: boolean; first?: boolean }): void {
     syncSoon();
+    // the story opens new things the first time its chapters are cleared
+    if (info.first && !info.event) {
+      if (info.stage === ROLL_OPEN - 1) this.time.delayedCall(3300, () => this.unlocked([["icon_dice", "ROLL"], ["icon_paw", "PETS"]], "Roll your dice for pets!"));
+      if (info.stage === STORY_STAGES) this.time.delayedCall(3300, () => this.unlocked([["icon_fish", "FISHING"], ["mode_boss", "BOSS RUSH"], ["die_S", "DICE RAIN"]], "The story is done: the whole game is open!"));
+    }
     const dice = DICE_TIERS.reduce((s, t) => s + info.dice[t], 0);
     const { W } = this;
     const cy = this.tab === "battle" ? this.L.hudBottom + 360 : this.L.headerBottom + 260;
@@ -1887,6 +2017,41 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: counter, v: info.earned, duration: 1300, delay: 400, ease: "Cubic.out", onUpdate: () => earned.setText(`+${fmt(counter.v)}`) });
     this.coinShower(W / 2 - 280, cy + 110, 10);
     this.time.delayedCall(info.final ? 5000 : 3000, () => this.tweens.add({ targets: root, alpha: 0, duration: 300, onComplete: () => root.destroy() }));
+  }
+
+  /** New things open: they spin in over golden rays with their names. */
+  private unlocked(items: [string, string][], line: string): void {
+    const { W, H } = this;
+    const cy = H * 0.42;
+    const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.55);
+    const rays = this.add.image(W / 2, cy, "rays").setTint(0xffe066).setAlpha(0.6).setScale(2.2);
+    const title = text(this, W / 2, cy - 230, "UNLOCKED!", 104, "#ffe066", { stroke: 16 });
+    const sub = fitText(label(this, W / 2, cy + 230, line, 38, "#ffffff", W - 120), W - 120);
+    const root = this.add.container(0, 0, [shade, rays, title, sub]).setDepth(6400);
+    items.forEach(([icon, name], i) => {
+      const x = W / 2 + (i - (items.length - 1) / 2) * 300;
+      const tex = this.textures.exists(icon) ? icon : "icon_star";
+      const img = this.add.image(x, cy - 20, tex);
+      img.setScale(0);
+      const k = 170 / Math.max(img.width, img.height);
+      this.tweens.add({ targets: img, scale: k, angle: 360, duration: 600, delay: 250 + i * 200, ease: "Back.out" });
+      this.tweens.add({ targets: img, y: cy - 36, duration: 700, yoyo: true, repeat: -1, delay: 900 + i * 150, ease: "Sine.inOut" });
+      root.add([this.add.image(x, cy - 20, "glow").setTint(0xffe066).setScale(2).setAlpha(0.6), img, text(this, x, cy + 110, name, 44, "#ffffff", { stroke: 10 })]);
+    });
+    title.setScale(0);
+    this.tweens.add({ targets: title, scale: 1, duration: 450, ease: "Back.out" });
+    this.tweens.add({ targets: rays, angle: 180, duration: 4000 });
+    sfx.superRoll();
+    buzz(200);
+    this.refreshLocks();
+    let gone = false;
+    const close = () => {
+      if (gone) return;
+      gone = true;
+      this.tweens.add({ targets: root, alpha: 0, duration: 400, onComplete: () => root.destroy() });
+    };
+    shade.setInteractive().on("pointerup", close);
+    this.time.delayedCall(4500, close);
   }
 
   private landUnlocked(name: string): void {
@@ -2381,6 +2546,11 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** The fishing line never stops: catches come in on every screen (the fishing screen shows them). */
   private fishing(): void {
+    // the line goes in the water once the story reaches the sea
+    if (!storyDone(save.bestStage)) {
+      save.fishing.nextAt = 0;
+      return;
+    }
     const caught = fishTick();
     if (caught.length) {
       persist();

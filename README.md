@@ -214,9 +214,28 @@ hour of fishing brings.
   zoomed out (1.66x) so you see more of the field. Survive **5:00** against hordes of monsters that come
   faster and tougher every minute (a ring of them closes in at each minute mark). If you fall or the crystal
   breaks, the run is over: revive once for gems, try again, or go back to the lobby.
-- **Stage modes** (`src/data/modes.ts`): stages cycle through 5 modes, 1-2-3-4-5-1-2-3... up to 100. Stage 1 is always a Crystal stage (the easiest
-  start for new players); from stage 2 on the cycle runs as usual (stage 6 is the first Air Zone). The
-  lobby button, the START popup and the map card show which one is next.
+- **The story chapters** (`src/data/story.ts`): stages 1-5 are chapters, played at **night** (the Storm
+  took the light): a dark-blue sheet over the field with soft holes of light cut out of it round your
+  lantern, torches, lit windows, the lost dice and the bosses (`src/game/night.ts`). Each starts with a
+  storybook card (chapter, a line of story, three pictures) and has its own clock on the top bar:
+  1. **WAKE UP**: a long, thin path through deep woods (`getPathArena`, 2000 x 36000). Monsters step out of
+     the trees on both sides (some block the path ahead); a **lantern** lies a fifth of the way up (it
+     widens your light, and you keep it); bosses drop onto the path at **0:45** and **1:30** and are faster
+     than you (softer hits; beat or outrun them). Reach the **village** gate at the top in **2:00**.
+  2. **THE VILLAGE**: the open land with two burnt-out buildings and torches; find the **20 lost dice**
+     (gold beams; the arrow points at the nearest) in **4:00**, then the village's boss comes (scaled to the
+     time you took; no seals, no healing).
+  3. **THE BEAST**: Feed the Beast in the dark; if it breaks out the stage is **lost**.
+  4. **BIG BOSS**: the huge boss and its 3 kids with **your beast fighting beside you** and everything maxed
+     out; beat the big boss in **3:00** (its kids run when it falls). Then the beast says goodbye and goes home.
+  5. **TO THE SEA**: another path (two bosses, 2:30) down to a beach with a pier.
+  What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
+  the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
+  The tutorial's roll and Boss Rush steps wait until those open.
+- **Developer x3**: with developer mode on (tap the Map title 5 times), an x1/x3 button under Pause runs
+  the whole fight three times as fast, for testing.
+- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 5 modes up to 100 (stage 6 is
+  the first Air Zone). The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.

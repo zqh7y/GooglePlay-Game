@@ -308,7 +308,8 @@ export function makeGround(scene: Phaser.Scene, a: Arena): GroundKeys {
   half(scene, keys.tile, TILE, TILE, (ctx) => paintTile(ctx, land, rand));
   keys.patches.forEach((k) => half(scene, k, PATCH_R * 2.8, PATCH_R * 2, (ctx) => paintPatch(ctx, land, PATCH_R * 1.4, PATCH_R, PATCH_R, rand)));
   half(scene, keys.circle, 760, 560, (ctx) => paintCircle(ctx, land));
-  if (!scene.textures.exists(keys.mini)) {
+  // the minimap is of the open land (story paths have no minimap)
+  if (!a.path && !scene.textures.exists(keys.mini)) {
     const mini = document.createElement("canvas");
     mini.width = 200;
     mini.height = 200;

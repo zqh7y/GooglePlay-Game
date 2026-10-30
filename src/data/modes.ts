@@ -1,9 +1,11 @@
+import { STORY_STAGES, storyFor } from "./story";
+
 /**
- * Every stage has one of five modes, in a repeating cycle: 1 Air Zone, 2 Crystal, 3 Feed the Beast,
- * 4 Dice Rain, 5 Boss Battle, then 6 is Air Zone again, and so on up to stage 100. Stage 1 is the
- * exception: it is always a Crystal stage.
+ * Every stage has a mode. The first five are the story (see data/story.ts): 1 Path to the village,
+ * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
+ * round a cycle: Air Zone, Crystal, Feed the Beast, Crystal, Boss Battle, and again.
  */
-export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss";
+export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt";
 
 /** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
 export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "crystal", "boss"];
@@ -11,9 +13,10 @@ export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "crystal", "bo
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
 
-/** Stage 1 is always a Crystal stage (the easiest start); after that the cycle runs as usual. */
+const STORY_MODES: StageMode[] = ["path", "hunt", "feed", "boss", "path"];
+
 export const modeForStage = (stage: number): StageMode =>
-  stage <= 1 ? "crystal" : MODE_ORDER[(Math.max(1, stage) - 1) % MODE_ORDER.length];
+  stage <= STORY_STAGES ? STORY_MODES[Math.max(1, stage) - 1] : MODE_ORDER[(stage - 1) % MODE_ORDER.length];
 
 export interface ModeInfo {
   name: string;
@@ -47,7 +50,22 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
     name: "BOSS BATTLE", banner: "BOSS BATTLE!", icon: "mode_boss", color: 0xff4a4a, css: "#ffb0b0",
     goal: "Beat 4 bosses!",
   },
+  path: {
+    name: "THE PATH", banner: "RUN!", icon: "icon_clock", color: 0x6ab84a, css: "#c8f0a0",
+    goal: "Reach the end of the path!",
+  },
+  hunt: {
+    name: "DICE HUNT", banner: "FIND THE DICE!", icon: "die_A", color: 0xffb03a, css: "#ffe0a0",
+    goal: "Find the dice!",
+  },
 };
+
+/** The mode's info for a stage: story chapters use their own name, banner and goal. */
+export function stageInfo(stage: number): ModeInfo {
+  const info = MODE_INFO[modeForStage(stage)];
+  const ch = storyFor(stage);
+  return ch ? { ...info, name: ch.title, banner: ch.title, goal: ch.goal } : info;
+}
 
 /** Air Zone: the zone covers 10% of the map and moves every 30 s; the next one shows 8 s early. */
 export const AIR_EVERY = 30000;

@@ -3,7 +3,7 @@ import { canvasTexture, darken, lighten, rgba } from "../art/draw";
 import { vividCard } from "../art/ps";
 import { MAX_STAGE } from "../data/balance";
 import { BOSS_EVERY, bossForStage } from "../data/bosses";
-import { MODE_INFO, modeForStage } from "../data/modes";
+import { stageInfo } from "../data/modes";
 import { REGIONS, Region, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
 import { persist, save, stageCap } from "../systems/save";
 import { Host, Screen } from "./screens";
@@ -177,7 +177,7 @@ export class MapScreen extends Screen {
       this.picked = st;
       bubbles.forEach((b) => b.ring.setVisible(b.st === st));
       const boss = st % BOSS_EVERY === 0;
-      const mode = MODE_INFO[modeForStage(st)];
+      const mode = stageInfo(st);
       info.removeAll(true);
       info.add([
         s.add.image(W / 2 - 330, cy + 300, mode.icon).setScale(0.8),

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { makeTutorialTextures } from "../art/online";
 import { panelTexture } from "../art/ui";
+import { rollOpen, storyDone } from "../data/story";
 import { battle } from "../scenes/Battle";
 import { persist, save } from "../systems/save";
 import { sfx } from "../systems/sound";
@@ -73,8 +74,10 @@ export class Tutorial {
     this.root = s.add.container(0, 0, [this.ring, this.bubble, this.hand]).setDepth(6800).setVisible(false);
     const lobby = () => battle.mode === "lobby" && host.tab() === "battle" && !host.mapOpen() && !host.modalOpen();
     const calm = () => battle.mode === "lobby" && !host.modalOpen() && !host.mapOpen();
+    // rolling opens after the story's stage 2, the Boss Rush after stage 5: those steps wait till then
+    const rolls = () => rollOpen(save.bestStage);
     const tabStep = (tab: Tab, str: string): Step => ({
-      when: () => calm() && host.tab() !== tab,
+      when: () => rolls() && calm() && host.tab() !== tab,
       text: () => str,
       target: () => host.tabSpot(tab),
       done: () => host.tab() === tab,
@@ -87,7 +90,7 @@ export class Tutorial {
         target: () => (host.modalOpen() ? host.startButton() : host.battleButton()),
         done: () => battle.mode === "run",
       },
-      tabStep("roll", "Nice fight! Your dice give you PETS. Open ROLL!"),
+      tabStep("roll", "ROLL is open! Your dice give you PETS. Open ROLL!"),
       {
         when: () => host.tab() === "roll" && !host.modalOpen(),
         text: () => "Tap ROLL! Each roll uses 1 die. Rarer dice = rarer pets!",
@@ -104,7 +107,7 @@ export class Tutorial {
       },
       tabStep("battle", "Back to BATTLE!"),
       {
-        when: lobby,
+        when: () => lobby() && storyDone(save.bestStage),
         text: () => "Too strong for your stage? Tap BOSS RUSH: beat bosses fast and clear stages in a row!",
         target: () => host.rushButton(),
         ok: true,
