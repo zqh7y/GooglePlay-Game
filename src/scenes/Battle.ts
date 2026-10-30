@@ -537,7 +537,8 @@ export class BattleScene extends Phaser.Scene {
   private halfSaid = false;
   /** the sea stage: attack level, timers, your boat, the tsunami's waves and the islands */
   private sea = {
-    lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0,
+    lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0,
+    under: new Set<Enemy>(), bubT: 0,
     tsunami: 0, phase: "calm" as "calm" | "warn" | "wave" | "rest", phaseT: 0, waveP: 0, hit: false,
     waves: [] as Phaser.GameObjects.TileSprite[], islands: [] as { x: number; y: number; r: number; objs: Phaser.GameObjects.GameObject[] }[],
     rain: null as Phaser.GameObjects.Particles.ParticleEmitter | null,
@@ -711,7 +712,7 @@ export class BattleScene extends Phaser.Scene {
     this.paceT = 12000;
     this.ambientT = 6000;
     this.halfSaid = false;
-    this.sea = { lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, tsunami: 0, phase: "calm", phaseT: 0, waveP: 0, hit: false, waves: [], islands: [], rain: null };
+    this.sea = { lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, dir: 1, tilt: 0, sprayT: 0, under: new Set(), bubT: 0, tsunami: 0, phase: "calm", phaseT: 0, waveP: 0, hit: false, waves: [], islands: [], rain: null };
     this.boat = null;
     this.solids = [];
     this.huntFound = 0;
@@ -2735,8 +2736,11 @@ export class BattleScene extends Phaser.Scene {
         const atCrystal = this.stageMode === "crystal" && !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
         const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.spawnPoint();
         const e = this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage());
-        // octopi swim a bit slower than monsters walk
-        if (this.arena.sea) e.speedMult *= 0.7;
+        // octopi swim a bit slower than monsters walk, and start out under the water
+        if (this.arena.sea) {
+          e.speedMult *= 0.7;
+          if (!e.type.flying) this.sea.under.add(e);
+        }
         e.huntHero = !atCrystal;
         e.raider = atCrystal;
       }
@@ -3069,6 +3073,7 @@ export class BattleScene extends Phaser.Scene {
     const sea = this.sea;
     this.boatTick(delta);
     if (!fighting) return;
+    if (!sea.tsunami) this.seaMonsters(delta);
     // gulls fly over the sea now and then
     sea.gullT -= delta;
     if (sea.gullT <= 0) {
@@ -3112,20 +3117,91 @@ export class BattleScene extends Phaser.Scene {
     if (left <= 0) this.startTsunami();
   }
 
-  /** Your boat rocks on the waves under you and leaves a white wake when you move. */
+  /**
+   * Your boat: it faces the way you go and swings round with a splash when you turn back, its nose
+   * lifts going up and dips going down, it rocks on the waves, throws spray off the bow at speed and
+   * leaves a white wake.
+   */
   private boatTick(delta: number): void {
     const b = this.boat;
     if (!b) return;
+    const sea = this.sea;
     const t = this.time.now;
-    b.setPosition(this.hero.x, this.hero.y + 24 + Math.sin(t / 420) * 5).setAngle(Math.sin(t / 650) * 4).setDepth(this.hero.y - 1);
-    this.hero.setAngle(Math.sin(t / 650) * 3);
-    const moving = Math.hypot(this.hero.x - this.heroPrev[0], this.hero.y - this.heroPrev[1]) > 1;
-    this.sea.wakeT -= delta;
-    if (moving && this.sea.wakeT <= 0 && effectsOn()) {
-      this.sea.wakeT = 90;
-      const w = this.add.image(this.hero.x + Phaser.Math.Between(-30, 30), this.hero.y + 40, "puff").setTint(0xffffff).setAlpha(0.8).setScale(0.6).setDepth(this.hero.y - 2);
-      this.tweens.add({ targets: w, scale: 1.8, alpha: 0, duration: 700, onComplete: () => w.destroy() });
+    const [vx, vy] = [this.hero.x - this.heroPrev[0], this.hero.y - this.heroPrev[1]];
+    const per = Math.max(1, delta) / 1000;
+    const speed = Math.hypot(vx, vy) / per;
+    const moving = speed > 40;
+    // turning round: a quick swing (it squashes to nothing and back, the other way) and a splash
+    const want = vx < -0.6 ? -1 : vx > 0.6 ? 1 : sea.dir;
+    if (want !== sea.dir) {
+      sea.dir = want;
+      this.tweens.killTweensOf(b);
+      b.setScale(0.15, 1.1);
+      this.tweens.add({ targets: b, scaleX: 1.1, duration: 260, ease: "Back.out" });
+      this.splash(this.hero.x, this.hero.y + 30, 8, 0.6);
     }
+    b.setFlipX(sea.dir < 0);
+    // nose up going up, down going down (smoothed), plus the rocking of the waves
+    const pitch = Phaser.Math.Clamp((vy / per / HERO_SPEED) * 18 * sea.dir, -20, 20);
+    sea.tilt += ((moving ? pitch : 0) - sea.tilt) * Math.min(1, delta / 180);
+    const rock = Math.sin(t / 650) * 4;
+    const bob = Math.sin(t / 420) * 5;
+    b.setPosition(this.hero.x, this.hero.y + 24 + bob).setAngle(sea.tilt + rock).setDepth(this.hero.y - 1);
+    this.hero.setAngle(sea.tilt * 0.5 + rock * 0.7);
+    if (!effectsOn()) return;
+    sea.wakeT -= delta;
+    if (moving && sea.wakeT <= 0) {
+      sea.wakeT = 80;
+      const w = this.add.image(this.hero.x - sea.dir * 80 + Phaser.Math.Between(-15, 15), this.hero.y + 40, "puff").setTint(0xffffff).setAlpha(0.85).setScale(0.6).setDepth(this.hero.y - 2);
+      this.tweens.add({ targets: w, x: w.x - sea.dir * 60, scale: 2, alpha: 0, duration: 800, onComplete: () => w.destroy() });
+    }
+    // spray off the bow at full speed
+    sea.sprayT -= delta;
+    if (speed > HERO_SPEED * 0.7 && sea.sprayT <= 0) {
+      sea.sprayT = 140;
+      this.puff.setParticleTint(0xffffff);
+      this.puff.explode(3, this.hero.x + sea.dir * 95, this.hero.y + 20);
+    }
+  }
+
+  /**
+   * Octopi swim under the water (a dark shape and a trail of bubbles; you cannot hit them there).
+   * Close to you they burst up out of the water to attack; far away again they dive back down.
+   */
+  private seaMonsters(delta: number): void {
+    const sea = this.sea;
+    sea.bubT -= delta;
+    const bubbles = sea.bubT <= 0 && effectsOn();
+    if (bubbles) sea.bubT = 260;
+    for (const e of this.enemies) {
+      if (e.type.flying || e.type.boss) continue;
+      const d = Math.hypot(e.img.x - this.hero.x, e.img.y - this.hero.y);
+      const under = sea.under.has(e);
+      if (under && d < 320) {
+        // up it comes!
+        sea.under.delete(e);
+        e.img.clearTint();
+        this.tweens.add({ targets: e.img, alpha: 1, duration: 160 });
+        this.tweens.add({ targets: e.img, y: e.img.y - 40, duration: 180, yoyo: true, ease: "Quad.out" });
+        e.aura?.setVisible(true);
+        e.badge?.setVisible(true);
+        this.splash(e.img.x, e.img.y, 10, 0.7);
+        e.atkTimer = Math.max(e.atkTimer, 250);
+      } else if (!under && d > 800) {
+        sea.under.add(e);
+        this.splash(e.img.x, e.img.y, 6, 0.5);
+      }
+      if (sea.under.has(e)) {
+        e.img.setAlpha(0.28).setTint(0x2a4a8a);
+        e.aura?.setVisible(false);
+        e.badge?.setVisible(false);
+        if (bubbles && Math.random() < 0.5) {
+          const bub = this.add.circle(e.img.x + Phaser.Math.Between(-20, 20), e.img.y - 30, 5 + Math.random() * 4).setStrokeStyle(3, 0xffffff, 0.8).setDepth(e.img.y + 1);
+          this.tweens.add({ targets: bub, y: bub.y - 40, alpha: 0, duration: 600, onComplete: () => bub.destroy() });
+        }
+      }
+    }
+    for (const e of [...sea.under]) if (!this.enemies.includes(e)) sea.under.delete(e);
   }
 
   /** A splash of white water. */
@@ -4405,7 +4481,8 @@ export class BattleScene extends Phaser.Scene {
       trail.startFollow(die);
       if (rank >= 5) sfx.charge(3);
     }
-    const rolls = rank <= 2 && Math.random() < 0.3;
+    const atSea = !!this.arena.sea;
+    const rolls = !atSea && rank <= 2 && Math.random() < 0.3;
     this.tweens.add({
       targets: die, y: y - 40, duration: fall, ease: "Quad.in",
       onComplete: () => {
@@ -4422,9 +4499,10 @@ export class BattleScene extends Phaser.Scene {
         sfx.boom();
         buzz(30 + rank * 15);
         if (rank >= 4) this.cameras.main.flash(120 + rank * 20, (color >> 16) & 255, (color >> 8) & 255, color & 255);
-        this.puff.setParticleTint(0xd8c8a8);
+        this.puff.setParticleTint(atSea ? 0xe8f8ff : 0xd8c8a8);
         this.puff.explode(20 + rank * 6, x, y);
-        this.stars.explode(6 + rank * 3, x, y - 80);
+        if (atSea) this.splash(x, y, 24 + rank * 6, 1.2 + rank * 0.15);
+        else this.stars.explode(6 + rank * 3, x, y - 80);
         if (rank >= 2) {
           this.sparks.setParticleTint(color);
           this.sparks.explode(15 + rank * 8, x, y - 60);
@@ -4436,8 +4514,10 @@ export class BattleScene extends Phaser.Scene {
           const wave = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(14, k ? color : 0xffffff, 0.9).setDepth(5).setScale(0.4);
           this.tweens.add({ targets: wave, scale: 1.8 + k * 0.4, alpha: 0, duration: 450 + k * 120, delay: k * 110, ease: "Quad.out", onComplete: () => wave.destroy() });
         }
-        const crack = this.add.image(x, y, "dice_crack").setDepth(3).setScale(1 + rank * 0.18);
-        this.tweens.add({ targets: crack, alpha: 0, delay: 2200, duration: 800, onComplete: () => crack.destroy() });
+        if (!atSea) {
+          const crack = this.add.image(x, y, "dice_crack").setDepth(3).setScale(1 + rank * 0.18);
+          this.tweens.add({ targets: crack, alpha: 0, delay: 2200, duration: 800, onComplete: () => crack.destroy() });
+        }
         if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
           this.hurt(dmg);
           this.callout(rank >= 5 ? `${tier} SMASH!` : "SQUASHED!", "#ff8a8a");
@@ -4471,6 +4551,20 @@ export class BattleScene extends Phaser.Scene {
             },
           });
           this.tweens.add({ targets: die, alpha: 0, delay: 1300, duration: 300, onComplete: () => die.destroy() });
+          return;
+        }
+        if (atSea) {
+          // it goes under: sinks, turns blue and fades, with bubbles coming up after it
+          die.setDepth(y - 5);
+          this.tweens.add({ targets: die, y: y + 60, scale: size * 0.55, angle: die.angle + Phaser.Math.Between(-60, 60), alpha: 0, duration: 1100, ease: "Quad.in", onComplete: () => die.destroy() });
+          this.tweens.addCounter({ from: 0, to: 100, duration: 500, onUpdate: (tw) => {
+            const k = (tw.getValue() ?? 0) / 100;
+            die.setTint(Phaser.Display.Color.GetColor(255 - 160 * k, 255 - 90 * k, 255));
+          } });
+          if (effectsOn()) for (let b = 0; b < 6; b++) {
+            const bub = this.add.circle(x + Phaser.Math.Between(-40, 40), y + 20, 6 + Math.random() * 6).setStrokeStyle(3, 0xffffff, 0.9).setDepth(y + 1);
+            this.tweens.add({ targets: bub, y: bub.y - 70 - Math.random() * 40, alpha: 0, scale: 1.6, delay: 300 + b * 120, duration: 700, onComplete: () => bub.destroy() });
+          }
           return;
         }
         this.tweens.add({ targets: die, y: y - 110, duration: 200, yoyo: true, ease: "Quad.out" });
