@@ -4,6 +4,7 @@ import {
   starPath, twinkle,
 } from "./draw";
 import { Toon, toon } from "./toon";
+import { octopus } from "./sea";
 import { WALK_KEYS, WALK_POSES, arms, head, legs, squash, withPose } from "./pose";
 
 const EYE = "#24161e";
@@ -351,6 +352,9 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   e_crow: [170, 110, bat(0x3a3a4a, true)],
   e_vulture: [170, 110, bat(0x9a6a4a, true)],
   e_cactus: [130, 158, cactus],
+  // the sea stage's octopi (purple and red)
+  e_octo: [150, 150, octopus("#b46ad8", "#6a2a9a")],
+  e_octo_r: [150, 150, octopus("#ff7a5a", "#a8302a")],
 };
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {

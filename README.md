@@ -232,10 +232,17 @@ hour of fishing brings.
   What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
   the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
   The tutorial's roll and Boss Rush steps wait until those open.
-- **Developer x3**: with developer mode on (tap the Map title 5 times), an x1/x3 button under Pause runs
-  the whole fight three times as fast, for testing.
-- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 5 modes up to 100 (stage 6 is
-  the first Air Zone). The lobby button, the START popup and the map card show which one is next.
+- **The sea (stage 6, then every 5 stages)**: a small patch of sea that fits on one screen (the camera stays
+  put). You ride a little boat; dice fall from the sky, whale shadows grow under you then the whale bursts up,
+  purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
+  up every 30 s (1-6). After 3:00 a storm rolls in (rain, lightning) and three tsunami waves rush in from every
+  side, each faster; only the sandy islands that rise before each wave are safe. Survive all three to win.
+- **Buildings are solid**: houses, ruins and the village gate's posts block you (you slide along their walls).
+- **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
+  in fights, and a DEV button in the lobby: play any stage (1-100) starting at the beginning, the middle,
+  near the end or right at the boss / finale (all dice found, the beast fed, the tsunami...).
+- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 5 modes up to 100: the Sea,
+  Crystal, Feed the Beast, Air Zone, Boss Battle (stage 6 is the first Sea). The lobby button, the START popup and the map card show which one is next.
   1. **Air Zone**: a green square (two thirds as wide as the old 10%-of-the-map zone) is the only place with air. Every 30 s it moves
      (the next spot blinks yellow 8 s early, with an arrow). Outside it your air lasts 9 s, then you choke;
      a ring around you shows your air, and O2 bubbles floating in the fog give +35% air.

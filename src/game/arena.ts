@@ -36,6 +36,8 @@ export interface Arena {
   h: number;
   /** story paths: where you start, where the path ends (y) and the strip you can walk on (x) */
   path?: { kind: PathKind; startY: number; endY: number; x0: number; x1: number };
+  /** the sea stage: open water, nothing on it */
+  sea?: boolean;
 }
 
 /** A story path: through the woods to the village, or down to the sea. */
@@ -154,6 +156,16 @@ function buildPath(land: Region, kind: PathKind): Arena {
   const patches: Patch[] = [];
   for (let y = 300; y < h; y += 260) patches.push({ x: mid + (rand() - 0.5) * 900, y: y + rand() * 120, r: 90 + rand() * 120 });
   return { land, center: [mid, startY], objects, patches, w, h, path: { kind, startY, endY, x0, x1 } };
+}
+
+/** The sea stage: a small patch of open sea (you are on a boat in the middle of it). */
+export const SEA_W = 1600;
+export const SEA_H = 2600;
+
+export function getSeaArena(land: Region): Arena {
+  const a: Arena = { land, center: [SEA_W / 2, SEA_H / 2], objects: [], patches: [], w: SEA_W, h: SEA_H, sea: true };
+  useArena(a);
+  return a;
 }
 
 /** The field you are on: keeps everyone inside it (set by getArena / getPathArena). */

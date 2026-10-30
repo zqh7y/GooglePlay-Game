@@ -811,6 +811,7 @@ export class UIScene extends Phaser.Scene implements Host {
       this.toast(save.afk ? "AFK on: your hero walks around and picks up dice" : "AFK off: walk with the joystick", "#b6f59a");
     });
     side(5, "icon_trophy", "Ranks", () => showLeaderboard(this, this, () => (this.openModal = null)));
+    if (DEV_TOOLS) side(6, "icon_gear", "DEV", () => this.showDev());
     this.buildEventCard();
     this.buildDiceEventCard();
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
@@ -1163,6 +1164,10 @@ export class UIScene extends Phaser.Scene implements Host {
       const healing = battle.sealsTotal > 0 && battle.seals < battle.sealsTotal;
       const clock = battle.left >= 0 ? `  •  ${mmss(battle.left)} LEFT` : "";
       this.progressText.setText(`BOSS  ${Math.ceil(battle.bossFrac * 100)}%${healing ? "  •  HEALING" : ""}${clock}`);
+    } else if (battle.stageMode === "sea" && battle.left < 0 && battle.mode === "run" && battle.time > 1000) {
+      // the tsunami: the bar flashes
+      drawBar(g, 24, 74, W - 48, 34, 1, time % 500 < 250 ? 0x4fa8ff : 0xffffff);
+      this.progressText.setText("TSUNAMI!");
     } else if (battle.limit) {
       // a story chapter's clock: the time left, red when it runs low
       // (the full time until the clock starts)
@@ -1452,7 +1457,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** Rows of run statistics for the defeat screen. */
   private statRows(m: Modal, st: RunStats, time: number, y0: number): number {
     const rows: [string, string, string][] = [
-      ["icon_clock", `Survived ${mmss(time)} / ${mmss(battle.limit || STAGE_MS)}`, "#4a2f1d"],
+      ["icon_clock", `Survived ${mmss(time)} / ${mmss(battle.limit || (battle.stageMode === "sea" ? 180000 : STAGE_MS))}`, "#4a2f1d"],
       ["icon_skull", `${fmt(st.kills)} monsters defeated`, "#4a2f1d"],
       ["icon_sword", `${fmt(st.damage)} damage dealt`, "#4a2f1d"],
       ["icon_cash", `+${fmt(Math.floor(st.earned))} money`, "#3f9a4f"],
@@ -1593,6 +1598,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const steps: Record<StageMode, [string, string][]> = {
       path: [["hero", "RUN UP"], ["icon_clock", "IN TIME"], ["house_a", "THE END"]],
       hunt: [["die_A", "FIND"], ["torch3d", "TORCHES"], ["mode_boss", "BOSS"]],
+      sea: [["die_S", "DODGE"], ["sea_whale", "FROM BELOW"], ["sea_island", "TSUNAMI"]],
       air: [["hero", "STAY IN"], ["mode_air", "THE AIR"], ["icon_clock", "IT MOVES"]],
       crystal: [["mode_crystal", "GUARD IT"], ["icon_shield", "SHIELD"], ["mode_boss", "BOSS 5:00"]],
       feed: [["mode_feed", "GRAB"], ["beast_cage", "FEED x6"], ["pk_heart", "FRIEND!"]],
@@ -1656,6 +1662,62 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: card, scale: 1, duration: 420, ease: "Back.out" });
     sfx.fanfare();
     this.time.delayedCall(mode === "boss" ? 3400 : 3900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
+  }
+
+  /**
+   * Developer panel: play any stage (1-100), starting at the beginning, the middle, near the end or
+   * right at the boss / finale.
+   */
+  private showDev(): void {
+    if (battle.mode !== "lobby") return;
+    const h = 1180;
+    let stage = save.stage;
+    let jump: typeof battle.devJump = "start";
+    const m = this.showModal(modal(this, 920, h, "DEVELOPER", "purple", () => (this.openModal = null)));
+    const b = m.body;
+    const num = text(this, 0, -h / 2 + 200, "", 110, "#4a2f1d", { stroke: false });
+    const what = label(this, 0, -h / 2 + 290, "", 34, "#9a5ad0", 760);
+    const show = () => {
+      num.setText(`STAGE ${stage}`);
+      what.setText(stageInfo(stage).name);
+    };
+    show();
+    b.add([num, what]);
+    const step = (d: number) => {
+      stage = Phaser.Math.Clamp(stage + d, 1, MAX_STAGE);
+      sfx.click();
+      show();
+    };
+    [[-10, "-10"], [-1, "-1"], [1, "+1"], [10, "+10"]].forEach(([d, s2], i) => b.add(button(this, -330 + i * 220, -h / 2 + 400, 190, 100, "peach", s2 as string, () => step(d as number), { size: 40 })));
+    // quick picks: the story and the first sea
+    [1, 2, 3, 4, 5, 6].forEach((n, i) => b.add(button(this, -375 + i * 150, -h / 2 + 530, 130, 90, "blue", `${n}`, () => {
+      stage = n;
+      sfx.click();
+      show();
+    }, { size: 38 })));
+    b.add(text(this, 0, -h / 2 + 650, "START AT", 40, "#4a2f1d", { stroke: false }));
+    const opts: [typeof battle.devJump, string][] = [["start", "BEGINNING"], ["mid", "MIDDLE"], ["end", "NEAR END"], ["boss", "BOSS / FINALE"]];
+    const btns: Button[] = [];
+    const paint = () => opts.forEach(([k], i) => btns[i].setColor(k === jump ? "green" : "grey"));
+    opts.forEach(([k, s2], i) => {
+      const bt = button(this, i % 2 ? 200 : -200, -h / 2 + 760 + Math.floor(i / 2) * 120, 380, 100, "grey", s2, () => {
+        jump = k;
+        sfx.click();
+        paint();
+      }, { size: 32 });
+      btns.push(bt);
+      b.add(bt);
+    });
+    paint();
+    b.add(button(this, 0, h / 2 - 110, 560, 130, "green", "PLAY", () => {
+      // developer mode opens every stage
+      save.dev = true;
+      persist();
+      battle.devJump = jump;
+      m.close();
+      this.pickStage(stage);
+      this.time.delayedCall(regionForStage(stage).id !== this.battleScene.landId ? 900 : 200, () => this.game.events.emit("battle-start"));
+    }, { size: 54 }));
   }
 
   /** Hurry up (or the last seconds): the screen edges pulse red. */

@@ -5,10 +5,10 @@ import { STORY_STAGES, storyFor } from "./story";
  * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
  * round a cycle: Air Zone, Crystal, Feed the Beast, Crystal, Boss Battle, and again.
  */
-export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt";
+export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea";
 
 /** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
-export const MODE_ORDER: StageMode[] = ["air", "crystal", "feed", "crystal", "boss"];
+export const MODE_ORDER: StageMode[] = ["sea", "crystal", "feed", "air", "boss"];
 
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
@@ -53,6 +53,10 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
   path: {
     name: "THE PATH", banner: "RUN!", icon: "icon_clock", color: 0x6ab84a, css: "#c8f0a0",
     goal: "Reach the end of the path!",
+  },
+  sea: {
+    name: "SEA STORM", banner: "SEA STORM!", icon: "mode_sea", color: 0x3a8ae0, css: "#9ad8ff",
+    goal: "Survive the sea, then the tsunami!",
   },
   hunt: {
     name: "DICE HUNT", banner: "FIND THE DICE!", icon: "die_A", color: 0xffb03a, css: "#ffe0a0",

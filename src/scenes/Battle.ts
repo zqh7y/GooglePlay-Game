@@ -29,12 +29,13 @@ import { walkKey } from "../art/characters";
 import { makeBossFxTextures, orbTexture } from "../art/bossfx";
 import { makePlaceTextures } from "../art/places";
 import { makeStoryTextures } from "../art/story";
+import { makeSeaTextures } from "../art/sea";
 import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
 import { Night } from "../game/night";
 import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
-import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getPathArena } from "../game/arena";
+import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getPathArena, getSeaArena } from "../game/arena";
 import { GAME_W, Layout, layoutFor } from "../layout";
 import { RAIN_WIN_DROPS, dodgeDrops } from "../data/diceEvent";
 import { questEvent } from "../systems/goals";
@@ -57,6 +58,8 @@ const ZOOM = 1 / 1.66;
 const TOP = 100000;
 /** the story's big boss (stage 4) is this much tougher than a Boss Battle's big boss: you start maxed out */
 const BIG_STORY_BOSS = 5;
+/** the sea stage: 3:00 of attacks before the tsunami */
+const SEA_MS = 180000;
 const LOBBY_ZOOM = 0.85;
 const HERO_SPEED = 390;
 /** Pets run after monsters this far from you, and come back if you get farther away. */
@@ -161,6 +164,8 @@ export const battle = {
   path: false,
   /** developer x3: how fast the fight runs */
   speed: 1,
+  /** developer: where the next fight starts (the beginning, the middle, near the end, the boss) */
+  devJump: "start" as "start" | "mid" | "end" | "boss",
   goal: null as { frac: number; text: string; color: number; icon: string; alarm: boolean } | null,
 };
 
@@ -530,6 +535,16 @@ export class BattleScene extends Phaser.Scene {
   private paceT = 12000;
   private ambientT = 6000;
   private halfSaid = false;
+  /** the sea stage: attack level, timers, your boat, the tsunami's waves and the islands */
+  private sea = {
+    lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0,
+    tsunami: 0, phase: "calm" as "calm" | "warn" | "wave" | "rest", phaseT: 0, waveP: 0, hit: false,
+    waves: [] as Phaser.GameObjects.TileSprite[], islands: [] as { x: number; y: number; r: number; objs: Phaser.GameObjects.GameObject[] }[],
+    rain: null as Phaser.GameObjects.Particles.ParticleEmitter | null,
+  };
+  private boat: Phaser.GameObjects.Image | null = null;
+  /** things you cannot walk through (houses, ruins, the gate's posts) */
+  private solids: Phaser.Geom.Rectangle[] = [];
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
   private walkTimer = 0;
@@ -659,6 +674,7 @@ export class BattleScene extends Phaser.Scene {
     makeModeTextures(this);
     makeBeastTextures(this);
     makeStoryTextures(this);
+    makeSeaTextures(this);
     this.stageMode = battle.stageMode = this.rush ? "crystal" : modeForStage(save.stage);
     // the story is at night: the lobby too (a little lighter than the fights)
     const nightLobby = !this.rush && !data?.event && storyFor(save.stage);
@@ -695,13 +711,17 @@ export class BattleScene extends Phaser.Scene {
     this.paceT = 12000;
     this.ambientT = 6000;
     this.halfSaid = false;
+    this.sea = { lv: 1, diceT: 3000, whaleT: 8000, tentT: 4500, gullT: 0, wakeT: 0, tsunami: 0, phase: "calm", phaseT: 0, waveP: 0, hit: false, waves: [], islands: [], rain: null };
+    this.boat = null;
+    this.solids = [];
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
     this.land = regionForStage(save.stage);
     // story paths are their own long map: the fight starts on it (the lobby is the open land)
     const onPath = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "path";
-    this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village") : getArena(this.land.id);
+    const onSea = !this.rush && !data?.event && !!data?.autostart && modeForStage(save.stage) === "sea";
+    this.arena = onPath ? getPathArena(this.land, save.stage >= 5 ? "sea" : "village") : onSea ? getSeaArena(this.land) : getArena(this.land.id);
     Object.assign(this, {
       pets: [], enemies: [], shots: [], bullets: [], rocks: [], pickups: [], food: [], dmgTexts: [], cashTexts: [],
       state: "lobby", elapsed: 0, minute: 0, shielded: false, hurtAt: 0, stillFor: 0, level: 1, xp: 0, pendingLevels: 0, pendingSkills: 0, gadgetOpts: [], skills: {},
@@ -719,7 +739,7 @@ export class BattleScene extends Phaser.Scene {
     Object.assign(battle, {
       mode: "lobby", time: 0, bossFrac: -1, crystal: 1, hp: 1, level: 1, xp: 0, dps: 0, streak: 0, choosing: false,
       shielded: false, shieldLeft: SHIELD_MS, gadgets: this.gadgets, skills: this.skills, stats: this.stats,
-      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path,
+      bossFight: false, rush: this.rush, rushBoss: save.stage, rushLeft: RUSH_MS, seals: 0, sealsTotal: 0, limit: 0, left: -1, path: !!this.arena.path || !!this.arena.sea,
     });
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
@@ -962,7 +982,8 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     // a story path is a map of its own: the world is rebuilt for it
-    if (!this.eventRun && modeForStage(save.stage) === "path" && !this.arena.path) {
+    const own = modeForStage(save.stage);
+    if (!this.eventRun && ((own === "path" && !this.arena.path) || (own === "sea" && !this.arena.sea))) {
       this.enter("battle", () => this.scene.restart({ autostart: true }));
       return;
     }
@@ -1006,7 +1027,8 @@ export class BattleScene extends Phaser.Scene {
     this.stats = freshStats();
     battle.stats = this.stats;
     battle.mode = "run";
-    this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
+    if (this.arena.sea) this.seaCamera(900);
+    else this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
     if (!this.rush) this.game.events.emit("mode-intro", this.stageMode, !!this.story);
@@ -1014,11 +1036,12 @@ export class BattleScene extends Phaser.Scene {
     // this stage's boss: its walk frames are made now, a little at a time, so it lands without a hitch
     if (!this.rush) this.prepareBoss(save.stage);
     // a story chapter: its card, then the camera flies over to the main goal and back
-    const tour = this.story ? this.storyTour() : 0;
+    const tour = this.story && battle.devJump === "start" ? this.storyTour() : 0;
     this.time.delayedCall(this.story ? Math.max(2400, tour) : 1500, () => {
       if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
       if (this.stageMode === "boss") this.time.delayedCall(this.story ? 1500 : 900, () => this.state === "fight" && this.bossCutscene());
+      this.devJumpTo();
       music.play("battle");
       this.game.events.emit("stage-start");
     });
@@ -1155,7 +1178,8 @@ export class BattleScene extends Phaser.Scene {
     const a = this.arena;
     const keys = makeGround(this, a);
     const s = 1 / GROUND_SCALE;
-    this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
+    if (a.sea) this.drawSea();
+    else this.add.tileSprite(0, 0, a.w * GROUND_SCALE, a.h * GROUND_SCALE, keys.tile).setOrigin(0).setScale(s).setDepth(-1000);
     // toaster mode: fewer ground patches and scenery
     const toaster = save.settings.toaster;
     a.patches.forEach((p, i) => {
@@ -1165,7 +1189,7 @@ export class BattleScene extends Phaser.Scene {
     });
     const [cx, cy] = a.center;
     if (a.path) this.drawPath();
-    else this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
+    else if (!a.sea) this.add.image(cx, cy + 40, keys.circle).setScale(s).setDepth(-800);
     a.objects.forEach((o, i) => {
       if (toaster && i % 3) return;
       const img = this.add.image(o.x, o.y, o.tex).setOrigin(0.5, 1).setDepth(o.y).setFlipX(!!o.flip);
@@ -1193,7 +1217,7 @@ export class BattleScene extends Phaser.Scene {
     this.crystal.setVisible(false);
     glow.setVisible(false);
     this.crystalSparkle.stop();
-    if (!this.rush && !a.path) this.refreshSign();
+    if (!this.rush && !a.path && !a.sea) this.refreshSign();
   }
 
   /**
@@ -1223,8 +1247,10 @@ export class BattleScene extends Phaser.Scene {
         [mid - 560, 1250, "house_a"], [mid + 560, 1200, "house_b"], [mid - 620, 760, "house_b"], [mid + 640, 720, "house_a"],
         [mid - 300, 380, "house_a"], [mid + 300, 400, "house_b"],
       ];
+      for (const x of [mid - 400, mid + 400]) this.solid(x + 22, gy, 70, 50);
       for (const [x, y, key] of houses) {
         add(this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(y), x, y);
+        this.solid(x, y, 360, 150);
         // the windows glow in the night
         for (const dx of [-60, 90]) this.lamps.push({ x: x + dx, y: y - 140, r: 230 });
         add(this.add.image(x, y - 140, "warm_glow").setScale(3.6).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8701), x, y);
@@ -1274,6 +1300,16 @@ export class BattleScene extends Phaser.Scene {
     this.lamps.push({ x, y: y - 100, r: 340 });
   }
 
+  /** A building's footprint (centred on x, its front edge on y): you cannot walk through it. */
+  private solid(x: number, y: number, w: number, h: number): void {
+    this.solids.push(new Phaser.Geom.Rectangle(x - w / 2, y - h, w, h + 10));
+  }
+
+  private blocked(x: number, y: number): boolean {
+    for (const r of this.solids) if (r.contains(x, y)) return true;
+    return false;
+  }
+
   /** A coloured glow over the night (so things that shine show in the dark). */
   private topGlow(x: number, y: number, scale: number, tint: number): Phaser.GameObjects.Image {
     const g = this.add.image(x, y, "glow").setTint(tint).setScale(scale).setAlpha(0.7).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8702);
@@ -1296,7 +1332,7 @@ export class BattleScene extends Phaser.Scene {
    * the blocks between, and at stage 2 two of them still burnt out.
    */
   private drawPlace(): void {
-    if (this.rush || this.arena.path || this.land.id !== "village") return;
+    if (this.rush || this.arena.path || this.arena.sea || this.land.id !== "village") return;
     const [cx, cy] = this.arena.center;
     if (save.stage <= 1) {
       const [fx, fy] = [cx + 380, cy + 420];
@@ -1336,6 +1372,7 @@ export class BattleScene extends Phaser.Scene {
     for (const [dx, dy, key] of homes) {
       const [x, y] = [cx + dx, cy + dy];
       this.addStatic(this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(y).setFlipX(key === "ruin" && dx > 0), x, y);
+      this.solid(x, y, key === "ruin" ? 470 : 360, 150);
       if (key === "ruin") {
         if (effectsOn()) this.addStatic(this.add.particles(x, y - 300, "puff", {
           x: { min: -120, max: 120 }, lifespan: 2400, speedY: { min: -80, max: -40 }, scale: { start: 0.6, end: 2.2 }, alpha: { start: 0.35, end: 0 },
@@ -2441,8 +2478,14 @@ export class BattleScene extends Phaser.Scene {
       this.stillFor = 0;
       const step = (HERO_SPEED * moveSpeedMult() * (1 + 0.12 * this.lv("zoom")) * (this.rush ? 1 / RUSH_SLOW : 1) * delta) / 1000;
       const p = this.arena.path;
-      const nx = p ? Phaser.Math.Clamp(this.hero.x + vx * step, p.x0 + 40, p.x1 - 40) : clampX(this.hero.x + vx * step);
-      const ny = p ? Math.min(clampY(this.hero.y + vy * step), p.startY + 150) : clampY(this.hero.y + vy * step);
+      let nx = p ? Phaser.Math.Clamp(this.hero.x + vx * step, p.x0 + 40, p.x1 - 40) : clampX(this.hero.x + vx * step);
+      let ny = p ? Math.min(clampY(this.hero.y + vy * step), p.startY + 150) : clampY(this.hero.y + vy * step);
+      // buildings are solid: slide along their walls
+      if (this.solids.length && this.blocked(nx, ny)) {
+        if (!this.blocked(nx, this.hero.y)) ny = this.hero.y;
+        else if (!this.blocked(this.hero.x, ny)) nx = this.hero.x;
+        else [nx, ny] = [this.hero.x, this.hero.y];
+      }
       this.hero.setPosition(nx, ny).setScale(1);
       if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
       this.walkTimer += delta;
@@ -2625,8 +2668,8 @@ export class BattleScene extends Phaser.Scene {
       this.minute = minute;
       questEvent("wave");
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
-      const own = !!this.story && this.stageMode !== "feed";
-      if (own && this.state === "fight") {
+      const own = (!!this.story && this.stageMode !== "feed") || this.stageMode === "sea";
+      if (own && this.state === "fight" && !this.arena.sea) {
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
       } else if (!own && minute < MINUTES) {
         sfx.alarm();
@@ -2641,10 +2684,17 @@ export class BattleScene extends Phaser.Scene {
       this.crystalDieAt += CRYSTAL_DIE_MS;
       this.crystalDie();
     }
-    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed")) this.bossCutscene();
+    if (this.state === "fight" && this.elapsed >= STAGE_MS && (!this.story || this.stageMode === "feed") && this.stageMode !== "sea") this.bossCutscene();
   }
 
   private types(): Record<"a" | "b" | "f", EnemyType> {
+    if (this.stageMode === "sea") {
+      return {
+        a: { tex: "e_octo", stats: WALKER_A, fx: 0xb46ad8 },
+        b: { tex: "e_octo_r", stats: WALKER_B, fx: 0xff7a5a },
+        f: { tex: "e_crow", stats: FLYER, fx: 0xffffff, flying: true },
+      };
+    }
     const [a, b, f] = this.land.enemies;
     return {
       a: { tex: a, stats: WALKER_A, fx: 0x9ad46a },
@@ -2663,10 +2713,12 @@ export class BattleScene extends Phaser.Scene {
 
   private spawn(delta: number): void {
     if (this.state !== "fight" || this.stageMode === "boss") return;
+    // the tsunami washes the monsters away
+    if (this.stageMode === "sea" && this.sea.tsunami > 0) return;
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0) {
       // the first stages go a little easier on new players
-      this.spawnTimer = spawnGap(this.minute) * (1 + Math.max(0, 4 - save.stage) / 6) * (this.arena.path ? 0.8 : 1);
+      this.spawnTimer = spawnGap(this.minute) * (1 + Math.max(0, 4 - save.stage) / 6) * (this.arena.path ? 0.8 : 1) * (this.arena.sea ? 2.6 : 1);
       const group = 1 + (save.stage > 40 ? 1 : 0);
       for (let i = 0; i < group && this.enemies.length < MAX_MONSTERS; i++) {
         // while the crystal is open many monsters march on it from far away
@@ -2674,6 +2726,8 @@ export class BattleScene extends Phaser.Scene {
         const atCrystal = this.stageMode === "crystal" && !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
         const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.spawnPoint();
         const e = this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage());
+        // octopi swim a bit slower than monsters walk
+        if (this.arena.sea) e.speedMult *= 0.7;
         e.huntHero = !atCrystal;
         e.raider = atCrystal;
       }
@@ -2694,6 +2748,13 @@ export class BattleScene extends Phaser.Scene {
 
   /** Where a new monster turns up: from the top, out of the trees, or just off screen. */
   private spawnPoint(): [number, number] {
+    // at sea: up out of the water at the edges
+    if (this.arena.sea) {
+      const a = this.arena;
+      const side = Math.floor(Math.random() * 4);
+      const k = Math.random();
+      return side === 0 ? [120 + k * (a.w - 240), 260] : side === 1 ? [120 + k * (a.w - 240), a.h - 120] : side === 2 ? [120, 260 + k * (a.h - 380)] : [a.w - 120, 260 + k * (a.h - 380)];
+    }
     if (this.fromAbove()) {
       const v = this.cameras.main.worldView;
       const p = this.arena.path;
@@ -2875,7 +2936,402 @@ export class BattleScene extends Phaser.Scene {
     if (m === "boss") this.fullPower();
     if (m === "boss" && this.story) this.beastAlly();
     if (m === "path") this.pathStart();
+    if (m === "sea") this.seaStart();
     if (m === "hunt") this.huntStart();
+  }
+
+  /**
+   * Developer: start the fight further on (picked on the DEV panel): the middle, near the end, or
+   * right at the boss (the tsunami at sea, the boss's landing on a path, all dice found in the village).
+   */
+  private devJumpTo(): void {
+    const j = battle.devJump;
+    battle.devJump = "start";
+    if (j === "start" || this.rush || this.stageMode === "boss") return;
+    const m = this.stageMode;
+    const full = this.story?.limit || (m === "sea" ? SEA_MS : STAGE_MS);
+    let at = j === "mid" ? full * 0.5 : j === "end" ? full - 15000 : full - 2500;
+    const p = this.arena.path;
+    if (p) {
+      // up the path: the boss moment is just before the first boss drops in
+      const f = j === "mid" ? 0.5 : j === "end" ? 0.88 : 0.35;
+      at = j === "boss" ? (PATH_BOSSES[save.stage]?.[0] ?? 45000) - 1500 : j === "mid" ? full * 0.5 : full - 20000;
+      this.hero.y = p.startY - (p.startY - p.endY) * f;
+      if (f > LANTERN_AT && this.lantern) this.holdLantern(true);
+      this.pathBosses = this.pathBosses.filter((t) => t >= at);
+    }
+    if (m === "hunt") {
+      const want = j === "mid" ? 10 : HUNT_DICE - 1;
+      for (const q of this.pickups.filter((d) => d.quest).slice(0, Math.max(0, want - this.huntFound))) {
+        this.removePickup(q);
+        this.pickups = this.pickups.filter((d) => d !== q);
+        this.huntFound++;
+      }
+      if (j === "boss") {
+        const last = this.pickups.find((d) => d.quest);
+        if (last) {
+          this.removePickup(last);
+          this.pickups = this.pickups.filter((d) => d !== last);
+        }
+        this.huntDie();
+      }
+      at = j === "mid" ? full * 0.5 : full - 20000;
+    }
+    if (m === "feed" && this.beast) {
+      this.beast.fed = j === "mid" ? 3 : j === "end" ? FEEDS - 1 : FEEDS;
+      if (j === "boss") this.beastFriend();
+      this.beast.foodAt = at + 2000;
+      this.beast.hunger = 1;
+    }
+    if (m === "crystal") this.crystalDieAt = at + CRYSTAL_DIE_MS;
+    this.elapsed = at;
+    this.minute = Math.min(MINUTES, Math.floor(at / 60000));
+    this.saidLeft = Infinity;
+    this.toast(`DEV: ${j === "mid" ? "the middle" : j === "end" ? "near the end" : "the boss / finale"}`, "#e6b8ff");
+  }
+
+  // ── The sea stage (6, 11, 16...)
+
+  /** Open water as far as you can see; buoys on a rope mark the edge of where you can go. */
+  private drawSea(): void {
+    const a = this.arena;
+    const m = 1600;
+    const water = this.add.tileSprite(-m, -m, a.w + m * 2, a.h + m * 2, "sea_tile").setOrigin(0).setDepth(-1000);
+    this.tweens.add({ targets: water, tilePositionY: -256, tilePositionX: 64, duration: 7000, repeat: -1 });
+    // a second, lighter layer of ripples drifting the other way
+    const ripples = this.add.tileSprite(-m, -m, a.w + m * 2, a.h + m * 2, "sea_tile").setOrigin(0).setDepth(-999).setAlpha(0.25).setScale(1.6);
+    this.tweens.add({ targets: ripples, tilePositionX: -256, duration: 9000, repeat: -1 });
+    // the rope of buoys round the edge
+    const g = this.add.graphics().setDepth(-990);
+    g.lineStyle(10, 0xfff3dc, 0.9).strokeRect(40, 160, a.w - 80, a.h - 200);
+    g.lineStyle(4, 0x8a5a32, 1).strokeRect(40, 160, a.w - 80, a.h - 200);
+    const per = (len: number) => Math.max(2, Math.round(len / 260));
+    const buoy = (x: number, y: number, i: number) => {
+      const b = this.add.circle(x, y, 22, i % 2 ? 0xff4a4a : 0xffffff).setStrokeStyle(6, 0x4a2f1d).setDepth(-980);
+      this.tweens.add({ targets: b, y: y - 8, duration: 900 + (i % 5) * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    };
+    let i = 0;
+    for (let k = 0; k <= per(a.w); k++) {
+      buoy(40 + (k / per(a.w)) * (a.w - 80), 160, i++);
+      buoy(40 + (k / per(a.w)) * (a.w - 80), a.h - 40, i++);
+    }
+    for (let k = 1; k < per(a.h); k++) {
+      buoy(40, 160 + (k / per(a.h)) * (a.h - 200), i++);
+      buoy(a.w - 40, 160 + (k / per(a.h)) * (a.h - 200), i++);
+    }
+    // sparkles of sunlight on the water
+    if (effectsOn()) this.add.particles(0, 0, "spark", {
+      x: { min: 0, max: a.w }, y: { min: 160, max: a.h }, lifespan: 900, scale: { start: 0.5, end: 0 }, alpha: { start: 0.9, end: 0 },
+      tint: [0xffffff, 0xd8f4ff], frequency: 90, blendMode: Phaser.BlendModes.ADD,
+    }).setDepth(-970);
+  }
+
+  /** The whole patch of sea on screen at once: the camera stays put, zoomed to fit (below the HUD). */
+  private seaCamera(ms: number): void {
+    const a = this.arena;
+    const cam = this.cameras.main;
+    const { width: W, height: H } = this.scale;
+    const top = this.L.hudBottom + 20;
+    const zoom = Math.min(W / (a.w + 80), (H - top - 60) / (a.h + 80));
+    cam.stopFollow();
+    cam.removeBounds();
+    // the middle of the free part of the screen
+    const midY = (top + H - 60) / 2;
+    const cy = a.h / 2 - (midY - H / 2) / zoom;
+    if (ms) {
+      cam.zoomTo(zoom, ms, "Sine.easeInOut");
+      cam.pan(a.w / 2, cy, ms, "Sine.easeInOut");
+    } else cam.setZoom(zoom).centerOn(a.w / 2, cy);
+  }
+
+  /** Off you go in your little boat: the clock runs 3:00, the attacks get worse every 30 s. */
+  private seaStart(): void {
+    this.boat = this.add.image(this.hero.x, this.hero.y + 20, "sea_boat").setOrigin(0.5, 0.7).setScale(1.1);
+    battle.limit = SEA_MS;
+    this.time.delayedCall(1700, () => {
+      this.toast("Dodge the falling dice and what comes up from below! Survive 3:00", "#9ad8ff");
+      sfx.shield(true);
+    });
+    // gulls circling, now and then
+    this.sea.gullT = 4000;
+  }
+
+  private seaTick(delta: number, fighting: boolean): void {
+    const sea = this.sea;
+    this.boatTick(delta);
+    if (!fighting) return;
+    // gulls fly over the sea now and then
+    sea.gullT -= delta;
+    if (sea.gullT <= 0) {
+      sea.gullT = 6000 + Math.random() * 6000;
+      this.gulls();
+    }
+    if (sea.tsunami) {
+      this.tsunamiTick(delta);
+      return;
+    }
+    const left = SEA_MS - this.elapsed;
+    battle.left = Math.max(0, left);
+    const lv = Math.min(6, 1 + Math.floor(this.elapsed / 30000));
+    if (lv > sea.lv) {
+      sea.lv = lv;
+      this.banner(`ATTACK LEVEL ${lv}!`, lv >= 5 ? "red" : "blue", 1000);
+      this.toast(lv >= 5 ? "The sea is furious!" : "More dice, more monsters from below!", "#9ad8ff");
+      sfx.alarm();
+      this.cameras.main.shake(300, 0.006);
+    }
+    // dice from the sky, a whale, tentacles: quicker and more of them each level
+    sea.diceT -= delta;
+    if (sea.diceT <= 0) {
+      sea.diceT = Math.max(700, 2500 - lv * 260) * (0.75 + Math.random() * 0.5);
+      for (let i = 0; i < 1 + (lv >= 4 ? 1 : 0); i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = i === 0 && Math.random() < 0.6 ? Math.random() * 180 : 250 + Math.random() * 600;
+        this.dropBigDie(clampX(this.hero.x + Math.cos(a) * d), clampY(this.hero.y + Math.sin(a) * d));
+      }
+    }
+    sea.whaleT -= delta;
+    if (sea.whaleT <= 0) {
+      sea.whaleT = Math.max(3500, 9500 - lv * 900);
+      this.whaleAttack();
+    }
+    sea.tentT -= delta;
+    if (sea.tentT <= 0) {
+      sea.tentT = Math.max(2000, 5400 - lv * 500);
+      this.tentacles(1 + Math.floor(lv / 2));
+    }
+    if (left <= 0) this.startTsunami();
+  }
+
+  /** Your boat rocks on the waves under you and leaves a white wake when you move. */
+  private boatTick(delta: number): void {
+    const b = this.boat;
+    if (!b) return;
+    const t = this.time.now;
+    b.setPosition(this.hero.x, this.hero.y + 24 + Math.sin(t / 420) * 5).setAngle(Math.sin(t / 650) * 4).setDepth(this.hero.y - 1);
+    this.hero.setAngle(Math.sin(t / 650) * 3);
+    const moving = Math.hypot(this.hero.x - this.heroPrev[0], this.hero.y - this.heroPrev[1]) > 1;
+    this.sea.wakeT -= delta;
+    if (moving && this.sea.wakeT <= 0 && effectsOn()) {
+      this.sea.wakeT = 90;
+      const w = this.add.image(this.hero.x + Phaser.Math.Between(-30, 30), this.hero.y + 40, "puff").setTint(0xffffff).setAlpha(0.8).setScale(0.6).setDepth(this.hero.y - 2);
+      this.tweens.add({ targets: w, scale: 1.8, alpha: 0, duration: 700, onComplete: () => w.destroy() });
+    }
+  }
+
+  /** A splash of white water. */
+  private splash(x: number, y: number, n: number, size = 1): void {
+    this.puff.setParticleTint(0xe8f8ff);
+    this.puff.explode(n, x, y);
+    const ring = this.add.ellipse(x, y, 160 * size, 60 * size).setStrokeStyle(10, 0xffffff, 0.9).setDepth(y + 1);
+    this.tweens.add({ targets: ring, scaleX: 2.4, scaleY: 2.4, alpha: 0, duration: 600, ease: "Quad.out", onComplete: () => ring.destroy() });
+  }
+
+  /** A whale's shadow grows under the water where you are... then it bursts up and crashes down. */
+  private whaleAttack(): void {
+    const [x, y] = [clampX(this.hero.x + Phaser.Math.Between(-140, 140)), clampY(this.hero.y + Phaser.Math.Between(-140, 140))];
+    const R = 250 + this.sea.lv * 12;
+    const shadow = this.add.ellipse(x, y, R * 2, R, 0x0a1a3a, 0.45).setDepth(3).setScale(0.2);
+    const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(10, 0xff4a4a, 0.9).setDepth(4);
+    this.tweens.add({ targets: ring, alpha: 0.3, duration: 160, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: shadow, scale: 1, duration: 1500, ease: "Quad.in" });
+    // bubbles boiling up over it
+    const bub = effectsOn() ? this.add.particles(x, y, "puff", {
+      x: { min: -R * 0.8, max: R * 0.8 }, y: { min: -R * 0.3, max: R * 0.3 }, lifespan: 500, speedY: { min: -60, max: -20 }, scale: { start: 0.2, end: 0.6 },
+      alpha: { start: 0.9, end: 0 }, tint: 0xd8f4ff, frequency: 40,
+    }).setDepth(5) : null;
+    sfx.charge(2);
+    this.time.delayedCall(1500, () => {
+      shadow.destroy();
+      ring.destroy();
+      bub?.destroy();
+      if (!this.fighting) return;
+      const whale = this.add.image(x, y + 60, "sea_whale").setOrigin(0.5, 0.8).setScale(0.3).setDepth(y + 50).setFlipX(Math.random() < 0.5);
+      this.tweens.add({ targets: whale, scale: 1.25, y: y - 140, angle: whale.flipX ? 12 : -12, duration: 380, ease: "Back.out" });
+      this.tweens.add({ targets: whale, y: y + 120, scaleY: 0.6, alpha: 0, delay: 700, duration: 500, ease: "Quad.in", onComplete: () => whale.destroy() });
+      this.splash(x, y, 40, 1.6);
+      this.time.delayedCall(700, () => this.splash(x, y + 20, 30, 1.8));
+      this.cameras.main.shake(450, 0.014);
+      sfx.boom();
+      buzz(180);
+      if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
+        this.hurt(this.heroMax * (0.18 + this.sea.lv * 0.025));
+        this.callout("WHALE!", "#9ad8ff");
+      }
+      for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * 2);
+    });
+  }
+
+  /** Purple rings, then tentacles slam up out of the water. */
+  private tentacles(n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = i === 0 ? Math.random() * 120 : 200 + Math.random() * 450;
+      const [x, y] = [clampX(this.hero.x + Math.cos(a) * d), clampY(this.hero.y + Math.sin(a) * d)];
+      const R = 130;
+      const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(8, 0xb04aff, 0.95).setFillStyle(0x4a1a6a, 0.25).setDepth(4).setScale(0.3);
+      this.tweens.add({ targets: ring, scale: 1, duration: 950, ease: "Quad.in" });
+      this.time.delayedCall(950 + i * 120, () => {
+        ring.destroy();
+        if (!this.fighting) return;
+        const t = this.add.image(x, y + 20, "sea_tentacle").setOrigin(0.5, 1).setScale(1, 0).setDepth(y + 30).setFlipX(Math.random() < 0.5);
+        this.tweens.add({ targets: t, scaleY: 1.15, duration: 160, ease: "Back.out" });
+        this.tweens.add({ targets: t, angle: { from: -6, to: 6 }, duration: 140, yoyo: true, repeat: 2 });
+        this.tweens.add({ targets: t, scaleY: 0, delay: 650, duration: 260, ease: "Quad.in", onComplete: () => t.destroy() });
+        this.splash(x, y, 18, 0.8);
+        sfx.claw();
+        this.cameras.main.shake(140, 0.005);
+        if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 2) < R + HERO_R) {
+          this.hurt(this.heroMax * (0.1 + this.sea.lv * 0.012));
+          this.callout("SLAP!", "#e6b8ff");
+        }
+      });
+    }
+  }
+
+  /** Seagulls flying across the sea (and a feather or two). */
+  private gulls(): void {
+    const a = this.arena;
+    const fromLeft = Math.random() < 0.5;
+    const y = 400 + Math.random() * (a.h - 800);
+    for (let i = 0; i < 3; i++) {
+      const g = this.add.image(fromLeft ? -200 : a.w + 200, y + i * 70 - (i % 2) * 40, "e_crow").setTint(0xffffff).setScale(0.6).setDepth(TOP + 50).setFlipX(!fromLeft);
+      this.tweens.add({ targets: g, x: fromLeft ? a.w + 200 : -200, duration: 5000 + i * 300, delay: i * 200, onComplete: () => g.destroy() });
+      this.tweens.add({ targets: g, scaleY: 0.4, duration: 180, yoyo: true, repeat: -1 });
+    }
+  }
+
+  // ── the tsunami: three waves from every side, each faster; only the islands are safe
+
+  private startTsunami(): void {
+    const sea = this.sea;
+    sea.tsunami = 1;
+    battle.left = -1;
+    battle.limit = 0;
+    for (const e of [...this.enemies]) this.kill(e, true);
+    this.banner("TSUNAMI!", "red", 1400);
+    this.toast("Three giant waves are coming! Get on an island!", "#9ad8ff");
+    sfx.alarm();
+    sfx.thunder();
+    this.cameras.main.flash(200, 255, 255, 255);
+    // the storm rolls in: a dark sky, rain and lightning
+    this.tweens.add({ targets: this.gloom, fillAlpha: 0.32, duration: 1500 });
+    if (effectsOn()) {
+      const a = this.arena;
+      sea.rain = this.add.particles(0, 0, "puff", {
+        x: { min: -400, max: a.w + 400 }, y: { min: -200, max: a.h }, lifespan: 500, speedY: { min: 1600, max: 2000 }, speedX: -300,
+        scaleX: 0.08, scaleY: 0.9, alpha: { start: 0.6, end: 0 }, tint: 0xcfe8ff, frequency: 12,
+      }).setDepth(TOP + 60);
+    }
+    this.time.addEvent({ delay: 3500, repeat: 8, callback: () => {
+      if (!this.fighting) return;
+      this.cameras.main.flash(120, 230, 240, 255);
+      sfx.thunder();
+    } });
+    this.nextWave();
+  }
+
+  /** Islands rise somewhere new; a few seconds later the wave comes from every side. */
+  private nextWave(): void {
+    const sea = this.sea;
+    for (const isl of sea.islands) this.tweens.add({ targets: isl.objs, alpha: 0, scale: 0.5, duration: 400, onComplete: () => isl.objs.forEach((o) => o.destroy()) });
+    sea.islands = [];
+    const a = this.arena;
+    const n = 4 - Math.min(2, sea.tsunami - 1);
+    for (let tries = 0; sea.islands.length < n && tries < 200; tries++) {
+      const [x, y] = [300 + Math.random() * (a.w - 600), 520 + Math.random() * (a.h - 900)];
+      if (sea.islands.some((q) => Math.hypot(q.x - x, q.y - y) < 600)) continue;
+      const img = this.add.image(x, y + 60, "sea_island").setOrigin(0.5, 0.75).setScale(0).setDepth(y - 5);
+      this.tweens.add({ targets: img, scale: 1, duration: 500, ease: "Back.out" });
+      const glow = this.add.ellipse(x, y + 20, 360, 130).setStrokeStyle(10, 0x7aff8a, 0.9).setDepth(y - 6);
+      this.tweens.add({ targets: glow, alpha: 0.3, scaleX: 1.08, scaleY: 1.08, duration: 400, yoyo: true, repeat: -1 });
+      this.splash(x, y + 30, 20, 1.2);
+      sea.islands.push({ x, y: y + 20, r: 150, objs: [img, glow] });
+    }
+    sea.phase = "warn";
+    sea.phaseT = [3200, 2600, 2200][sea.tsunami - 1];
+    sea.hit = false;
+    this.banner(`WAVE ${sea.tsunami}!`, "blue", 900);
+    sfx.hurry();
+  }
+
+  private onIsland(): boolean {
+    return this.sea.islands.some((q) => Math.hypot(this.hero.x - q.x, (this.hero.y - q.y) * 1.8) < q.r);
+  }
+
+  private tsunamiTick(delta: number): void {
+    const sea = this.sea;
+    const a = this.arena;
+    sea.phaseT -= delta;
+    if (sea.phase === "warn") {
+      if (sea.phaseT > 0) return;
+      // the waves rise at all four edges
+      sea.phase = "wave";
+      sea.waveP = 0;
+      const mk = (x: number, y: number, w: number, angle: number) => {
+        const t = this.add.tileSprite(x, y, w, 220, "sea_wave").setOrigin(0.5, 0).setAngle(angle).setDepth(TOP + 40);
+        this.tweens.add({ targets: t, tilePositionX: 256, duration: 800, repeat: -1 });
+        return t;
+      };
+      const big = Math.max(a.w, a.h) + 1200;
+      sea.waves = [mk(a.w / 2, 0, big, 180), mk(a.w / 2, a.h, big, 0), mk(0, a.h / 2, big, 90), mk(a.w, a.h / 2, big, -90)];
+      sfx.whoosh();
+      sfx.boom();
+      this.cameras.main.shake(600, 0.01);
+      return;
+    }
+    if (sea.phase === "wave") {
+      const dur = [6500, 4800, 3400][sea.tsunami - 1];
+      sea.waveP = Math.min(1, sea.waveP + delta / dur);
+      const p = sea.waveP;
+      const [top, bottom, left, right] = [(p * a.h) / 2, a.h - (p * a.h) / 2, (p * a.w) / 2, a.w - (p * a.w) / 2];
+      const [wt, wb, wl, wr] = sea.waves;
+      wt.y = top;
+      wb.y = bottom;
+      wl.x = left;
+      wr.x = right;
+      // foam spraying off the crests
+      if (effectsOn() && Math.random() < 0.5) {
+        this.puff.setParticleTint(0xffffff);
+        this.puff.explode(3, Phaser.Math.Between(0, a.w), top);
+        this.puff.explode(3, Phaser.Math.Between(0, a.w), bottom);
+      }
+      // the wave has rolled over you
+      const over = this.hero.y < top || this.hero.y > bottom || this.hero.x < left || this.hero.x > right;
+      if (over && !sea.hit) {
+        sea.hit = true;
+        if (this.onIsland()) {
+          this.callout("SAFE!", "#b6ff8a");
+          sfx.levelUp();
+        } else {
+          this.hurt(this.heroMax * 0.5);
+          this.splash(this.hero.x, this.hero.y, 50, 2);
+          this.cameras.main.shake(500, 0.02);
+          this.callout("WIPED OUT!", "#9ad8ff");
+        }
+      }
+      if (p >= 1) {
+        for (const w of sea.waves) this.tweens.add({ targets: w, alpha: 0, duration: 400, onComplete: () => w.destroy() });
+        sea.waves = [];
+        this.splash(a.w / 2, a.h / 2, 60, 3);
+        this.cameras.main.shake(400, 0.012);
+        sea.phase = "rest";
+        sea.phaseT = 1400;
+      }
+      return;
+    }
+    if (sea.phase === "rest" && sea.phaseT <= 0) {
+      if (sea.tsunami >= 3) {
+        sea.rain?.destroy();
+        sea.rain = null;
+        this.banner("YOU SURVIVED THE SEA!", "gold", 1200);
+        this.fireworks(a.w / 2, a.h / 2 - 300, 6);
+        this.stageWon();
+        return;
+      }
+      sea.tsunami++;
+      this.nextWave();
+    }
   }
 
   // ── Story: the path (stages 1 and 5)
@@ -3254,6 +3710,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "feed" || this.beast) this.beastTick(delta, fighting);
     if (m === "dice" && fighting) this.rainTick(delta);
+    if (m === "sea") this.seaTick(delta, fighting);
     battle.goal = this.modeGoal();
   }
 
@@ -3265,6 +3722,14 @@ export class BattleScene extends Phaser.Scene {
       const f = Phaser.Math.Clamp((p.startY - this.hero.y) / (p.startY - p.endY), 0, 1);
       const where = p.kind === "sea" ? "SEA" : "VILLAGE";
       return { frac: f, text: `${where} ${Math.floor(f * 100)}%${this.hasLantern ? "" : "  •  find the lantern"}`, color: 0x8ad65a, icon: p.kind === "sea" ? "icon_fish" : "house_a", alarm: battle.left >= 0 && battle.left < 15000 };
+    }
+    if (m === "sea") {
+      const sea = this.sea;
+      if (sea.tsunami) {
+        const safe = this.onIsland();
+        return { frac: sea.phase === "wave" ? sea.waveP : 0, text: `TSUNAMI ${sea.tsunami}/3  •  ${safe ? "SAFE ON THE ISLAND" : "GET ON AN ISLAND!"}`, color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
+      }
+      return { frac: Math.min(1, sea.lv / 6), text: `ATTACK LEVEL ${sea.lv}`, color: sea.lv >= 5 ? 0xf26464 : 0x4fa8ff, icon: "mode_sea", alarm: false };
     }
     if (m === "hunt" && !battle.bossFight) {
       return { frac: this.huntFound / HUNT_DICE, text: `DICE FOUND ${this.huntFound}/${HUNT_DICE}`, color: 0xffb03a, icon: "die_A", alarm: battle.left >= 0 && battle.left < 20000 };
@@ -5979,8 +6444,8 @@ export class BattleScene extends Phaser.Scene {
   /** Minimap, plus arrows to the crystal (when attacked), airdrops, chests, rare dice and the boss; drawn by the UI scene. */
   drawOverlay(g: Phaser.GameObjects.Graphics, mx: number, my: number, size: number, top: number, bottom: number): void {
     g.clear();
-    // a story path has no minimap (the bar at the top shows how far you are)
-    if (this.arena.path) return;
+    // a story path has no minimap (the bar at the top shows how far you are), the sea is all on screen
+    if (this.arena.path || this.arena.sea) return;
     const s = size / ARENA;
     g.lineStyle(6, INK_N, 1).strokeRoundedRect(mx - 3, my - 3, size + 6, size + 6, 12);
     const [hx, hy] = this.arena.center;
@@ -6049,6 +6514,11 @@ export class BattleScene extends Phaser.Scene {
       // the lantern first (it is on the way), then the end of the path
       if (this.lantern) out.push({ x: this.lantern[0].x, y: this.lantern[0].y - 60, icon: "lantern", label: "LANTERN", color: 0xffd24a });
       else out.push({ x: this.arena.w / 2, y: p.endY, icon: p.kind === "sea" ? "icon_fish" : "house_a", label: p.kind === "sea" ? "THE SEA" : "VILLAGE", color: 0x8ad65a });
+    }
+    if (this.stageMode === "sea" && this.sea.tsunami && !this.onIsland()) {
+      const d = (q: { x: number; y: number }) => Math.hypot(q.x - this.hero.x, q.y - this.hero.y);
+      const near = this.sea.islands.reduce<{ x: number; y: number } | null>((a, c) => (!a || d(c) < d(a) ? c : a), null);
+      if (near) out.push({ x: near.x, y: near.y - 60, icon: "sea_island", label: "ISLAND!", color: 0x7ad651 });
     }
     if (this.stageMode === "hunt" && this.state === "fight") {
       const lost = this.pickups.filter((q) => q.quest);
