@@ -187,6 +187,31 @@ export const sfx = {
     tone(1400, 0.35, "sawtooth", 0.04, 300);
     tone(1500, 0.35, "square", 0.025, 340, 0.04);
   },
+  /** night sounds: an owl's two hoots, a cricket's chirps */
+  owl: () => {
+    if (throttle("owl", 3000)) return;
+    tone(392, 0.32, "sine", 0.05, 360);
+    tone(392, 0.5, "sine", 0.05, 340, 0.45);
+  },
+  crickets: () => {
+    if (throttle("crickets", 1500)) return;
+    for (let i = 0; i < 6; i++) tone(4200 + (i % 2) * 300, 0.03, "triangle", 0.012, 0, i * 0.06);
+  },
+  /** the camera sweeping off somewhere */
+  whoosh: () => {
+    burst(0.5, 0.06, 1800);
+    tone(300, 0.45, "sine", 0.03, 900);
+  },
+  /** a firework: a rising whistle, then the bang and crackle */
+  firework: () => {
+    tone(600, 0.35, "sine", 0.03, 1600);
+    burst(0.35, 0.12, 2400);
+    for (let i = 0; i < 5; i++) tone(2000 + i * 300, 0.04, "square", 0.015, 0, 0.4 + i * 0.05);
+  },
+  /** hurry up: a quick double beep */
+  hurry: () => [880, 880, 1175].forEach((f, i) => tone(f, 0.09, "square", 0.045, 0, i * 0.11)),
+  /** a lost die found: a chime that rises with every one */
+  found: (n: number) => [0, 4, 7].forEach((st, i) => tone(523 * Math.pow(2, (n % 12 + st) / 12), 0.14, "triangle", 0.06, 0, i * 0.05)),
 };
 
 // ───────────────────────── music ─────────────────────────

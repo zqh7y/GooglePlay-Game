@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { INK, Ctx, canvasTexture } from "./draw";
+import { INK, Ctx, canvasTexture, rr } from "./draw";
 
 type Pt = [number, number];
 
@@ -406,6 +406,77 @@ export function makeStoryTextures(scene: Phaser.Scene): void {
     for (const x of [24, 45, 66]) poly(c, [[x - 3, 46], [x + 3, 46], [x + 3, 106], [x - 3, 106]], lin(c, x - 3, 0, x + 3, 0, ["#ffe08a", "#8a5a1a"]));
     poly(c, [[14, 104], [76, 104], [70, 122], [20, 122]], lin(c, 14, 0, 76, 0, ["#ffe08a", "#c8902e", "#7a4a12"]));
   });
+  // a cobbled street (tiles both ways): rounded stones with a lit top edge and dark joints
+  canvasTexture(scene, "cobble", 160, 160, (c) => {
+    c.fillStyle = "#6e665e";
+    c.fillRect(0, 0, 160, 160);
+    let sd = 5;
+    const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 5; col++) {
+        const x = col * 32 + (row % 2) * 16 + 2;
+        const y = row * 32 + 2;
+        for (const dx of [0, -160, 160]) {
+          const g = c.createLinearGradient(0, y, 0, y + 28);
+          const tone = 150 + Math.floor(r() * 40);
+          g.addColorStop(0, `rgb(${tone + 30},${tone + 24},${tone + 14})`);
+          g.addColorStop(1, `rgb(${tone - 30},${tone - 34},${tone - 40})`);
+          c.fillStyle = g;
+          rr(c, x + dx, y, 28, 28, 8);
+          c.fill();
+        }
+      }
+    }
+  });
+  // a flame (it flickers by scaling): orange outside, yellow and white inside
+  canvasTexture(scene, "flame", 64, 96, (c) => {
+    const shape = (w: number, top: number, col: string) => {
+      c.fillStyle = col;
+      c.beginPath();
+      c.moveTo(32, top);
+      c.bezierCurveTo(32 + w, 40, 32 + w * 1.1, 70, 32, 94);
+      c.bezierCurveTo(32 - w * 1.1, 70, 32 - w, 40, 32, top);
+      c.fill();
+    };
+    shape(28, 2, "#ff6a1a");
+    shape(20, 22, "#ffb52a");
+    shape(11, 44, "#fff3b0");
+  });
+  // a campfire: crossed logs round a ring of stones
+  canvasTexture(scene, "campfire", 220, 120, (c) => {
+    c.lineJoin = "round";
+    c.lineWidth = 5;
+    c.strokeStyle = INK;
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      const [x, y] = [110 + Math.cos(a) * 92, 80 + Math.sin(a) * 30];
+      c.beginPath();
+      c.ellipse(x, y, 20, 13, 0, 0, Math.PI * 2);
+      c.fillStyle = lin(c, 0, y - 13, 0, y + 13, ["#c8beb0", "#7a7064"]);
+      c.fill();
+      c.stroke();
+    }
+    for (const [x0, y0, x1, y1] of [[50, 95, 170, 60], [50, 60, 170, 95], [110, 50, 110, 104]]) {
+      c.save();
+      c.lineCap = "round";
+      c.lineWidth = 26;
+      c.strokeStyle = INK;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(x1, y1);
+      c.stroke();
+      c.lineWidth = 17;
+      c.strokeStyle = "#8a5228";
+      c.stroke();
+      c.restore();
+    }
+    const g = c.createRadialGradient(110, 78, 2, 110, 78, 40);
+    g.addColorStop(0, "rgba(255,240,160,0.9)");
+    g.addColorStop(1, "rgba(255,120,40,0)");
+    c.fillStyle = g;
+    c.fillRect(60, 40, 100, 80);
+  });
+
   // beach sand and the sea (both tile)
   canvasTexture(scene, "sand_tile", 256, 256, (c) => {
     c.fillStyle = "#f0d8a0";

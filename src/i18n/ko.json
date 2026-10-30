@@ -1088,5 +1088,14 @@
 "PETS": "펫",
 "Roll your dice for pets!": "주사위를 굴려 펫을 얻어요!",
 "The story is done: the whole game is open!": "스토리 끝: 게임 전체가 열렸어요!",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "굴리기가 열렸어요! 주사위로 펫을 얻어요. 굴리기를 열어요!"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "굴리기가 열렸어요! 주사위로 펫을 얻어요. 굴리기를 열어요!",
+"HURRY UP!": "서둘러요!",
+"Too slow! Keep running up the path!": "너무 느려요! 계속 길 위로 달려요!",
+"Find the dice faster! Follow the arrow": "주사위를 더 빨리 찾아요! 화살표를 따라가요",
+"1 MINUTE LEFT!": "1분 남음!",
+"{0} SECONDS!": "{0}초!",
+"HALFWAY THERE!": "절반 왔어요!",
+"HALF THE DICE!": "주사위 절반!",
+"LOST DICE GLOW GOLD": "잃어버린 주사위는 금빛으로 빛나요",
+"up the path!": "길 위로!"
 }

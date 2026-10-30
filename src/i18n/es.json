@@ -1081,5 +1081,14 @@
 "PETS": "MASCOTAS",
 "Roll your dice for pets!": "¡Tira tus dados para conseguir mascotas!",
 "The story is done: the whole game is open!": "La historia terminó: ¡todo el juego está abierto!",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "¡TIRAR está abierto! Tus dados te dan MASCOTAS. ¡Abre TIRAR!"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "¡TIRAR está abierto! Tus dados te dan MASCOTAS. ¡Abre TIRAR!",
+"HURRY UP!": "¡RÁPIDO!",
+"Too slow! Keep running up the path!": "¡Muy lento! ¡Sigue corriendo camino arriba!",
+"Find the dice faster! Follow the arrow": "¡Encuentra los dados más rápido! Sigue la flecha",
+"1 MINUTE LEFT!": "¡QUEDA 1 MINUTO!",
+"{0} SECONDS!": "¡{0} SEGUNDOS!",
+"HALFWAY THERE!": "¡A MITAD DE CAMINO!",
+"HALF THE DICE!": "¡LA MITAD DE LOS DADOS!",
+"LOST DICE GLOW GOLD": "LOS DADOS PERDIDOS BRILLAN DORADOS",
+"up the path!": "¡camino arriba!"
 }

@@ -1093,5 +1093,14 @@
 "PETS": "الحيوانات",
 "Roll your dice for pets!": "ارمِ النرد لتحصل على حيوانات!",
 "The story is done: the whole game is open!": "انتهت القصة: اللعبة كلها مفتوحة!",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "الرمي مفتوح! النرد يعطيك حيوانات. افتح الرمي!"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "الرمي مفتوح! النرد يعطيك حيوانات. افتح الرمي!",
+"HURRY UP!": "أسرع!",
+"Too slow! Keep running up the path!": "بطيء جدًا! واصل الركض في الطريق!",
+"Find the dice faster! Follow the arrow": "اعثر على النرد أسرع! اتبع السهم",
+"1 MINUTE LEFT!": "باقي دقيقة!",
+"{0} SECONDS!": "{0} ثانية!",
+"HALFWAY THERE!": "نصف الطريق!",
+"HALF THE DICE!": "نصف النرد!",
+"LOST DICE GLOW GOLD": "النرد الضائع يلمع ذهبيًا",
+"up the path!": "أعلى الطريق!"
 }

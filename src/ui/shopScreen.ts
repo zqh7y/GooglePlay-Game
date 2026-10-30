@@ -494,6 +494,8 @@ export class ShopScreen extends Screen {
   private bottom: number;
   private max = 0;
   private drag = { on: false, y: 0, oy: 0, moved: 0, x: 0, ox: 0, axis: "" as "" | "x" | "y", strip: false };
+  /** recent finger positions and times (for flicks) */
+  private flick: [number, number][] = [];
   /** the Classic Pack's sideways strip, and how far it can scroll */
   private packStrip: Phaser.GameObjects.Container | null = null;
   /** Each pack strip piece and the x of the step it belongs to (a step fades as one). */
@@ -541,6 +543,9 @@ export class ShopScreen extends Screen {
       const ly = (p.y - this.list.y) / this.k;
       const strip = !!this.packStrip && ly > this.packBox.y0 && ly < this.packBox.y1;
       this.drag = { on: true, y: p.y, oy: this.list.y, moved: 0, x: p.x, ox: this.packStrip?.x ?? 0, axis: "", strip };
+      // a finger on the list stops a glide
+      s.tweens.killTweensOf(this.list);
+      this.flick = [[p.y, s.time.now]];
     });
     s.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (!this.drag.on || !p.isDown) return;
@@ -550,8 +555,36 @@ export class ShopScreen extends Screen {
       if (!this.drag.axis && Math.hypot(dx, dy) > 12) this.drag.axis = this.drag.strip && Math.abs(dx) > Math.abs(dy) ? "x" : "y";
       if (this.drag.axis === "x" && this.packStrip) this.placeStrip(this.drag.ox + dx / this.k);
       else if (this.drag.axis === "y") this.list.y = Phaser.Math.Clamp(this.drag.oy + dy, this.baseY - this.max, this.baseY);
+      this.flick.push([p.y, s.time.now]);
+      if (this.flick.length > 6) this.flick.shift();
     });
-    s.input.on("pointerup", () => (this.drag.on = false));
+    s.input.on("pointerup", () => {
+      const was = this.drag.on && this.drag.axis === "y";
+      this.drag.on = false;
+      if (was) this.glide();
+    });
+  }
+
+  /**
+   * Let go after a swipe: a quick flick glides all the way to the top or the bottom, a gentler
+   * one coasts on a little and slows down.
+   */
+  private glide(): void {
+    const s = this.scene;
+    const pts = this.flick.filter(([, t]) => s.time.now - t < 120);
+    if (pts.length < 2) return;
+    const [y0, t0] = pts[0];
+    const [y1, t1] = pts[pts.length - 1];
+    const v = (y1 - y0) / Math.max(16, t1 - t0);
+    const lo = this.baseY - this.max;
+    const hi = this.baseY;
+    let to: number;
+    if (Math.abs(v) > 1.6) to = v < 0 ? lo : hi;
+    else if (Math.abs(v) > 0.25) to = Phaser.Math.Clamp(this.list.y + v * 420, lo, hi);
+    else return;
+    const dist = Math.abs(to - this.list.y);
+    if (dist < 4) return;
+    s.tweens.add({ targets: this.list, y: to, duration: Phaser.Math.Clamp(dist * 0.6, 280, 700), ease: "Cubic.easeOut" });
   }
 
   /** A tap that was really a scroll should not buy anything. */

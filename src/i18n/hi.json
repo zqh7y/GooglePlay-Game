@@ -1093,5 +1093,14 @@
 "PETS": "पालतू",
 "Roll your dice for pets!": "पालतू पाने के लिए पासे फेंको!",
 "The story is done: the whole game is open!": "कहानी पूरी: पूरा गेम खुल गया!",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "रोल खुल गया! पासे तुम्हें पालतू देते हैं। रोल खोलो!"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "रोल खुल गया! पासे तुम्हें पालतू देते हैं। रोल खोलो!",
+"HURRY UP!": "जल्दी करो!",
+"Too slow! Keep running up the path!": "बहुत धीमे! रास्ते पर ऊपर भागते रहो!",
+"Find the dice faster! Follow the arrow": "पासे जल्दी ढूँढो! तीर के पीछे चलो",
+"1 MINUTE LEFT!": "1 मिनट बचा!",
+"{0} SECONDS!": "{0} सेकंड!",
+"HALFWAY THERE!": "आधा रास्ता!",
+"HALF THE DICE!": "आधे पासे!",
+"LOST DICE GLOW GOLD": "खोए पासे सुनहरे चमकते हैं",
+"up the path!": "रास्ते के ऊपर!"
 }

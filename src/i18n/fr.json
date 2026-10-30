@@ -1061,5 +1061,14 @@
 "PETS": "FAMILIERS",
 "Roll your dice for pets!": "Lance tes dés pour avoir des familiers !",
 "The story is done: the whole game is open!": "L'histoire est finie : tout le jeu est ouvert !",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "LANCER est ouvert ! Tes dés donnent des FAMILIERS. Ouvre LANCER !"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "LANCER est ouvert ! Tes dés donnent des FAMILIERS. Ouvre LANCER !",
+"HURRY UP!": "DÉPÊCHE-TOI !",
+"Too slow! Keep running up the path!": "Trop lent ! Continue de monter le chemin !",
+"Find the dice faster! Follow the arrow": "Trouve les dés plus vite ! Suis la flèche",
+"1 MINUTE LEFT!": "ENCORE 1 MINUTE !",
+"{0} SECONDS!": "{0} SECONDES !",
+"HALFWAY THERE!": "À MI-CHEMIN !",
+"HALF THE DICE!": "LA MOITIÉ DES DÉS !",
+"LOST DICE GLOW GOLD": "LES DÉS PERDUS BRILLENT EN OR",
+"up the path!": "en haut du chemin !"
 }

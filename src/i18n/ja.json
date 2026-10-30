@@ -1090,5 +1090,14 @@
 "PETS": "ペット",
 "Roll your dice for pets!": "ダイスを振ってペットをゲット！",
 "The story is done: the whole game is open!": "ストーリー完了：ゲームのすべてが開放された！",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "ロールが開放！ダイスでペットが出るよ。ロールを開こう！"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "ロールが開放！ダイスでペットが出るよ。ロールを開こう！",
+"HURRY UP!": "急げ！",
+"Too slow! Keep running up the path!": "遅すぎる！道を上へ走り続けよう！",
+"Find the dice faster! Follow the arrow": "もっと早くダイスを見つけよう！矢印について行こう",
+"1 MINUTE LEFT!": "残り1分！",
+"{0} SECONDS!": "残り{0}秒！",
+"HALFWAY THERE!": "半分まで来た！",
+"HALF THE DICE!": "ダイス半分！",
+"LOST DICE GLOW GOLD": "なくしたダイスは金色に光る",
+"up the path!": "道の上へ！"
 }

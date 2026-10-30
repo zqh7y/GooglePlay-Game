@@ -1090,5 +1090,14 @@
 "PETS": "สัตว์เลี้ยง",
 "Roll your dice for pets!": "ทอยลูกเต๋าเพื่อรับสัตว์เลี้ยง!",
 "The story is done: the whole game is open!": "เนื้อเรื่องจบแล้ว: ทั้งเกมเปิดหมดแล้ว!",
-"ROLL is open! Your dice give you PETS. Open ROLL!": "ทอยเปิดแล้ว! ลูกเต๋าให้สัตว์เลี้ยง เปิดหน้าทอยเลย!"
+"ROLL is open! Your dice give you PETS. Open ROLL!": "ทอยเปิดแล้ว! ลูกเต๋าให้สัตว์เลี้ยง เปิดหน้าทอยเลย!",
+"HURRY UP!": "เร็วเข้า!",
+"Too slow! Keep running up the path!": "ช้าไป! วิ่งขึ้นไปตามทางต่อ!",
+"Find the dice faster! Follow the arrow": "หาลูกเต๋าให้เร็วขึ้น! ตามลูกศรไป",
+"1 MINUTE LEFT!": "เหลือ 1 นาที!",
+"{0} SECONDS!": "{0} วินาที!",
+"HALFWAY THERE!": "มาครึ่งทางแล้ว!",
+"HALF THE DICE!": "ได้ลูกเต๋าครึ่งหนึ่งแล้ว!",
+"LOST DICE GLOW GOLD": "ลูกเต๋าที่หายเรืองแสงสีทอง",
+"up the path!": "ขึ้นไปตามทาง!"
 }

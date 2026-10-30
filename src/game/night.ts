@@ -8,7 +8,7 @@ export interface Light {
 }
 
 /** pixels of the world per pixel of the darkness (it is soft, so it can be drawn small) */
-const K = 4;
+const K = 6;
 
 /**
  * Night over the field: a dark blue sheet over the world with soft round holes cut out of it

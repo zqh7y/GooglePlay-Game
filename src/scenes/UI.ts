@@ -51,6 +51,7 @@ import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { MODE_INFO, StageMode, modeForStage, stageInfo } from "../data/modes";
 import { ROLL_OPEN, STORY_STAGES, rollOpen, storyDone, storyFor } from "../data/story";
+import { DEV_TOOLS, SPEED_BTN } from "../devtools";
 import type { DailyReward } from "../systems/goals";
 import { arrowButton, cardButton, itemSplash, vividCard } from "../art/ps";
 import { Button, Modal, Pill, button, drawBar, fitText, iconButton, label, modal, ribbonBanner, text } from "../ui/widgets";
@@ -90,7 +91,7 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 interface NavTab {
   box: Phaser.GameObjects.Container;
   bg: Phaser.GameObjects.Image;
-  icon: Phaser.GameObjects.Image;
+  icon: Phaser.GameObjects.Image | Phaser.GameObjects.Container;
   label: Phaser.GameObjects.Text;
   badge: Phaser.GameObjects.Container;
 }
@@ -266,6 +267,7 @@ export class UIScene extends Phaser.Scene implements Host {
       ["cash-fly", this.onCashFly],
       ["battle-ready", this.onBattleReady],
       ["boss-warning", this.bossWarning],
+      ["hurry", this.hurryFlash],
       ["mode-intro", this.modeIntro],
       ["boss-intro", this.bossIntro],
       ["rush-over", this.rushOver],
@@ -527,9 +529,13 @@ export class UIScene extends Phaser.Scene implements Host {
     TABS.forEach((t, i) => {
       const x = tw * (i + 0.5);
       const y = navTop + navH / 2;
-      const bg = this.add.image(0, 0, btnTexture(this, "peach", tw - 14, navH - 24));
-      const icon = this.add.image(0, -20, t.icon).setScale(0.8);
-      const lbl = text(this, 0, 52, t.label, 30);
+      // BATTLE is the big one: a raised orange card like the lobby's BATTLE button, with the sword on a splash
+      const main = t.id === "battle";
+      const bg = main
+        ? this.add.image(2, -16, vividCard(this, 0xff8a2a, tw + 4, navH + 20))
+        : this.add.image(0, 0, btnTexture(this, "peach", tw - 14, navH - 24));
+      const icon = main ? itemSplash(this, t.icon, 96, 0xffe066).setPosition(0, -30) : this.add.image(0, -20, t.icon).setScale(0.8);
+      const lbl = main ? text(this, 0, 50, "BATTLE", 34, "#ffffff", { stroke: 9 }) : text(this, 0, 52, t.label, 30);
       const badge = this.add.container(tw / 2 - 40, -navH / 2 + 34, [this.add.circle(0, 0, 19, 0xf03e3e).setStrokeStyle(5, INK_N), text(this, 0, -1, "!", 28)]).setVisible(false);
       this.tweens.add({ targets: badge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const box = this.add.container(x, y, [bg, icon, lbl, badge]).setDepth(4001).setSize(tw, navH).setInteractive({ useHandCursor: true });
@@ -564,7 +570,8 @@ export class UIScene extends Phaser.Scene implements Host {
     for (const t of TABS) {
       const locked = (t.id === "roll" || t.id === "pets") && roll;
       this.navLocks[t.id]?.setVisible(locked);
-      this.nav[t.id]?.icon.setTint(locked ? 0x8a8a8a : 0xffffff);
+      const ic = this.nav[t.id]?.icon;
+      if (ic instanceof Phaser.GameObjects.Image) ic.setTint(locked ? 0x8a8a8a : 0xffffff);
     }
     this.eventLock?.setVisible(!done);
     this.rushLock?.setVisible(!done);
@@ -592,9 +599,12 @@ export class UIScene extends Phaser.Scene implements Host {
       const n = this.nav[t.id];
       // the fishing event belongs to the battle lobby
       const active = t.id === tab || (tab === "fish" && t.id === "battle");
-      n.bg.setVisible(active);
-      this.tweens.add({ targets: n.icon, scale: active ? 1 : 0.72, y: active ? -30 : -14, duration: 160, ease: "Back.out" });
-      n.label.setAlpha(active ? 1 : 0.75).setFontSize(active ? 32 : 26);
+      // the BATTLE card is always up (it just grows a little when you are on it)
+      const main = t.id === "battle";
+      n.bg.setVisible(active || main);
+      if (main) this.tweens.add({ targets: [n.icon, n.bg], scale: active ? 1.06 : 0.94, duration: 160, ease: "Back.out" });
+      else this.tweens.add({ targets: n.icon, scale: active ? 1 : 0.72, y: active ? -30 : -14, duration: 160, ease: "Back.out" });
+      if (!main) n.label.setAlpha(active ? 1 : 0.75).setFontSize(active ? 32 : 26);
       n.icon.setAlpha(active ? 1 : 0.85);
     }
   }
@@ -820,10 +830,10 @@ export class UIScene extends Phaser.Scene implements Host {
     this.skillBar = this.add.container(0, H - 84);
     this.streakHud = text(this, W - 200, 404, "", 30, "#ffb347");
     // developer mode: run the fight at x3 to test quickly
-    this.speedBtn = button(this, 150, 270, 96, 64, "purple", "x1", () => {
+    this.speedBtn = button(this, SPEED_BTN.x, SPEED_BTN.y, SPEED_BTN.w, SPEED_BTN.h, "purple", "x1", () => {
       battle.speed = battle.speed === 1 ? 3 : 1;
       this.speedBtn.setLabel(`x${battle.speed}`).setColor(battle.speed > 1 ? "red" : "purple");
-    }, { size: 30 });
+    }, { size: 40 });
     this.run.add([
       band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
@@ -1127,7 +1137,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const W = this.W;
     const g = this.hudBars;
     g.clear();
-    this.speedBtn.setVisible(save.dev);
+    this.speedBtn.setVisible(DEV_TOOLS || save.dev);
     // kill streak: every 50 in a row is +1% damage and attack speed
     const st = battle.streak;
     const bonus = Math.floor(st / 50);
@@ -1633,6 +1643,18 @@ export class UIScene extends Phaser.Scene implements Host {
     this.tweens.add({ targets: card, scale: 1, duration: 420, ease: "Back.out" });
     sfx.fanfare();
     this.time.delayedCall(mode === "boss" ? 3400 : 3900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
+  }
+
+  /** Hurry up (or the last seconds): the screen edges pulse red. */
+  private hurryFlash(big: boolean): void {
+    const { W, H } = this;
+    const edge = this.add.graphics().setDepth(5300);
+    for (let i = 0; i < 5; i++) {
+      const w = 24 + i * 20;
+      edge.lineStyle(w, 0xff2a2a, (big ? 0.45 : 0.3) - i * 0.06).strokeRect(w / 2, w / 2, W - w, H - w);
+    }
+    edge.setAlpha(0);
+    this.tweens.add({ targets: edge, alpha: 1, duration: 180, yoyo: true, repeat: big ? 3 : 1, onComplete: () => edge.destroy() });
   }
 
   private bossWarning(): void {

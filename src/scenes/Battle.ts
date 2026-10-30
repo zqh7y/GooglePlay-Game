@@ -31,6 +31,7 @@ import { makePlaceTextures } from "../art/places";
 import { makeStoryTextures } from "../art/story";
 import { HUNT_DICE, LANTERN_AT, PATH_BOSSES, StoryChapter, storyFor } from "../data/story";
 import { Light, Night } from "../game/night";
+import { SPEED_BTN } from "../devtools";
 import { BOSS_EVERY, BOSS_MOVES, BOSS_SPECIALS, BossMoveId, RUSH_MS, SpecialId, bossForStage, rushBossHp } from "../data/bosses";
 import { DICE_TIERS, GADGET_TIERS, TIER_INFO, Tier, rollDiceTier, rollGadgetTier, tierIndex } from "../data/tiers";
 import { ARENA, Arena, EDGE, PATH_HALF, clampX, clampY, getArena, getPathArena } from "../game/arena";
@@ -521,6 +522,14 @@ export class BattleScene extends Phaser.Scene {
   private storyClock = 0;
   private bigBoss: Enemy | null = null;
   private speedNow = 1;
+  /** night-only warm glows (shown when a story fight starts), and whether the village is drawn */
+  private warmGlows: Phaser.GameObjects.Image[] = [];
+  private placeDrawn = false;
+  /** story reminders: the last "seconds left" said, and when to check your pace again */
+  private saidLeft = Infinity;
+  private paceT = 12000;
+  private ambientT = 6000;
+  private halfSaid = false;
   private shieldImg!: Phaser.GameObjects.Image;
   private fortImg!: Phaser.GameObjects.Image;
   private walkTimer = 0;
@@ -678,6 +687,12 @@ export class BattleScene extends Phaser.Scene {
     this.heroGlow = null;
     this.pathBosses = [];
     this.pathChargers = new Map();
+    this.warmGlows = [];
+    this.placeDrawn = false;
+    this.saidLeft = Infinity;
+    this.paceT = 12000;
+    this.ambientT = 6000;
+    this.halfSaid = false;
     this.huntFound = 0;
     this.storyClock = 0;
     this.bigBoss = null;
@@ -707,6 +722,7 @@ export class BattleScene extends Phaser.Scene {
     this.speedNow = 1;
     this.cameras.main.fadeIn(500, 74, 47, 29);
     this.drawArena();
+    this.drawPlace();
 
     const [hx0, hy0] = this.heroStart();
     this.hero = this.add.image(hx0, hy0, "hero").setOrigin(0.5, 0.95);
@@ -966,6 +982,8 @@ export class BattleScene extends Phaser.Scene {
     battle.left = -1;
     if (this.story) {
       this.night = new Night(this, this.story.dark, TOP + 8700);
+      for (const g of this.warmGlows) this.tweens.add({ targets: g, alpha: g.getData("night") as number, duration: 800 });
+      this.nightLife();
       // you keep the lantern you found on the first path
       this.hasLantern = save.stage > 1;
       if (this.hasLantern) this.holdLantern(false);
@@ -981,8 +999,9 @@ export class BattleScene extends Phaser.Scene {
     this.modeStart();
     // this stage's boss: its walk frames are made now, a little at a time, so it lands without a hitch
     if (!this.rush) this.prepareBoss(save.stage);
-    // a story chapter's card stays up a little longer
-    this.time.delayedCall(this.story ? 2400 : 1500, () => {
+    // a story chapter: its card, then the camera flies over to the main goal and back
+    const tour = this.story ? this.storyTour() : 0;
+    this.time.delayedCall(this.story ? Math.max(2400, tour) : 1500, () => {
       if (this.rush) this.banner(MODE_INFO[this.stageMode].banner, "red", 900);
       this.state = "fight";
       if (this.stageMode === "boss") this.time.delayedCall(this.story ? 1500 : 900, () => this.state === "fight" && this.bossCutscene());
@@ -1228,14 +1247,82 @@ export class BattleScene extends Phaser.Scene {
   /** A burning torch (with its pool of light in the night). */
   private addTorch(x: number, y: number): void {
     this.addStatic(this.add.image(x, y, "torch3d").setOrigin(0.5, 1).setDepth(y), x, y);
-    if (effectsOn()) this.addStatic(this.add.particles(x, y - 200, "spark", {
-      x: { min: -14, max: 14 }, lifespan: 600, speedY: { min: -160, max: -80 }, scale: { start: 1.1, end: 0 },
-      tint: [0xffe066, 0xff8a2a, 0xff3a3a], blendMode: Phaser.BlendModes.ADD, frequency: 40,
-    }).setDepth(y + 1), x, y);
-    this.addStatic(this.add.image(x, y - 200, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(y), x, y);
-    // at night it lights up the ground round it
-    if (this.night || this.arena.path) this.addStatic(this.add.image(x, y - 100, "warm_glow").setScale(3.6).setAlpha(0.55).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8701), x, y);
+    // the flame flickers (a sprite, not particles: dozens of torches stay cheap)
+    const flame = this.add.image(x, y - 196, "flame").setOrigin(0.5, 0.95).setBlendMode(Phaser.BlendModes.ADD).setDepth(y + 1);
+    this.tweens.add({ targets: flame, scaleY: { from: 0.85, to: 1.15 }, scaleX: { from: 1.05, to: 0.9 }, duration: 160 + Math.random() * 120, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.addStatic(flame, x, y);
+    this.addStatic(this.add.image(x, y - 220, "glow").setTint(0xff8a2a).setScale(0.9).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(y), x, y);
+    // at night it lights up the ground round it (the warm glow shows once night falls)
+    this.nightGlow(x, y - 100, 3.6, 0.55);
     this.lamps.push({ x, y: y - 100, r: 340 });
+  }
+
+  /** A warm glow on the ground that only shows at night. */
+  private nightGlow(x: number, y: number, scale: number, alpha: number): void {
+    const g = this.add.image(x, y, "warm_glow").setScale(scale).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8701).setAlpha(this.night || this.arena.path ? alpha : 0);
+    g.setData("night", alpha);
+    this.warmGlows.push(g);
+    this.addStatic(g, x, y);
+  }
+
+  /**
+   * Where you are in the story shows in the lobby and the fights of the first land: at stage 1 your
+   * camp in the woods (a campfire, a sign to the village); from stage 2 the village, with cobbled
+   * streets in a grid (four up and down, four across), torches where the streets cross, cottages in
+   * the blocks between, and at stage 2 two of them still burnt out.
+   */
+  private drawPlace(): void {
+    if (this.rush || this.arena.path || this.land.id !== "village") return;
+    const [cx, cy] = this.arena.center;
+    if (save.stage <= 1) {
+      const [fx, fy] = [cx + 380, cy + 420];
+      this.addStatic(this.add.image(fx, fy, "campfire").setOrigin(0.5, 0.8).setDepth(fy), fx, fy);
+      const flame = this.add.image(fx, fy - 30, "flame").setOrigin(0.5, 0.95).setScale(1.4).setBlendMode(Phaser.BlendModes.ADD).setDepth(fy + 1);
+      this.tweens.add({ targets: flame, scaleY: { from: 1.2, to: 1.6 }, scaleX: { from: 1.5, to: 1.25 }, duration: 180, yoyo: true, repeat: -1 });
+      this.addStatic(flame, fx, fy);
+      this.addStatic(this.add.image(fx, fy - 60, "glow").setTint(0xff9a3a).setScale(2.4).setAlpha(0.55).setBlendMode(Phaser.BlendModes.ADD).setDepth(fy - 1), fx, fy);
+      const sg = this.sign(cx - 420, cy - 300, "VILLAGE", "up the path!", "#ffe6a0");
+      this.addStatic(sg, cx - 420, cy - 300);
+      // a thick ring of woods round the camp
+      for (let i = 0; i < 46; i++) {
+        const a = (i / 46) * Math.PI * 2;
+        const d = 1250 + (i % 3) * 140;
+        const [tx, ty] = [cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.9];
+        if (Math.abs(tx - cx) < 260 && ty < cy) continue;
+        this.addStatic(this.add.image(tx, ty, i % 2 ? "tree_dark" : "tree_pine").setOrigin(0.5, 1).setDepth(ty).setScale(1.1), tx, ty);
+      }
+      return;
+    }
+    // the streets: four up and down and four across, all the way over the land
+    const offs = [-1050, -350, 350, 1050];
+    for (const o of offs) {
+      const v = this.add.tileSprite(cx + o, 0, 150, ARENA, "cobble").setOrigin(0.5, 0).setDepth(-880);
+      const h = this.add.tileSprite(0, cy + o, ARENA, 150, "cobble").setOrigin(0, 0.5).setDepth(-879);
+      v.setVisible(true);
+      h.setVisible(true);
+    }
+    for (const ox of offs) for (const oy of offs) this.addTorch(cx + ox + 95, cy + oy + 75);
+    // cottages in the blocks (two still burnt out at stage 2)
+    const ruined = save.stage === 2;
+    const homes: [number, number, string][] = [
+      [-700, -650, ruined ? "ruin" : "house_a"], [700, -650, ruined ? "ruin" : "house_b"],
+      [-700, 760, "house_a"], [700, 760, "house_b"], [-1400, -650, "house_b"], [1400, -650, "house_a"],
+      [0, -1350, "house_a"], [-1400, 1450, "house_b"], [1400, 1450, "house_a"], [0, 1450, "house_b"],
+    ];
+    for (const [dx, dy, key] of homes) {
+      const [x, y] = [cx + dx, cy + dy];
+      this.addStatic(this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(y).setFlipX(key === "ruin" && dx > 0), x, y);
+      if (key === "ruin") {
+        if (effectsOn()) this.addStatic(this.add.particles(x, y - 300, "puff", {
+          x: { min: -120, max: 120 }, lifespan: 2400, speedY: { min: -80, max: -40 }, scale: { start: 0.6, end: 2.2 }, alpha: { start: 0.35, end: 0 },
+          tint: 0x6a6070, frequency: 320,
+        }).setDepth(y + 1), x, y);
+      } else {
+        this.nightGlow(x, y - 140, 3.2, 0.5);
+        this.lamps.push({ x: x - 50, y: y - 150, r: 220 });
+      }
+    }
+    this.placeDrawn = true;
   }
 
   /** The lobby signboard: the stage you will play and its mode. */
@@ -2275,6 +2362,8 @@ export class BattleScene extends Phaser.Scene {
       const roam = battle.mode === "lobby" && this.roaming;
       if (this.joy.active || (battle.mode !== "run" && !roam) || !this.cameras.main.visible || p.y < this.L.hudBottom + 10) return;
       if (p.x < 220 && p.y < this.L.hudBottom + 230) return;
+      // the developer speed button
+      if (Math.abs(p.x - SPEED_BTN.x) < SPEED_BTN.w / 2 + 10 && Math.abs(p.y - SPEED_BTN.y) < SPEED_BTN.h / 2 + 10) return;
       // the lobby's buttons and pills sit at the bottom
       if (roam && p.y > this.L.navTop - 380) return;
       this.joy = { active: true, id: p.id, bx: p.x, by: p.y, dx: 0, dy: 0 };
@@ -2514,8 +2603,6 @@ export class BattleScene extends Phaser.Scene {
       // story chapters keep their own clock (only the beast's stage runs the usual 5:00)
       const own = !!this.story && this.stageMode !== "feed";
       if (own && this.state === "fight") {
-        sfx.alarm();
-        if (battle.left > 0) this.banner(`${mmss(battle.left)} LEFT`, "red", 900);
         this.swarm(this.arena.path ? 10 + minute * 6 : 20 + minute * 10);
       } else if (!own && minute < MINUTES) {
         sfx.alarm();
@@ -2561,7 +2648,7 @@ export class BattleScene extends Phaser.Scene {
         // while the crystal is open many monsters march on it from far away
         // (the ones that appear around you come for you)
         const atCrystal = this.stageMode === "crystal" && !this.shielded && this.elapsed > 8000 && Math.random() < raiderShare(save.stage);
-        const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.arena.path ? this.fromTrees() : this.offScreen();
+        const [x, y] = atCrystal ? this.randomSpot(1600, 2500) : this.spawnPoint();
         const e = this.addEnemy(this.pickType(), x, y, false, true, 1, this.mobStage());
         e.huntHero = !atCrystal;
         e.raider = atCrystal;
@@ -2571,9 +2658,27 @@ export class BattleScene extends Phaser.Scene {
     this.eliteTimer -= delta;
     if (this.eliteTimer <= 0 && this.elapsed > 50000) {
       this.eliteTimer = 25000 - this.minute * 2500;
-      const [x, y] = this.arena.path ? this.fromTrees() : this.offScreen();
+      const [x, y] = this.spawnPoint();
       this.addEnemy(this.types().b, x, y, true, true, 1, this.mobStage()).huntHero = true;
     }
+  }
+
+  /** The village hunt and the sea path: monsters come down from the top, not in from the sides. */
+  private fromAbove(): boolean {
+    return !!this.story && (this.stageMode === "hunt" || (this.stageMode === "path" && this.arena.path?.kind === "sea"));
+  }
+
+  /** Where a new monster turns up: from the top, out of the trees, or just off screen. */
+  private spawnPoint(): [number, number] {
+    if (this.fromAbove()) {
+      const v = this.cameras.main.worldView;
+      const p = this.arena.path;
+      const x = this.hero.x + (Math.random() - 0.5) * v.width * 0.95;
+      const y = this.hero.y - v.height * 0.55 - Math.random() * 300;
+      if (p) return [Phaser.Math.Clamp(x, p.x0 + 50, p.x1 - 50), Math.max(p.endY + 150, y)];
+      return [clampX(x), clampY(y)];
+    }
+    return this.arena.path ? this.fromTrees() : this.offScreen();
   }
 
   /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
@@ -2610,8 +2715,8 @@ export class BattleScene extends Phaser.Scene {
   /** Every minute a ring of monsters closes in on you. */
   private swarm(n: number): void {
     const v = this.cameras.main.worldView;
-    if (this.arena.path) {
-      for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) this.addEnemy(this.pickType(), ...this.fromTrees(), false, true, 1, this.mobStage()).huntHero = true;
+    if (this.arena.path || this.fromAbove()) {
+      for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) this.addEnemy(this.pickType(), ...this.spawnPoint(), false, true, 1, this.mobStage()).huntHero = true;
       return;
     }
     for (let i = 0; i < n && this.enemies.length < MAX_MONSTERS; i++) {
@@ -2734,8 +2839,8 @@ export class BattleScene extends Phaser.Scene {
     }
     if (m === "boss") {
       this.sign(cx, cy + 520, "BOSS ARENA", this.story ? "beat the big one!" : "beat all four!", "#ff8a8a");
-      // burning torches in neat rows and columns round the arena (no walls: the whole map is yours)
-      this.torchGrid(2);
+      // burning torches in neat rows and columns round the arena (the village has its own at the crossings)
+      if (!this.placeDrawn) this.torchGrid(2);
     }
     // only the crystal stage has a crystal to guard
     this.crystal.setVisible(false);
@@ -2782,6 +2887,8 @@ export class BattleScene extends Phaser.Scene {
       this.lamps = this.lamps.filter((x) => x.r !== 260);
     }
     this.cameras.main.flash(300, 255, 220, 140);
+    const flare = this.add.image(this.hero.x, this.hero.y - 100, "glow").setTint(0xffd24a).setScale(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 8703);
+    this.tweens.add({ targets: flare, scale: 9, alpha: 0, duration: 900, ease: "Quad.out", onComplete: () => flare.destroy() });
     this.sparks.setParticleTint(0xffd24a);
     this.sparks.explode(30, this.hero.x, this.hero.y - 120);
     sfx.fanfare();
@@ -2864,32 +2971,105 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  /** You made it to the end of the path. */
+  /** You made it to the end of the path: the camera takes in the village (or the sea) and fireworks go up. */
   private pathDone(): void {
-    const sea = this.arena.path!.kind === "sea";
+    const p = this.arena.path!;
+    const sea = p.kind === "sea";
     this.callout(sea ? "THE SEA!" : "THE VILLAGE!", "#ffe066");
     if (sea && this.night) this.night.want = 0;
+    else if (this.night) this.night.want = this.night.dark * 0.45;
+    const cam = this.cameras.main;
+    const [tx, ty] = [this.arena.w / 2, sea ? p.endY - 500 : 800];
+    cam.stopFollow();
+    cam.pan(tx, ty, 1400, "Sine.easeInOut");
+    cam.zoomTo(0.5, 1400, "Sine.easeInOut");
+    sfx.whoosh();
+    this.fireworks(tx, ty - 200, 7);
     this.stageWon();
+  }
+
+  /** Fireworks bursting in the sky over a spot: a whistle, a bang, a ball of coloured sparks. */
+  private fireworks(x: number, y: number, n: number): void {
+    const colors = [0xff5a8a, 0xffe066, 0x5ac8ff, 0x8af06a, 0xb98aff, 0xff9a3a];
+    for (let i = 0; i < n; i++) {
+      this.time.delayedCall(300 + i * 420, () => {
+        const [fx, fy] = [x + Phaser.Math.Between(-600, 600), y + Phaser.Math.Between(-350, 250)];
+        const col = colors[i % colors.length];
+        sfx.firework();
+        const ring = this.add.image(fx, fy, "fx_ring").setTint(col).setScale(0.2).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 9500);
+        this.tweens.add({ targets: ring, scale: 3.2, alpha: 0, duration: 700, ease: "Quad.out", onComplete: () => ring.destroy() });
+        this.sparks.setParticleTint(col);
+        this.sparks.explode(40, fx, fy);
+        this.stars.explode(10, fx, fy);
+      });
+    }
+  }
+
+  /**
+   * At the start of a chapter the camera flies over to what it is all about (the village or the sea
+   * at the end of the path, the lost dice, the beast's cage) and comes back to you. Returns when it is
+   * back (ms), so the fight starts then.
+   */
+  private storyTour(): number {
+    const p = this.arena.path;
+    let target: [number, number, string] | null = null;
+    if (p) target = [this.arena.w / 2, p.endY + 200, p.kind === "sea" ? "THE SEA" : "THE VILLAGE"];
+    else if (this.stageMode === "hunt") {
+      const q = this.pickups.find((d) => d.quest);
+      if (q) target = [q.x, q.y, "LOST DICE GLOW GOLD"];
+    } else if (this.stageMode === "feed" && this.beast) target = [this.beast.img.x, this.beast.img.y - 150, "THE BEAST"];
+    if (!target) return 0;
+    const [tx, ty, name] = target;
+    const cam = this.cameras.main;
+    const start = 3300;
+    const far = Math.hypot(tx - this.hero.x, ty - this.hero.y);
+    const go = Phaser.Math.Clamp(far * 0.06, 700, 1500);
+    this.time.delayedCall(start, () => {
+      cam.stopFollow();
+      sfx.whoosh();
+      cam.pan(tx, ty, go, "Sine.easeInOut");
+      cam.zoomTo(ZOOM * 0.9, go, "Sine.easeInOut");
+    });
+    this.time.delayedCall(start + go, () => {
+      this.banner(name, "gold", 1000);
+      this.sparks.setParticleTint(0xffe066);
+      this.sparks.explode(30, tx, ty);
+      sfx.lucky();
+    });
+    this.time.delayedCall(start + go + 1300, () => {
+      sfx.whoosh();
+      cam.pan(this.hero.x, this.hero.y, go, "Sine.easeInOut");
+      cam.zoomTo(ZOOM, go, "Sine.easeInOut");
+    });
+    this.time.delayedCall(start + go * 2 + 1350, () => cam.startFollow(this.hero, true, 0.14, 0.14));
+    return start + go * 2 + 1450;
+  }
+
+  /** Night life: fireflies drifting round you, leaves falling on the woods paths. */
+  private nightLife(): void {
+    if (!effectsOn()) return;
+    const flies = this.add.particles(0, 0, "spark", {
+      x: { min: -900, max: 900 }, y: { min: -1400, max: 1000 }, lifespan: 3200, speedX: { min: -25, max: 25 }, speedY: { min: -30, max: 10 },
+      scale: { start: 0.5, end: 0.1 }, alpha: { start: 1, end: 0 }, tint: [0xd8ff6a, 0xfff38a, 0xaaff8a], blendMode: Phaser.BlendModes.ADD, frequency: 110,
+    }).setDepth(TOP + 8702);
+    flies.startFollow(this.hero);
+    if (this.arena.path) {
+      const leaves = this.add.particles(0, 0, "petal", {
+        x: { min: -1000, max: 1000 }, y: -1500, lifespan: 6000, speedX: { min: -60, max: 60 }, speedY: { min: 120, max: 220 },
+        rotate: { start: 0, end: 360 }, scale: { start: 1.4, end: 1 }, tint: [0x6ab84a, 0xc8a040, 0x8ad65a], frequency: 260,
+      }).setDepth(TOP + 8702);
+      leaves.startFollow(this.hero);
+    }
   }
 
   // ── Story: the village dice hunt (stage 2)
 
   /** Two burnt-out buildings in the square, torches round the village and 20 lost dice in the dark. */
   private huntStart(): void {
-    const [cx, cy] = this.arena.center;
-    for (const [dx, dy, flip] of [[-560, -260, false], [600, -180, true]] as const) {
-      const [x, y] = [cx + dx, cy + dy];
-      this.addStatic(this.add.image(x, y, "ruin").setOrigin(0.5, 1).setDepth(y).setFlipX(flip), x, y);
-      // smoke still rising from the ruins
-      if (effectsOn()) this.addStatic(this.add.particles(x, y - 300, "puff", {
-        x: { min: -120, max: 120 }, lifespan: 2400, speedY: { min: -80, max: -40 }, scale: { start: 0.6, end: 2.2 }, alpha: { start: 0.35, end: 0 },
-        tint: 0x6a6070, frequency: 260,
-      }).setDepth(y + 1), x, y);
-    }
+    // (the ruined village, its streets and torches are drawn with the land: see drawPlace)
+    if (!this.placeDrawn) this.torchGrid(2);
     for (const p of this.pickups.filter((q) => q.kind === "dice")) this.removePickup(p);
     this.pickups = this.pickups.filter((q) => q.kind !== "dice");
-    // torches stand in rows and columns through the village (the dark in between is where dice hide)
-    this.torchGrid(2);
     for (let i = 0; i < HUNT_DICE; i++) {
       const p = this.addDie("A", ...this.randomSpot(500 + (i % 5) * 450, 950 + (i % 5) * 450), 0);
       p.quest = true;
@@ -2905,6 +3085,9 @@ export class BattleScene extends Phaser.Scene {
   /** One more of the lost dice. */
   private huntDie(): void {
     this.huntFound++;
+    sfx.found(this.huntFound);
+    const ring = this.add.image(this.hero.x, this.hero.y - 60, "fx_ring").setTint(0xffd23f).setScale(0.3).setBlendMode(Phaser.BlendModes.ADD).setDepth(TOP + 9050);
+    this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 500, ease: "Quad.out", onComplete: () => ring.destroy() });
     const left = HUNT_DICE - this.huntFound;
     this.callout(`${this.huntFound}/${HUNT_DICE}`, "#ffe066");
     if (left > 0) return;
@@ -2963,7 +3146,51 @@ export class BattleScene extends Phaser.Scene {
       left = ch.limit - this.storyClock;
     }
     battle.left = left;
-    if (left !== -1 && left <= 0) this.stageLost("time");
+    if (left !== -1 && left <= 0) {
+      this.stageLost("time");
+      return;
+    }
+    if (left > 0) this.storyReminders(left, delta);
+  }
+
+  /**
+   * The clock talks to you: "1 MINUTE LEFT", "30 SECONDS!", "10 SECONDS!", and every few seconds,
+   * when you are behind (not far enough up the path, too few dice found), a HURRY UP with a red flash.
+   */
+  private storyReminders(left: number, delta: number): void {
+    for (const at of [60000, 30000, 10000]) {
+      if (left <= at && this.saidLeft > at) {
+        this.saidLeft = at;
+        const big = at <= 10000;
+        this.banner(at === 60000 ? "1 MINUTE LEFT!" : `${at / 1000} SECONDS!`, "red", big ? 1100 : 900);
+        sfx.hurry();
+        buzz(big ? 200 : 80);
+        this.game.events.emit("hurry", big);
+      }
+    }
+    if (this.state !== "fight") return;
+    this.paceT -= delta;
+    if (this.paceT > 0) return;
+    this.paceT = 9000;
+    const ch = this.story!;
+    const used = 1 - left / ch.limit;
+    let done = -1;
+    const p = this.arena.path;
+    if (this.stageMode === "path" && p) done = (p.startY - this.hero.y) / (p.startY - p.endY);
+    if (this.stageMode === "hunt") done = this.huntFound / HUNT_DICE;
+    if (done < 0) return;
+    // where you should be by now (with some slack), and a cheer when you are well ahead
+    if (done < used * 1.1 - 0.06) {
+      this.banner("HURRY UP!", "red", 900);
+      this.toast(this.stageMode === "path" ? "Too slow! Keep running up the path!" : "Find the dice faster! Follow the arrow", "#ffb0a0");
+      sfx.hurry();
+      buzz(90);
+      this.game.events.emit("hurry", false);
+    } else if (done > 0.45 && done < 0.6 && !this.halfSaid) {
+      this.halfSaid = true;
+      this.callout(this.stageMode === "path" ? "HALFWAY THERE!" : "HALF THE DICE!", "#b6ff8a");
+      sfx.levelUp();
+    }
   }
 
   /** The night: the lights round you, the torches and windows, the dice and the snack. */
@@ -2981,6 +3208,13 @@ export class BattleScene extends Phaser.Scene {
     for (const e of this.enemies) if (e.type.boss) lights.push({ x: e.img.x, y: e.img.y - 120, r: 340 });
     for (const sl of this.seals) if (!sl.done) lights.push({ x: sl.x, y: sl.y, r: 200 });
     n.update(lights, delta);
+    // the night is alive: an owl now and then, crickets
+    this.ambientT -= delta;
+    if (this.ambientT <= 0 && this.fighting) {
+      this.ambientT = 5000 + Math.random() * 7000;
+      if (Math.random() < 0.4) sfx.owl();
+      else sfx.crickets();
+    }
     // the lantern swings in your free hand
     if (this.heldLantern) {
       const dir = this.hero.flipX ? 1 : -1;
