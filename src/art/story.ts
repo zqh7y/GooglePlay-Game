@@ -465,6 +465,10 @@ export function makeStoryTextures(scene: Phaser.Scene): void {
     c.fill();
     c.stroke();
   });
+  // the broken bridge over the river on the way to the sea, a plank to mend it, and the bridge mended
+  canvasTexture(scene, "plank", 200, 70, (c) => plank(c, 10, 14, 180, 40));
+  canvasTexture(scene, "bridge_broken", 460, 540, (c) => bridge(c, false));
+  canvasTexture(scene, "bridge_fixed", 460, 540, (c) => bridge(c, true));
   // the hammer: a wooden handle with a heavy iron head
   canvasTexture(scene, "hammer", 120, 160, (c) => {
     c.lineJoin = "round";
@@ -628,4 +632,105 @@ export function makeStoryTextures(scene: Phaser.Scene): void {
     }
   });
 
+}
+
+/** A wooden board seen from above: grain, a lit top edge, two nails at each end. */
+function plank(c: Ctx, x: number, y: number, w: number, h: number, tilt = 0): void {
+  c.save();
+  c.translate(x + w / 2, y + h / 2);
+  c.rotate(tilt);
+  c.translate(-w / 2, -h / 2);
+  c.lineJoin = "round";
+  c.lineWidth = 5;
+  c.strokeStyle = INK;
+  poly(c, [[0, 0], [w, 0], [w, h], [0, h]], lin(c, 0, 0, 0, h, ["#e0b070", "#b07840", "#7a4a22"]));
+  c.strokeStyle = "rgba(90,50,20,0.45)";
+  c.lineWidth = 2.5;
+  for (const gy of [h * 0.35, h * 0.65]) {
+    c.beginPath();
+    c.moveTo(8, gy);
+    c.bezierCurveTo(w * 0.3, gy - 4, w * 0.6, gy + 4, w - 8, gy);
+    c.stroke();
+  }
+  c.fillStyle = "rgba(255,240,200,0.5)";
+  c.fillRect(4, 4, w - 8, 5);
+  c.fillStyle = "#5a5e68";
+  for (const nx of [12, w - 12]) for (const ny of [h * 0.3, h * 0.7]) {
+    c.beginPath();
+    c.arc(nx, ny, 3.5, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
+}
+
+/** A rope bridge from above, running up the screen: posts at both banks, rope rails, planks across. */
+function bridge(c: Ctx, whole: boolean): void {
+  const [W, H] = [460, 540];
+  const [x0, x1] = [70, W - 70];
+  const rope = (x: number, sag: number) => {
+    c.lineWidth = 10;
+    c.strokeStyle = INK;
+    c.beginPath();
+    c.moveTo(x, 40);
+    c.quadraticCurveTo(x + sag, H / 2, x, H - 40);
+    c.stroke();
+    c.lineWidth = 5;
+    c.strokeStyle = "#c8a060";
+    c.stroke();
+  };
+  // the planks (a gap in the middle when broken, a couple hanging crooked)
+  const n = 13;
+  for (let i = 0; i < n; i++) {
+    const y = 50 + i * ((H - 100) / (n - 1));
+    const gap = !whole && i >= 3 && i <= 9;
+    if (gap) {
+      if (i === 4) plank(c, x0 + 40, y - 22, 140, 30, 0.6);
+      if (i === 8) plank(c, x1 - 190, y - 18, 150, 30, -0.5);
+      continue;
+    }
+    plank(c, x0 - 10, y - 18, x1 - x0 + 20, 36, ((i * 37) % 7 - 3) * 0.01);
+  }
+  if (whole) {
+    rope(x0, 0);
+    rope(x1, 0);
+  } else {
+    // snapped ropes trailing in the water
+    for (const [x, d] of [[x0, -1], [x1, 1]] as const) {
+      c.lineWidth = 10;
+      c.strokeStyle = INK;
+      for (const [a, b] of [[40, 190], [H - 40, H - 200]]) {
+        c.beginPath();
+        c.moveTo(x, a);
+        c.quadraticCurveTo(x + d * 40, (a + b) / 2, x + d * 20, b);
+        c.stroke();
+      }
+      c.lineWidth = 5;
+      c.strokeStyle = "#c8a060";
+      for (const [a, b] of [[40, 190], [H - 40, H - 200]]) {
+        c.beginPath();
+        c.moveTo(x, a);
+        c.quadraticCurveTo(x + d * 40, (a + b) / 2, x + d * 20, b);
+        c.stroke();
+      }
+    }
+  }
+  // the posts: round logs seen from above (their cut tops)
+  for (const x of [x0, x1]) for (const y of [36, H - 36]) {
+    c.lineWidth = 5;
+    c.strokeStyle = INK;
+    c.beginPath();
+    c.arc(x, y, 26, 0, Math.PI * 2);
+    c.fillStyle = "#8a5a2e";
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.arc(x, y - 3, 17, 0, Math.PI * 2);
+    c.fillStyle = "#e8c48a";
+    c.fill();
+    c.strokeStyle = "rgba(140,90,40,0.6)";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.arc(x, y - 3, 9, 0, Math.PI * 2);
+    c.stroke();
+  }
 }

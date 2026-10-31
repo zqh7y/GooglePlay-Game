@@ -9,6 +9,7 @@ import { CLASS_SIZES, ITEMS, PET_LIST } from "../data/items";
 import { mutationsAt } from "../data/mutations";
 import { RUSH_COOLDOWN_MS, RUSH_MS, bossForStage } from "../data/bosses";
 import { COMICS } from "../data/comics";
+import { makeComicFaces } from "../art/comic";
 import { RARITY_INFO, rarityRank } from "../data/rarity";
 import { Region, regionForStage } from "../data/regions";
 import { MAX_SKILL, SKILL_BY_ID, SKILL_SLOTS, SkillId } from "../data/skills";
@@ -212,6 +213,7 @@ export class UIScene extends Phaser.Scene implements Host {
   /** developer x3 speed (fights) */
   private speedBtn!: Button;
   private godBtn!: Button;
+  private safeEdge!: Phaser.GameObjects.Graphics;
   /** the glow behind the round BATTLE tab */
   private navHalo?: Phaser.GameObjects.Image;
   /** "TRY ME!" over Boss Rush when you are far stronger than your stage */
@@ -445,6 +447,9 @@ export class UIScene extends Phaser.Scene implements Host {
       } else this.goalPins.hide();
     } else this.goalPins.hide();
     this.hurt.update(this.tab === "battle" && !this.mapOpen && battle.mode === "run" ? battle.hp : null, time, delta);
+    const safe = this.tab === "battle" && !this.mapOpen && battle.mode === "run" && battle.safe;
+    const sa = this.safeEdge.alpha;
+    this.safeEdge.setAlpha(Phaser.Math.Clamp(sa + (safe ? 1 : -1) * (delta / 250), 0, safe ? 0.75 + Math.sin(time / 300) * 0.25 : 1));
     this.fishing();
     tickPlaytime(delta);
     this.rollScreen.setReadyAt(this.rollReadyAt);
@@ -867,6 +872,12 @@ export class UIScene extends Phaser.Scene implements Host {
     this.goalPins = new GoalPins(this, 11);
     // low health: red, cracked screen edges (under the HUD)
     this.hurt = new HurtScreen(this, 5);
+    // safe from the tsunami: soft green screen edges
+    this.safeEdge = this.add.graphics().setDepth(5).setAlpha(0);
+    for (let i = 0; i < 6; i++) {
+      const w = 18 + i * 16;
+      this.safeEdge.lineStyle(w, 0x5aff7a, 0.32 - i * 0.05).strokeRect(w / 2, w / 2, W - w, H - w);
+    }
     this.countText = text(this, W / 2, H * 0.36, "", 260, "#ffe066").setStroke("#1a1030", 26).setDepth(7400).setVisible(false);
   }
 
@@ -1623,190 +1634,182 @@ export class UIScene extends Phaser.Scene implements Host {
     page.setScale(0.02, 1).setX(W - px);
     this.tweens.add({ targets: page, scaleX: 1, x: 0, duration: 360, ease: "Cubic.out" });
     sfx.panel();
-    // the four panels (gutters slanted, like a real page)
-    const g = 22;
-    const x0 = px + 26;
-    const x1 = px + pw - 26;
-    const yA = py + 26;
-    const hA = ph * 0.27;
-    const yB = yA + hA + g;
-    const hB = ph * 0.38;
-    const yD = yB + hB + g;
-    const hD = py + ph - 26 - yD;
-    const splitT = x0 + (x1 - x0) * 0.6;
-    const splitB = x0 + (x1 - x0) * 0.47;
-    const polys: Record<"A" | "B" | "C" | "D", [number, number][]> = {
-      A: [[x0, yA], [x1, yA], [x1, yA + hA - 18], [x0, yA + hA + 10]],
-      B: [[x0, yB + 10], [splitT - g / 2, yB + 2], [splitB - g / 2, yB + hB], [x0, yB + hB]],
-      C: [[splitT + g / 2, yB + 2], [x1, yB - 18], [x1, yB + hB], [splitB + g / 2, yB + hB]],
-      D: [[x0, yD], [x1, yD - 8], [x1, yD + hD], [x0, yD + hD]],
+    // three page layouts take turns from stage to stage (the panels ink in in this order)
+    const [x0, x1, y0, y1] = [px + 26, px + pw - 26, py + 26, py + ph - 26];
+    const P = (pts: [number, number][]): [number, number][] => pts.map(([u, v]) => [x0 + (x1 - x0) * u, y0 + (y1 - y0) * v]);
+    const round = (u: number, v: number, r: number): [number, number][] => {
+      const R = (x1 - x0) * r;
+      const [cx, cy] = [x0 + (x1 - x0) * u, y0 + (y1 - y0) * v];
+      return Array.from({ length: 36 }, (_, i) => [cx + Math.cos((i / 36) * Math.PI * 2) * R, cy + Math.sin((i / 36) * Math.PI * 2) * R] as [number, number]);
     };
-    const box = (k: keyof typeof polys) => {
-      const pts = polys[k];
+    type Role = "place" | "face" | "threat" | "title";
+    const titleBox = P([[0, 0.745], [1, 0.735], [1, 1], [0, 1]]);
+    const layouts: [Role, [number, number][]][][] = [
+      [["place", P([[0, 0], [1, 0], [1, 0.265], [0, 0.295]])], ["face", P([[0, 0.32], [0.6, 0.31], [0.47, 0.715], [0, 0.715]])],
+        ["threat", P([[0.635, 0.31], [1, 0.29], [1, 0.715], [0.505, 0.715]])], ["title", titleBox]],
+      [["threat", P([[0, 0], [1, 0], [1, 0.36], [0, 0.42]])], ["place", P([[0, 0.445], [0.56, 0.415], [0.56, 0.715], [0, 0.715]])],
+        ["face", P([[0.59, 0.41], [1, 0.385], [1, 0.715], [0.59, 0.715]])], ["title", titleBox]],
+      [["place", P([[0, 0], [1, 0], [1, 0.25], [0, 0.37]])], ["threat", P([[0, 0.395], [1, 0.275], [1, 0.715], [0, 0.715]])],
+        ["face", round(0.25, 0.4, 0.21)], ["title", titleBox]],
+    ];
+    const layout = layouts[stage % layouts.length];
+    const boxOf = (pts: [number, number][]) => {
       const xs = pts.map((q) => q[0]);
       const ys = pts.map((q) => q[1]);
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     };
-    // (no masks: each panel's art is drawn freely, then the paper gutters and margins are painted over the
-    // overflow and the ink frames on top, like printing a real page; masks here cost seconds per frame)
-    const panels: Record<string, Phaser.GameObjects.Container> = {};
-    for (const k of ["A", "B", "C", "D"] as const) {
+    const centre = (pts: [number, number][]) => {
+      const b = boxOf(pts);
+      return [b.x + b.w / 2, b.y + b.h / 2] as [number, number];
+    };
+    const V = (pts: [number, number][]) => pts.map(([qx, qy]) => new Phaser.Math.Vector2(qx, qy));
+    // each panel's art is clipped to its own shape (nothing spills into the next one)
+    const panels: { role: Role; pts: [number, number][]; inner: Phaser.GameObjects.Container; holder: Phaser.GameObjects.Container; mask: Phaser.GameObjects.Graphics }[] = [];
+    for (const [role, pts] of layout) {
       const holder = this.add.container(0, 0).setAlpha(0);
       const inner = this.add.container(0, 0);
       holder.add(inner);
       page.add(holder);
-      panels[k] = inner;
-      inner.setData("holder", holder);
+      const mask = this.make.graphics({}, false);
+      mask.fillStyle(0xffffff).fillPoints(V(pts), true);
+      holder.setMask(mask.createGeometryMask());
+      panels.push({ role, pts, inner, holder, mask });
     }
-    const V = (pts: [number, number][]) => pts.map(([qx, qy]) => new Phaser.Math.Vector2(qx, qy));
-    const covers = this.add.graphics();
-    covers.fillStyle(0xf6eedc, 1);
-    const [A, B, C, D] = [polys.A, polys.B, polys.C, polys.D];
-    // the gutters between the panels
-    covers.fillPoints(V([[x0 - 40, A[3][1]], [x1 + 40, A[2][1]], [x1 + 40, C[1][1]], [x0 - 40, B[0][1]]]), true);
-    covers.fillPoints(V([[B[1][0], B[1][1] - 30], [C[0][0], C[0][1] - 30], [C[3][0], C[3][1] + 30], [B[2][0], B[2][1] + 30]]), true);
-    covers.fillPoints(V([[x0 - 40, B[3][1]], [x1 + 40, C[2][1]], [x1 + 40, D[1][1]], [x0 - 40, D[0][1]]]), true);
-    // the page's margins, and outside the page
-    covers.fillRect(px, py, x0 - px, ph).fillRect(x1, py, px + pw - x1, ph).fillRect(px, py, pw, yA - py).fillRect(px, D[2][1], pw, py + ph - D[2][1]);
-    covers.fillStyle(0x0a0a14, 1).fillRect(0, 0, px, H).fillRect(px + pw, 0, W - px - pw, H).fillRect(0, 0, W, py).fillRect(0, py + ph, W, H - py - ph);
-    covers.lineStyle(6, 0x1a1410, 1).strokeRect(px, py, pw, ph);
-    page.add(covers);
     const frames = this.add.graphics();
     page.add(frames);
-    // A: the new place, wide, with a narration box
-    {
-      const b = box("A");
-      const inner = panels.A;
-      const sky = this.add.graphics();
-      sky.fillGradientStyle(lighten(c.sky, 0.25), lighten(c.sky, 0.25), c.sky, c.sky, 1).fillRect(b.x, b.y, b.w, b.h);
-      inner.add(sky);
-      inner.add(this.add.rectangle(b.x, b.y + b.h * 0.78, b.w, b.h * 0.3, 0x000000, 0.35).setOrigin(0));
-      c.place.forEach((key, i) => {
-        const tex = key === "boss" ? bossForStage(stage).tex : key;
-        if (!this.textures.exists(tex)) return;
+    const faceAt = centre(panels.find((q) => q.role === "face")!.pts);
+    const texOf = (key: string) => (key === "boss" ? bossForStage(stage).tex : key);
+    for (const { role, pts, inner } of panels) {
+      const b = boxOf(pts);
+      if (role === "place") {
+        // the new place: sky, a moon, two rows of hills, the ground, the things there (the middle one up front)
+        const sky = this.add.graphics();
+        sky.fillGradientStyle(lighten(c.sky, 0.3), lighten(c.sky, 0.3), c.sky, c.sky, 1).fillRect(b.x, b.y, b.w, b.h);
+        inner.add(sky);
+        const moon = this.add.circle(b.x + b.w * 0.82, b.y + b.h * 0.3, b.h * 0.14, lighten(c.pop, 0.45));
+        inner.add([this.add.circle(moon.x, moon.y, b.h * 0.26, lighten(c.pop, 0.3), 0.18), moon]);
+        const hills = this.add.graphics();
+        for (const [k, col] of [[0.55, darken(c.sky, 0.2)], [0.7, darken(c.sky, 0.45)]] as [number, number][]) {
+          hills.fillStyle(col, 1).beginPath().moveTo(b.x, b.y + b.h);
+          for (let i = 0; i <= 12; i++) hills.lineTo(b.x + (b.w * i) / 12, b.y + b.h * (k + Math.sin(i * 1.7 + k * 9) * 0.06));
+          hills.lineTo(b.x + b.w, b.y + b.h).closePath().fillPath();
+        }
+        hills.fillStyle(darken(c.sky, 0.6), 1).fillRect(b.x, b.y + b.h * 0.86, b.w, b.h * 0.14);
+        inner.add(hills);
         const n = c.place.length;
-        const img = this.add.image(b.x + b.w * ((i + 0.5) / n) * 0.92 + b.w * 0.04, b.y + b.h * 0.95, tex).setOrigin(0.5, 1);
-        img.setScale(Math.min((b.h * 0.8) / img.height, (b.w / n) * 0.95 / img.width));
-        inner.add(img);
-        this.tweens.add({ targets: img, scale: img.scale * 1.04, duration: 1800, yoyo: true, ease: "Sine.inOut" });
-      });
-
-      const cap = text(this, b.x + 34, b.y + 30, c.caption, 34, "#111111", { stroke: false, align: "left", wrap: b.w * 0.6 }).setOrigin(0, 0);
-      inner.add(this.add.rectangle(b.x + 18, b.y + 16, cap.width + 32, cap.height + 28, 0xffffff).setOrigin(0).setStrokeStyle(6, 0x111111));
-      inner.add(cap);
-    }
-    // B: you, extreme close-up, black concentration lines, a "!" and a sweat drop
-    {
-      const b = box("B");
-      const inner = panels.B;
-      const [cx, cy] = [b.x + b.w * 0.45, b.y + b.h * 0.5];
-      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, 0xffffff).setOrigin(0));
-      inner.add(this.concentration(cx, cy, b, Math.min(b.w, b.h) * 0.34, 0x111111));
-      const hero = this.add.image(cx, cy + b.h * 0.42, "hero").setOrigin(0.5, 0.62).setScale(Math.min(b.w / 70, b.h / 90));
-      // only the part inside the panel (an extreme close-up)
-      const hs = hero.scaleX;
-      const left = hero.x - hero.width * hero.originX * hs;
-      const topY = hero.y - hero.height * hero.originY * hs;
-      const cx0 = Math.max(0, (b.x - left) / hs);
-      const cy0 = Math.max(0, (b.y - topY) / hs);
-      hero.setCrop(cx0, cy0, Math.min(hero.width - cx0, (b.x + b.w - Math.max(left, b.x)) / hs), Math.min(hero.height - cy0, (b.y + b.h - Math.max(topY, b.y)) / hs));
-      inner.add(hero);
-      // it blinks
-      this.time.delayedCall(1900, () => this.tweens.add({ targets: hero, scaleY: hero.scaleY * 0.92, duration: 70, yoyo: true }));
-      const bang = text(this, b.x + b.w * 0.82, b.y + b.h * 0.2, "!", 150, "#111111", { stroke: 10 }).setAngle(12);
-      bang.setStroke("#ffffff", 14);
-      inner.add(bang);
-      const drop = this.add.graphics({ x: b.x + b.w * 0.2, y: b.y + b.h * 0.22 });
-      drop.fillStyle(0x8ad8ff, 1).lineStyle(6, 0x111111, 1);
-      drop.beginPath();
-      drop.moveTo(0, -36);
-      drop.lineTo(20, 4);
-      drop.arc(0, 8, 21, 0.3, Math.PI - 0.3, false);
-      drop.closePath();
-      drop.fillPath();
-      drop.strokePath();
-      inner.add(drop);
-      const sfxText = text(this, b.x + b.w * 0.5, b.y + b.h * 0.88, "BA-DUMP!", 56, "#ffffff", { stroke: 12 }).setAngle(-8);
-      inner.add(sfxText);
-    }
-    // C: what you are up against, with speed lines, a big sound effect and your speech bubble
-    {
-      const b = box("C");
-      const inner = panels.C;
-      const [cx, cy] = [b.x + b.w * 0.5, b.y + b.h * 0.6];
-      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, c.pop).setOrigin(0));
-      inner.add(this.concentration(cx, cy, b, Math.min(b.w, b.h) * 0.28, 0xffffff, 0.75));
-      const key = c.place[c.place.length - 1];
-      const tex = key === "boss" ? bossForStage(stage).tex : key;
-      if (this.textures.exists(tex)) {
-        const img = this.add.image(cx, b.y + b.h * 0.98, tex).setOrigin(0.5, 1);
-        img.setScale(Math.min((b.h * 0.7) / img.height, (b.w * 0.9) / img.width));
-        inner.add(img);
-        this.tweens.add({ targets: img, scale: img.scale * 1.06, duration: 300, yoyo: true, repeat: 3 });
+        const main = Math.floor(n / 2);
+        c.place.forEach((key, i) => {
+          const tex = texOf(key);
+          if (!this.textures.exists(tex)) return;
+          const big = i === main;
+          const img = this.add.image(b.x + b.w * ((i + 0.5) / n) * 0.9 + b.w * 0.05, b.y + b.h * (big ? 0.98 : 0.9), tex).setOrigin(0.5, 1);
+          img.setScale(Math.min((b.h * (big ? 0.8 : 0.55)) / img.height, ((b.w / n) * (big ? 1.1 : 0.8)) / img.width));
+          inner.add(img);
+          this.tweens.add({ targets: img, scale: img.scale * 1.04, duration: 1800, yoyo: true, ease: "Sine.inOut" });
+        });
+        inner.add(this.add.tileSprite(b.x, b.y + b.h * 0.55, b.w, b.h * 0.45, "comic_dots").setOrigin(0).setTint(0x000000).setAlpha(0.12));
+        // (below a slanted top edge)
+        const dy = pts[0][1] - b.y;
+        const cap = text(this, b.x + 34, b.y + dy + 30, c.caption, 32, "#111111", { stroke: false, align: "left", wrap: b.w * 0.6 }).setOrigin(0, 0);
+        inner.add(this.add.rectangle(b.x + 18, b.y + dy + 16, cap.width + 32, cap.height + 28, 0xfff8e0).setOrigin(0).setStrokeStyle(6, 0x111111));
+        inner.add(cap);
+      } else if (role === "face") {
+        // you, close up: your face says how you feel about it
+        const [cx, cy] = [b.x + b.w / 2, b.y + b.h / 2];
+        inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, lighten(c.pop, 0.6)).setOrigin(0));
+        inner.add(this.concentration(cx, cy - b.h * 0.05, b, Math.min(b.w, b.h) * 0.3, 0x111111));
+        const f = Math.min((b.w * 0.95) / 600, (b.h * 1.05) / 600);
+        const face = this.add.image(cx, b.y + b.h + 600 * f * 0.12, `comic_face_${c.mood}`).setOrigin(0.5, 1).setScale(f);
+        inner.add(face);
+        this.time.delayedCall(1900, () => face.active && this.tweens.add({ targets: face, scaleY: f * 0.95, duration: 80, yoyo: true }));
+        const mark = ({ shock: "!!", scared: "?!", determined: "!", happy: "" } as Record<string, string>)[c.mood];
+        if (mark) {
+          const bang = text(this, b.x + b.w * 0.86, b.y + b.h * 0.2, mark, Math.min(130, b.h * 0.3), "#111111", { stroke: 10 }).setAngle(12);
+          bang.setStroke("#ffffff", 12);
+          inner.add(bang);
+          this.tweens.add({ targets: bang, scale: 1.15, duration: 160, yoyo: true, repeat: 2, delay: 900 });
+        } else {
+          for (const [u, v, s] of [[0.15, 0.2, 1], [0.85, 0.25, 0.8], [0.8, 0.6, 0.6]]) {
+            const st = this.add.image(b.x + b.w * u, b.y + b.h * v, "comic_star").setScale(s * 1.2);
+            inner.add(st);
+            this.tweens.add({ targets: st, angle: 180, scale: s * 1.5, duration: 600, yoyo: true, repeat: -1 });
+          }
+        }
+        const word = ({ shock: "BA-DUMP!", scared: "BA-DUMP!", determined: "GRRR!", happy: "YAY!" } as Record<string, string>)[c.mood];
+        inner.add(text(this, b.x + b.w * 0.36, b.y + b.h * 0.14, word, Math.min(50, b.w * 0.15), "#ffffff", { stroke: 12 }).setAngle(-8));
+      } else if (role === "threat") {
+        // what you are up against: a burst of colour, speed lines, the big sound effect and your line
+        const [cx, cy] = [b.x + b.w * 0.5, b.y + b.h * 0.6];
+        inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, c.pop).setOrigin(0));
+        inner.add(this.concentration(cx, cy, b, Math.min(b.w, b.h) * 0.26, 0xffffff, 0.75));
+        inner.add(this.add.tileSprite(b.x, b.y, b.w, b.h, "comic_dots").setOrigin(0).setTint(darken(c.pop, 0.4)).setAlpha(0.3));
+        const tex = texOf(c.place[c.place.length - 1]);
+        if (this.textures.exists(tex)) {
+          const img = this.add.image(cx, b.y + b.h * 0.99, tex).setOrigin(0.5, 1);
+          img.setScale(Math.min((b.h * 0.72) / img.height, (b.w * 0.85) / img.width));
+          inner.add(img);
+          this.tweens.add({ targets: img, scale: img.scale * 1.07, duration: 260, yoyo: true, repeat: 3 });
+        }
+        const word = text(this, b.x + b.w * 0.7, b.y + b.h * 0.55, c.sfx, Math.min(76, b.w * 0.17), "#ffe066", { stroke: 14 }).setAngle(-12);
+        fitText(word, b.w * 0.6);
+        inner.add(word);
+        this.tweens.add({ targets: word, angle: -6, duration: 120, yoyo: true, repeat: 5 });
+        // the speech bubble, its tail pointing at your face
+        const say = text(this, 0, 0, c.say, 34, "#111111", { stroke: false, wrap: b.w * 0.55 });
+        const bw = say.width + 50;
+        const bh = say.height + 36;
+        // (clear of a slanted top edge, and of a round close-up laid over this panel)
+        const [bx, by] = [b.x + b.w * (stage % layouts.length === 2 ? 0.68 : 0.55), b.y + b.h * (stage % layouts.length === 2 ? 0.2 : 0.06) + bh / 2 + 30];
+        const bub = this.add.container(bx, by);
+        const ta = Math.atan2(faceAt[1] - by, faceAt[0] - bx);
+        const [tx, ty] = [Math.cos(ta) * bw * 0.75, Math.sin(ta) * bh * 0.9];
+        const [nx, ny] = [-Math.sin(ta) * 22, Math.cos(ta) * 22];
+        const bg = this.add.graphics();
+        bg.fillStyle(0xffffff, 1).lineStyle(6, 0x111111, 1);
+        bg.fillTriangle(nx, ny, -nx, -ny, tx, ty).strokeTriangle(nx, ny, -nx, -ny, tx, ty);
+        bg.fillEllipse(0, 0, bw * 1.12, bh * 1.2).strokeEllipse(0, 0, bw * 1.12, bh * 1.2);
+        bg.fillStyle(0xffffff, 1).fillTriangle(nx * 0.8, ny * 0.8, -nx * 0.8, -ny * 0.8, tx * 0.6, ty * 0.6);
+        bub.add([bg, say]);
+        inner.add(bub);
+      } else {
+        // you sprinting under the stage's title, white speed lines streaking past
+        inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, 0x111118).setOrigin(0));
+        inner.add(this.add.rectangle(b.x, b.y + b.h * 0.82, b.w, b.h * 0.18, darken(c.pop, 0.5)).setOrigin(0));
+        const lines = this.add.image(b.x + b.w / 2, b.y + b.h / 2, "comic_lines").setDisplaySize(b.w * 1.6, b.h).setAlpha(0.8);
+        inner.add(lines);
+        this.tweens.add({ targets: lines, x: b.x + b.w * 0.1, duration: 5000 });
+        const runner = this.add.image(b.x - 80, b.y + b.h * 0.92, "hero_w1").setOrigin(0.5, 0.95).setScale(Math.min(1.6, (b.h * 0.7) / 230));
+        inner.add(runner);
+        inner.setData("runner", runner);
+        const t1 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.3, `STAGE ${stage}`, 40, "#ffffff", { stroke: 10 });
+        const t2 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.64, stageInfo(stage).name, 70, "#" + lighten(c.pop, 0.35).toString(16).padStart(6, "0"), { stroke: 16 }).setAngle(-3);
+        fitText(t2, b.w * 0.62);
+        inner.add([t1, t2]);
       }
-      const go = text(this, b.x + b.w * 0.75, b.y + b.h * 0.62, "GO\nGO\nGO", 54, "#111111", { stroke: 0 }).setAngle(10).setAlpha(0.55);
-      inner.add(go);
-      // the speech bubble, its tail pointing back at you
-      const say = text(this, 0, 0, c.say, 36, "#111111", { stroke: false, wrap: b.w * 0.6 });
-      const bw = say.width + 50;
-      const bh = say.height + 40;
-      const bub = this.add.container(b.x + b.w * 0.56, b.y + bh / 2 + 34);
-      const bg = this.add.graphics();
-      bg.fillStyle(0xffffff, 1).lineStyle(6, 0x111111, 1);
-      bg.fillTriangle(-bw * 0.32, bh * 0.3, -bw * 0.12, bh * 0.4, -bw * 0.62, bh * 0.85);
-      bg.strokeTriangle(-bw * 0.32, bh * 0.3, -bw * 0.12, bh * 0.4, -bw * 0.62, bh * 0.85);
-      bg.fillEllipse(0, 0, bw * 1.12, bh * 1.2).strokeEllipse(0, 0, bw * 1.12, bh * 1.2);
-      bg.fillStyle(0xffffff, 1).fillTriangle(-bw * 0.3, bh * 0.28, -bw * 0.14, bh * 0.36, -bw * 0.3, bh * 0.5);
-      bub.add([bg, say]);
-      inner.add(bub);
-    }
-    // D: you sprinting under the stage's title, white speed lines streaking past
-    {
-      const b = box("D");
-      const inner = panels.D;
-      inner.add(this.add.rectangle(b.x, b.y, b.w, b.h, 0x111118).setOrigin(0));
-      // white speed lines streaking past
-      const lines = this.add.image(b.x + b.w / 2, b.y + b.h / 2, "comic_lines").setDisplaySize(b.w * 1.6, b.h).setAlpha(0.8);
-      inner.add(lines);
-      this.tweens.add({ targets: lines, x: b.x + b.w * 0.1, duration: 5000 });
-      const runner = this.add.image(b.x - 80, b.y + b.h * 0.92, "hero_w1").setOrigin(0.5, 0.95).setScale(Math.min(1.6, (b.h * 0.7) / 230));
-      inner.add(runner);
-      inner.setData("runner", runner);
-      const t1 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.3, `STAGE ${stage}`, 40, "#ffffff", { stroke: 10 });
-      const t2 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.64, stageInfo(stage).name, 70, "#ffe066", { stroke: 16 }).setAngle(-3);
-      fitText(t2, b.w * 0.62);
-      inner.add([t1, t2]);
     }
     // the timeline: each panel inks in with a flash and a little punch-in
     const tl: Phaser.Time.TimerEvent[] = [];
     const at = (ms: number, fn: () => void) => tl.push(this.time.delayedCall(ms, fn));
-    const inkIn = (k: keyof typeof polys, sound: () => void) => {
-      const holder = panels[k].getData("holder") as Phaser.GameObjects.Container;
-      const b = box(k);
+    const sounds = [() => sfx.panel(), () => sfx.sting(), () => sfx.panel(), () => sfx.whoosh()];
+    panels.forEach(({ role, pts, inner, holder }, i) => at(350 + i * 800, () => {
+      const b = boxOf(pts);
       holder.setAlpha(1);
-      frames.lineStyle(10, 0x111111, 1).strokePoints(V(polys[k]), true, true);
-      panels[k].setScale(1.04).setPosition(-(b.x + b.w / 2) * 0.04, -(b.y + b.h / 2) * 0.04);
-      this.tweens.add({ targets: panels[k], scale: 1, x: 0, y: 0, duration: 320, ease: "Back.out" });
-      const flash = this.add.polygon(0, 0, polys[k].flat(), 0xffffff, 1).setOrigin(0);
+      if (role === "face") frames.lineStyle(18, 0xf6eedc, 1).strokePoints(V(pts), true, true);
+      frames.lineStyle(10, 0x111111, 1).strokePoints(V(pts), true, true);
+      inner.setScale(1.05).setPosition(-(b.x + b.w / 2) * 0.05, -(b.y + b.h / 2) * 0.05);
+      this.tweens.add({ targets: inner, scale: 1, x: 0, y: 0, duration: 320, ease: "Back.out" });
+      const flash = this.add.polygon(0, 0, pts.flat(), 0xffffff, 1).setOrigin(0);
       page.add(flash);
       this.tweens.add({ targets: flash, alpha: 0, duration: 260, onComplete: () => flash.destroy() });
-      sound();
-    };
-    at(350, () => inkIn("A", () => sfx.panel()));
-    at(1150, () => {
-      inkIn("B", () => sfx.sting());
-      this.cameras.main.shake(120, 0.004);
-    });
-    at(1950, () => inkIn("C", () => sfx.panel()));
-    at(2750, () => {
-      inkIn("D", () => sfx.whoosh());
-      const runner = panels.D.getData("runner") as Phaser.GameObjects.Image;
-      const b = box("D");
-      this.tweens.add({ targets: runner, x: b.x + b.w * 0.2, duration: 700, ease: "Quad.out" });
-      let f = 0;
-      const run = this.time.addEvent({ delay: 110, loop: true, callback: () => runner.active && runner.setTexture((f ^= 1) ? "hero_w2" : "hero_w1") });
-      tl.push(run);
-    });
+      sounds[i]();
+      if (role === "threat") this.cameras.main.shake(140, 0.005);
+      if (role === "title") {
+        const runner = inner.getData("runner") as Phaser.GameObjects.Image;
+        this.tweens.add({ targets: runner, x: b.x + b.w * 0.2, duration: 700, ease: "Quad.out" });
+        let f = 0;
+        tl.push(this.time.addEvent({ delay: 110, loop: true, callback: () => runner.active && runner.setTexture((f ^= 1) ? "hero_w2" : "hero_w1") }));
+      }
+    }));
     let closed = false;
     const close = () => {
       if (closed) return;
@@ -1814,6 +1817,7 @@ export class UIScene extends Phaser.Scene implements Host {
       tl.forEach((t) => t.remove(false));
       this.tweens.add({ targets: root, alpha: 0, duration: 260, onComplete: () => {
         root.destroy(true);
+        panels.forEach((q) => q.mask.destroy());
         done();
       } });
     };
@@ -1850,6 +1854,7 @@ export class UIScene extends Phaser.Scene implements Host {
 
   /** Paper grain, screentone dots and horizontal speed lines for the manga. */
   private comicTextures(): void {
+    makeComicFaces(this);
     if (!this.textures.exists("comic_dots")) {
       const tex = this.textures.createCanvas("comic_dots", 24, 24)!;
       const cx = tex.getContext();
@@ -2073,7 +2078,7 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** The boss lands: a big title card with its name. */
-  private bossIntro(info: { name: string; tex: string; moves: string[] }): void {
+  private bossIntro(info: { name: string; tex: string; moves: string[]; tip?: string }): void {
     const { W, H } = this;
     const cy = H * 0.4;
     const band = this.add.graphics().setDepth(5300);
@@ -2084,7 +2089,7 @@ export class UIScene extends Phaser.Scene implements Host {
     const title = text(this, -400, cy - 80, "BOSS FIGHT!", 96, "#ff5a5a").setOrigin(0, 0.5).setDepth(5303);
     const name = text(this, -400, cy + 40, info.name.toUpperCase(), 64, "#ffe066").setOrigin(0, 0.5).setDepth(5303);
     const hint = text(this, 60, cy + 112, `Moves: ${info.moves.join("  •  ")}`, 30, "#ffe0e0").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
-    const tip = text(this, 60, cy + 152, "Dodge the red marks. Close the seals so it can't heal!", 24, "#ffb8b8").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
+    const tip = text(this, 60, cy + 152, info.tip ?? "Dodge the red marks. Close the seals so it can't heal!", 24, "#ffb8b8").setOrigin(0, 0.5).setDepth(5303).setAlpha(0);
     this.tweens.add({ targets: rays, angle: 180, duration: 3000 });
     this.tweens.add({ targets: portrait, x: W - 250, duration: 450, ease: "Back.out" });
     this.tweens.add({ targets: title, x: 60, duration: 400, ease: "Back.out", delay: 100 });
@@ -2746,47 +2751,67 @@ export class UIScene extends Phaser.Scene implements Host {
     m.body.add(label(this, 0, h / 2 - 70, `Rarest roll: ${oneIn(save.bestRoll)}   •   Rolls: ${fmt(save.totalRolls)}`, 28, "#9a7a5a"));
   }
 
-  /** Settings: a cyan header, coloured tabs on the left and switch rows on the right. */
+  /**
+   * Settings: your profile card on top, pill tabs across, and a grid of big tiles under them; a tile with
+   * a switch flips when you tap anywhere on it (it lights up in the tab's colour when it is on).
+   */
   private showSettings(tab = 0): void {
     const W = 1000;
-    const H = 1080;
-    const m = this.showModal(modal(this, W, H, "", "blue", () => (this.openModal = null), undefined, true));
+    // (as tall as its tiles: two to a row, the account tab has the reset button under them)
+    const devTools = tab === 3 && (!onlineEnabled() || new URLSearchParams(location.search).has("dev"));
+    const H = 790 + (Math.ceil([3, 3, 4, 2][tab] / 2) - 1) * 258 + (tab === 3 ? 150 + (devTools ? 110 : 0) : 0);
+    const m = this.showModal(modal(this, W, H, "", "purple", () => (this.openModal = null), undefined, true));
     const g = this.add.graphics();
     m.body.add(g);
-    const box = (x: number, y: number, w: number, h: number, fill: number, r: number, edge = darken(fill, 0.3)) => {
-      g.fillStyle(0x000000, 0.25).fillRoundedRect(x - w / 2, y - h / 2 + 8, w, h, r);
-      g.fillStyle(edge, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
-      g.fillStyle(fill, 1).fillRoundedRect(x - w / 2 + 5, y - h / 2 + 5, w - 10, h - 14, r - 4);
-      g.fillStyle(0xffffff, 0.22).fillRoundedRect(x - w / 2 + 12, y - h / 2 + 9, w - 24, (h - 14) * 0.38, r - 8);
+    const box = (gr: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, fill: number, r: number, edge = darken(fill, 0.3), shine = 0.22) => {
+      gr.fillStyle(0x000000, 0.22).fillRoundedRect(x - w / 2, y - h / 2 + 8, w, h, r);
+      gr.fillStyle(edge, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, r);
+      gr.fillStyle(fill, 1).fillRoundedRect(x - w / 2 + 5, y - h / 2 + 5, w - 10, h - 14, r - 4);
+      if (shine) gr.fillStyle(0xffffff, shine).fillRoundedRect(x - w / 2 + 12, y - h / 2 + 9, w - 24, (h - 14) * 0.36, r - 8);
     };
-    // header
-    const top = -H / 2 + 75;
-    box(0, top, W - 20, 140, 0x34c8f0, 30);
-    m.body.add([
-      this.add.image(-270, top - 4, "icon_gear").setScale(0.95),
-      text(this, 30, top - 6, "SETTINGS", 72, "#ffffff", { stroke: 12 }),
-    ]);
-    // the light panel under it
-    box(0, top + 80 + (H - 170) / 2, W - 20, H - 170, 0xe9f2fb, 34, 0x9ab4d0);
+    const TABS: { name: string; icon: string; color: number }[] = [
+      { name: "Sound", icon: this.glyph("note"), color: 0xb64ae8 },
+      { name: "Graphics", icon: "icon_star", color: 0xff8a2a },
+      { name: "Game", icon: this.glyph("screen"), color: 0x2a9af0 },
+      { name: "Account", icon: "icon_globe", color: 0x2ab86a },
+    ];
+    const T = TABS[tab];
+    // the whole sheet, tinted by the tab you are on
+    const top = -H / 2;
+    box(g, 0, 0, W - 10, H - 10, 0x23264a, 44, 0x12142a, 0);
+    g.fillStyle(T.color, 0.18).fillRoundedRect(-W / 2 + 20, top + 20, W - 40, H - 50, 36);
+    // header: a spinning gear and the title
+    const gear = this.add.image(-W / 2 + 110, top + 95, "icon_gear").setScale(0.8);
+    this.tweens.add({ targets: gear, angle: 360, duration: 9000, repeat: -1 });
+    m.body.add([gear, text(this, -W / 2 + 180, top + 92, "SETTINGS", 70, "#ffffff", { stroke: 12 }).setOrigin(0, 0.5)]);
     const close = m.body.list.find((o) => o instanceof Phaser.GameObjects.Image && o.texture.key === "icon_close");
     if (close) m.body.bringToTop(close);
-
-    const TABS: { name: string; icon: string; color: number }[] = [
-      { name: "Audio", icon: this.glyph("note"), color: 0xc64ae8 },
-      { name: "Graphics", icon: "icon_star", color: 0xff9a2a },
-      { name: "Interface", icon: this.glyph("screen"), color: 0x3a8af0 },
-      { name: "Account", icon: "icon_globe", color: 0x3ac06a },
-    ];
-    const tabX = -W / 2 + 160;
+    // your profile card
+    const py = top + 265;
+    box(g, 0, py, W - 80, 200, 0xfff6e6, 34, 0xd8b88a);
+    const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
+    g.fillStyle(T.color, 1).fillCircle(-W / 2 + 140, py - 4, 74);
+    g.fillStyle(0xffffff, 0.25).fillCircle(-W / 2 + 128, py - 22, 44);
+    m.body.add([
+      this.fit(this.add.image(-W / 2 + 140, py - 2, "hero"), 120),
+      fitText(text(this, -W / 2 + 240, py - 46, playerName(), 44, "#3a2a1a", { stroke: false }).setOrigin(0, 0.5), 430),
+      fitText(text(this, -W / 2 + 240, py + 4, `${who}  •  Best stage ${save.bestStage}/${MAX_STAGE}`, 26, "#8a6a4a", { stroke: false }).setOrigin(0, 0.5), 430),
+      fitText(text(this, -W / 2 + 240, py + 44, `${fmt(save.totalKills)} kills • ${fmt(save.totalRolls)} rolls • best ${oneIn(save.bestRoll)}`, 24, "#a88a6a", { stroke: false }).setOrigin(0, 0.5), 430),
+      button(this, W / 2 - 150, py, 170, 84, "blue", "RENAME", () => {
+        askName(this);
+        m.close();
+      }, { size: 26 }),
+    ]);
+    // the tabs: pills across
+    const ty = py + 175;
     TABS.forEach((t, i) => {
-      const y = top + 180 + i * 170;
+      const x = -W / 2 + 40 + 115 + i * 230;
       const on = i === tab;
-      box(tabX + (on ? 10 : 0), y, on ? 250 : 230, 150, on ? t.color : darken(t.color, 0.25), 26);
-      if (on) g.fillStyle(t.color, 1).fillTriangle(tabX + 132, y - 26, tabX + 132, y + 26, tabX + 162, y);
-      const c = this.add.container(tabX + (on ? 10 : 0), y, [
-        this.fit(this.add.image(0, -16, t.icon), on ? 82 : 70).setAlpha(on ? 1 : 0.8),
-        fitText(text(this, 0, 44, t.name, on ? 30 : 26, on ? "#ffffff" : "#e8e0f0", { stroke: 6 }), 210),
-      ]).setSize(230, 150).setInteractive({ useHandCursor: true });
+      box(g, x, ty, 215, 96, on ? t.color : 0x3a3e6a, 48, on ? darken(t.color, 0.35) : 0x1e2142, on ? 0.25 : 0.08);
+      const c = this.add.container(x, ty, [
+        this.fit(this.add.image(-62, -4, t.icon), 50).setAlpha(on ? 1 : 0.6),
+        fitText(text(this, 22, -4, t.name, 28, on ? "#ffffff" : "#a8b0d8", { stroke: on ? 6 : 0 }), 120),
+      ]).setSize(215, 96).setInteractive({ useHandCursor: true });
       if (!on) c.on("pointerup", () => {
         sfx.click();
         m.root.destroy();
@@ -2795,85 +2820,108 @@ export class UIScene extends Phaser.Scene implements Host {
       });
       m.body.add(c);
     });
-
-    // the rows
-    const RX = 135;
-    const RW = 680;
-    m.body.add(text(this, RX, top + 135, TABS[tab].name, 54, "#3a5a80", { stroke: false }));
-    let y = top + 260;
-    const row = (icon: string, title: string, sub: string, ctrl?: (y: number) => Phaser.GameObjects.GameObject[]) => {
-      box(RX, y, RW, 150, 0xffffff, 26, 0xc9d8e8);
-      box(RX - RW / 2 + 82, y - 2, 118, 118, 0xff9a2a, 22);
-      m.body.add([
-        this.fit(this.add.image(RX - RW / 2 + 82, y - 6, icon), 84),
-        fitText(text(this, RX - RW / 2 + 162, y - 24, title, 36, "#2a3a55", { stroke: false }).setOrigin(0, 0.5), ctrl ? 300 : 480),
-        fitText(text(this, RX - RW / 2 + 162, y + 22, sub, 23, "#7a8aa0", { stroke: false }).setOrigin(0, 0.5), ctrl ? 300 : 480),
-        ...(ctrl?.(y) ?? []),
-      ]);
-      y += 172;
+    // the tiles: two columns
+    const TW = 430;
+    const TH = 230;
+    let n = 0;
+    const slot = () => {
+      const [x, y] = [(n % 2 ? 1 : -1) * (TW / 2 + 15), ty + 170 + Math.floor(n / 2) * (TH + 28)];
+      n++;
+      return [x, y];
     };
-    const toggle = (get: () => boolean, set: (on: boolean) => void) => (yy: number) => {
-      const b: Button = button(this, RX + RW / 2 - 100, yy - 4, 150, 86, get() ? "green" : "red", get() ? "ON" : "OFF", () => {
+    const tileBase = (x: number, y: number, icon: string, title: string, sub: string, wrap = TW - 60) => {
+      const tg = this.add.graphics();
+      m.body.add(tg);
+      const ic = this.fit(this.add.image(x - TW / 2 + 70, y - TH / 2 + 70, icon), 64);
+      const t1 = fitText(text(this, x - TW / 2 + 120, y - TH / 2 + 56, title, 32, "#ffffff", { stroke: false }).setOrigin(0, 0.5), TW - 150);
+      const t2 = text(this, x - TW / 2 + 30, y - 20, sub, 22, "#c8cce8", { stroke: false, align: "left", wrap }).setOrigin(0, 0);
+      m.body.add([ic, t1, t2]);
+      return { tg, ic, t1, t2 };
+    };
+    const toggle = (icon: string, title: string, sub: string, get: () => boolean, set: (on: boolean) => void) => {
+      const [x, y] = slot();
+      const { tg, t2 } = tileBase(x, y, icon, title, sub);
+      const knob = this.add.circle(0, y + TH / 2 - 52, 24, 0xffffff).setStrokeStyle(4, 0x1a1a2a);
+      const word = text(this, 0, y + TH / 2 - 52, "", 22, "#ffffff", { stroke: 5 });
+      m.body.add([knob, word]);
+      const sx = x + TW / 2 - 90;
+      const draw = (anim: boolean) => {
+        const on = get();
+        tg.clear();
+        box(tg, x, y, TW, TH, on ? darken(T.color, 0.1) : 0x3a3e6a, 30, on ? darken(T.color, 0.45) : 0x1e2142, on ? 0.18 : 0.06);
+        // the switch: a track and a knob that slides across
+        tg.fillStyle(0x000000, 0.3).fillRoundedRect(sx - 58, y + TH / 2 - 84, 116, 60, 30);
+        tg.fillStyle(on ? 0x5ae06a : 0x6a6e90, 1).fillRoundedRect(sx - 56, y + TH / 2 - 82, 112, 56, 28);
+        const kx = sx + (on ? 28 : -28);
+        if (anim) this.tweens.add({ targets: knob, x: kx, duration: 160, ease: "Back.out" });
+        else knob.x = kx;
+        word.setText(on ? "ON" : "OFF").setPosition(x - TW / 2 + 70, y + TH / 2 - 52).setColor(on ? "#ffffff" : "#a8b0d8");
+        t2.setColor(on ? "#ffffff" : "#c8cce8");
+      };
+      draw(false);
+      const hit = this.add.zone(x, y, TW, TH).setInteractive({ useHandCursor: true });
+      hit.on("pointerup", () => {
         set(!get());
         persist();
         applySettings(this.game);
-        b.setLabel(get() ? "ON" : "OFF").setColor(get() ? "green" : "red");
-      }, { size: 36 });
-      return [b];
+        sfx.click();
+        draw(true);
+      });
+      m.body.add(hit);
     };
-    const action = (str: string, color: BtnColor, fn: () => void) => (yy: number) => [
-      button(this, RX + RW / 2 - 110, yy - 4, 180, 86, color, str, fn, { size: 26 }),
-    ];
+    const action = (icon: string, title: string, sub: string, str: string, color: BtnColor, fn: () => void) => {
+      const [x, y] = slot();
+      const { tg } = tileBase(x, y, icon, title, sub);
+      box(tg, x, y, TW, TH, 0x3a3e6a, 30, 0x1e2142, 0.06);
+      m.body.add(button(this, x + TW / 2 - 110, y + TH / 2 - 54, 180, 76, color, str, fn, { size: 26 }));
+    };
     const st = save.settings;
     if (tab === 0) {
-      row(this.glyph("note"), "Music", "Songs in the lobby and fights", toggle(() => music.isOn(), (on) => music.setOn(on)));
-      row(this.glyph("speaker"), "Sound", "Hits, rolls and rewards", toggle(() => !isMuted(), (on) => setMuted(!on)));
-      row(this.glyph("phone"), "Vibration", "Buzz on big moments", toggle(() => st.vibrate, (on) => (st.vibrate = on)));
+      toggle(this.glyph("note"), "Music", "Songs in the lobby and fights", () => music.isOn(), (on) => music.setOn(on));
+      toggle(this.glyph("speaker"), "Sound", "Hits, rolls and rewards", () => !isMuted(), (on) => setMuted(!on));
+      toggle(this.glyph("phone"), "Vibration", "Buzz on big moments", () => st.vibrate, (on) => (st.vibrate = on));
     } else if (tab === 1) {
-      row("icon_bolt", "Toaster mode", "Lowest graphics, smoothest play", toggle(() => st.toaster, (on) => (st.toaster = on)));
-      row("icon_star", "Zone effects", "Fog, light beams and fire", toggle(() => st.effects, (on) => (st.effects = on)));
-      row(this.glyph("shake"), "Screen shake", "Shake on hits and bombs", toggle(() => st.shake, (on) => (st.shake = on)));
-      m.body.add(label(this, RX, y + 10, "Toaster mode and zone effects\nchange from the next fight.", 26, "#7a8aa0"));
+      toggle("icon_bolt", "Toaster mode", "Lowest graphics, smoothest play (next fight)", () => st.toaster, (on) => (st.toaster = on));
+      toggle("icon_star", "Zone effects", "Fog, light beams and fire (next fight)", () => st.effects, (on) => (st.effects = on));
+      toggle(this.glyph("shake"), "Screen shake", "Shake on hits and bombs", () => st.shake, (on) => (st.shake = on));
     } else if (tab === 2) {
-      row("icon_sword", "Damage numbers", "Numbers when you hit", toggle(() => st.dmgNumbers, (on) => (st.dmgNumbers = on)));
-      row("pk_heart", "HP numbers", "Health under the bars", toggle(() => st.hpNumbers, (on) => (st.hpNumbers = on)));
-      row("icon_book", "Story", "Watch the opening again", action("WATCH", "purple", () => {
+      toggle("icon_sword", "Damage numbers", "Numbers when you hit", () => st.dmgNumbers, (on) => (st.dmgNumbers = on));
+      toggle("pk_heart", "HP numbers", "Health under the bars", () => st.hpNumbers, (on) => (st.hpNumbers = on));
+      action("icon_book", "Story", "Watch the opening again", "WATCH", "purple", () => {
         m.close();
         void this.replayStory();
-      }));
-      row("icon_globe", "Language", lang().name, action(lang().name, "blue", () => {
+      });
+      action("icon_globe", "Language", lang().name, "CHANGE", "blue", () => {
         m.close();
         this.showLanguages();
-      }));
+      });
     } else {
-      const who = !onlineEnabled() ? "Offline version" : online.provider === "playgames" ? "Google Play" : online.provider === "guest" ? "Guest" : online.status === "connecting" ? "Connecting..." : "Offline";
-      row("icon_paw", playerName(), who, action("RENAME", "blue", () => {
-        askName(this);
-        m.close();
-      }));
       const play = onlineEnabled() && canUsePlayGames() && online.provider !== "playgames";
-      row("icon_globe", "Google Play", play ? "Keep your ranks on a new phone" : "In the Google Play app", action(play ? "SIGN IN" : "SOON", play ? "green" : "grey", () => {
+      action("icon_globe", "Google Play", play ? "Keep your ranks on a new phone" : "In the Google Play app", play ? "SIGN IN" : "SOON", play ? "green" : "grey", () => {
         if (!play) return this.toast("Google Play sign-in is in the Android app (no sign-in needed to play)", "#ffe680");
         m.close();
         void signInWithPlay().then((ok) => this.toast(ok ? `Signed in with Google Play as ${playerName()}` : "Google Play sign-in didn't work, you can keep playing as you are", ok ? "#8af06a" : "#ffe680"));
-      }));
-      row("icon_trophy", `Best stage ${save.bestStage}/${MAX_STAGE}`, `${fmt(save.totalKills)} kills • ${fmt(save.totalRolls)} rolls • best ${oneIn(save.bestRoll)}`);
-      if (!onlineEnabled() || new URLSearchParams(location.search).has("dev")) {
+      });
+      action("icon_trophy", "Leaderboards", "See the best players", "OPEN", "blue", () => {
+        m.close();
+        showLeaderboard(this, this, () => (this.openModal = null));
+      });
+      if (devTools) {
+        const yy = ty + 170 + Math.ceil(n / 2) * (TH + 28) - 60;
         const tool = (x: number, str: string, fn: () => void) =>
-          button(this, x, y - 20, 150, 80, "grey", str, () => {
+          button(this, x, yy, 200, 80, "grey", str, () => {
             fn();
             persist();
           }, { size: 24 });
         m.body.add([
-          tool(RX - 243, "+1B $", () => (save.cash += 1e9)),
-          tool(RX - 81, "+100 gem", () => (save.gems += 100)),
-          tool(RX + 81, "+100 dice", () => (save.dice.A += 100)),
-          tool(RX + 243, "+10K $", () => (save.cash += 1e4)),
+          tool(-330, "+1B $", () => (save.cash += 1e9)),
+          tool(-110, "+100 gem", () => (save.gems += 100)),
+          tool(110, "+100 dice", () => (save.dice.A += 100)),
+          tool(330, "+10K $", () => (save.cash += 1e4)),
         ]);
-        y += 90;
       }
       let sure = false;
-      const reset: Button = button(this, RX, H / 2 - 110, 420, 100, "red", "RESET SAVE", () => {
+      const reset: Button = button(this, 0, H / 2 - 100, 420, 100, "red", "RESET SAVE", () => {
         if (!sure) {
           sure = true;
           reset.setLabel("TAP AGAIN");

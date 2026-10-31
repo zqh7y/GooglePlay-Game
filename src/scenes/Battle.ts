@@ -207,6 +207,8 @@ export const battle = {
   /** developer: where the next fight starts (the beginning, the middle, near the end, the boss) */
   devJump: "start" as "start" | "mid" | "end" | "boss",
   goal: null as { frac: number; text: string; color: number; icon: string; alarm: boolean } | null,
+  /** safe from a tsunami (on an island): the screen edges glow green */
+  safe: false,
 };
 
 /** How a Boss Rush ended. */
@@ -725,6 +727,8 @@ export class BattleScene extends Phaser.Scene {
       cells: [] as QuakeCell[], grid: new Map<number, QuakeCell>(), x0: 0, y0: 0,
       objs: [] as { img: Phaser.GameObjects.Image; x: number; y: number }[], tower: null as Phaser.GameObjects.Image | null,
       quakeT: 3500, bombT: 6000, shockT: 22000, hotT: 150, burnT: 400, bubT: 0, fell: false, done: false, flying: false,
+      rocks: [] as { img: Phaser.GameObjects.Image; rect: Phaser.Geom.Rectangle; t: number }[], smokeT: 0,
+      incoming: [] as { x: number; y: number }[],
     };
   }
 
@@ -732,6 +736,8 @@ export class BattleScene extends Phaser.Scene {
     return {
       hammer: null as Phaser.GameObjects.GameObject[] | null, has: false, held: null as Phaser.GameObjects.Image | null,
       log: null as Phaser.GameObjects.Image | null, x: 0, y: 0, solid: null as Phaser.Geom.Rectangle | null, p: 0, broken: false, swingT: 0, saidNeed: 0,
+      // stage 5: a broken bridge over a river instead of the log, mended with planks found on the way
+      kind: "log" as "log" | "bridge", planks: [] as Phaser.GameObjects.GameObject[][], got: 0,
     };
   }
 
@@ -739,7 +745,7 @@ export class BattleScene extends Phaser.Scene {
     return {
       king: null as Enemy | null, phase: 0, armor: true, crackT: 0, clock: 0, bombT: 3000, meteorT: 9000, slimeT: 2500, hotT: 200,
       k: 1, ring: null as Phaser.GameObjects.Graphics | null, ringK: 1, steam: null as Phaser.GameObjects.Image | null, steamT: 0, saidArmor: 0,
-      vents: [] as { x: number; y: number; p: number; cd: number; img: Phaser.GameObjects.Image }[],
+      vents: [] as { x: number; y: number; p: number; cd: number; img: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Graphics; tag: Phaser.GameObjects.Text }[],
       lava: [] as Phaser.GameObjects.TileSprite[], jump: "start" as typeof battle.devJump,
     };
   }
@@ -1364,15 +1370,51 @@ export class BattleScene extends Phaser.Scene {
     const c = a.crater!;
     const V = this.volc;
     const oval = (o: { cx: number; cy: number; rx: number; ry: number }) => this.make.graphics({}, false).fillStyle(0xffffff).fillEllipse(o.cx, o.cy, o.rx * 2, o.ry * 2).createGeometryMask();
+    // the lava sea, and a second layer of light sliding over it the other way (it shimmers)
     const sea = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-1000);
-    this.tweens.add({ targets: sea, tilePositionX: 256, tilePositionY: -256, duration: 16000, repeat: -1 });
+    this.tweens.add({ targets: sea, tilePositionX: 512, tilePositionY: -512, duration: 30000, repeat: -1 });
+    const shimmer = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-999).setAlpha(0.3).setBlendMode(Phaser.BlendModes.ADD).setTileScale(1.6);
+    this.tweens.add({ targets: shimmer, tilePositionX: -512, duration: 22000, repeat: -1 });
+    // the floor: basalt slabs, shaded darker toward the rim (a bowl)
     this.add.tileSprite(0, 0, a.w, a.h, "ash_tile").setOrigin(0).setDepth(-996).setMask(oval(c));
+    this.add.image(c.cx, c.cy, "crater_shade").setDisplaySize(c.rx * 2.02, c.ry * 2.02).setDepth(-995);
     this.add.ellipse(c.cx, c.cy, c.rx * 2 + 20, c.ry * 2 + 20).setStrokeStyle(40, 0x24161a, 0.95).setDepth(-995);
     const edge = this.add.ellipse(c.cx, c.cy, c.rx * 2 + 70, c.ry * 2 + 70).setStrokeStyle(12, 0xffa030, 0.8).setDepth(-995);
     this.tweens.add({ targets: edge, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    // the far side of the crater rises as cliffs behind the floor (lava pouring down some of them);
+    // the near side is a lip of boulders
+    const arc = (k: number, t: number): [number, number] => [c.cx + Math.cos(t) * c.rx * k, c.cy + Math.sin(t) * c.ry * k];
+    let n = 0;
+    for (let t = Math.PI * 0.92; t <= Math.PI * 2.08; t += 0.15) {
+      const [x, y] = arc(1.03, t);
+      const side = Math.abs(Math.cos(t));
+      const key = n % 4 === 1 ? "crater_fall" : n % 2 ? "crater_wall2" : "crater_wall";
+      const w = this.add.image(x, y + 40, key).setOrigin(0.5, 1).setDepth(y - 400).setScale(1.15, 1.25 - side * 0.55).setAngle(Math.cos(t) * -8).setFlipX(n % 3 === 0);
+      if (key === "crater_fall") {
+        this.nightGlow(x, y, 4, 0.6);
+        if (effectsOn()) this.add.particles(x, y - 20, "spark", {
+          x: { min: -50, max: 50 }, lifespan: 700, speedY: { min: -260, max: -120 }, speedX: { min: -120, max: 120 }, gravityY: 400,
+          scale: { start: 0.6, end: 0 }, tint: [0xffd040, 0xff8a1a], frequency: 120,
+        }).setDepth(w.depth + 1);
+      }
+      n++;
+    }
+    for (let t = Math.PI * 0.12; t < Math.PI * 0.9; t += 0.12) {
+      const [x, y] = arc(1.04, t);
+      this.add.image(x, y, "crater_lip").setOrigin(0.5, 0.55).setDepth(y + 300).setScale(1.1).setAngle(Math.cos(t) * 20).setFlipX(Math.random() < 0.5);
+    }
+    // the lava lake, ringed by big boulders
     const lake = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-993).setMask(oval(c.lake));
-    this.tweens.add({ targets: lake, tilePositionX: -256, duration: 9000, repeat: -1 });
+    this.tweens.add({ targets: lake, tilePositionX: -512, duration: 18000, repeat: -1 });
+    const lakeGlow = this.add.ellipse(c.lake.cx, c.lake.cy, c.lake.rx * 2.3, c.lake.ry * 2.3, 0xff8a1a, 0.18).setDepth(-994).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: lakeGlow, alpha: 0.06, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     this.add.ellipse(c.lake.cx, c.lake.cy, c.lake.rx * 2 + 30, c.lake.ry * 2 + 30).setStrokeStyle(30, 0x24161a, 0.95).setDepth(-992);
+    const rocks = ["meteor_a", "meteor_b", "meteor_c"];
+    let m = 0;
+    for (let t = 0; t < Math.PI * 2; t += 0.21) {
+      const [x, y] = [c.lake.cx + Math.cos(t) * (c.lake.rx + 50), c.lake.cy + Math.sin(t) * (c.lake.ry + 40)];
+      this.add.image(x, y, rocks[m++ % 3]).setOrigin(0.5, 0.8).setScale(0.42 + ((m * 37) % 10) / 40).setDepth(y).setTint(0xb0a0a4).setFlipX(m % 2 === 0);
+    }
     V.lava = [sea, lake];
     // the lava glows through the night
     this.nightGlow(c.lake.cx, c.lake.cy, 10, 0.75);
@@ -1574,8 +1616,15 @@ export class BattleScene extends Phaser.Scene {
       const hole = add(this.add.image(x + 230, y + 120, "quake_hole").setScale(0.75).setDepth(y - 200));
       add(this.add.image(x - 200, y + 140, "quake_crack").setScale(0.6).setDepth(y - 199));
       this.tweens.add({ targets: hole, alpha: 0.75, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-      const v = add(this.add.image(x, y - 40, "volcano_mini").setOrigin(0.5, 1).setScale(0.8).setDepth(y));
-      if (effectsOn()) add(this.add.particles(x, y - 340, "puff", {
+      const v = add(this.add.image(x, y - 40, "volcano_pro").setOrigin(0.5, 1).setScale(0.62).setDepth(y));
+      const top = y - 40 - (780 - 182) * 0.62;
+      const glow = add(this.add.image(x, top + 10, "glow").setTint(0xff7a1a).setScale(2).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(y + 1));
+      this.tweens.add({ targets: glow, alpha: 0.25, duration: 600, yoyo: true, repeat: -1 });
+      if (effectsOn()) add(this.add.particles(x, top, "spark", {
+        x: { min: -40, max: 40 }, lifespan: 1100, speedY: { min: -420, max: -220 }, speedX: { min: -140, max: 140 }, gravityY: 500,
+        scale: { start: 0.7, end: 0 }, tint: [0xff8a1a, 0xffd040], frequency: 90,
+      }).setDepth(y + 2));
+      if (effectsOn()) add(this.add.particles(x, top, "puff", {
         lifespan: 2600, speedY: { min: -120, max: -60 }, speedX: { min: -20, max: 40 }, scale: { start: 1, end: 3 }, alpha: { start: 0.6, end: 0 }, tint: 0x5a4a4a, frequency: 220,
       }).setDepth(y + 2));
       this.tweens.add({ targets: v, x: x + 6, duration: 70, yoyo: true, repeat: -1, repeatDelay: 1400 });
@@ -1583,13 +1632,14 @@ export class BattleScene extends Phaser.Scene {
     } else if (m === "volcano") {
       // the volcano smoking across the island, and the Magma King waiting in it
       const [x, y] = [cx - 330, cy + 760];
-      const v = add(this.add.image(x, y, "volcano_mini").setOrigin(0.5, 1).setScale(1.05).setDepth(y));
-      const glow = add(this.add.image(x, y - 380, "glow").setTint(0xff7a1a).setScale(2.4).setAlpha(0.6).setDepth(y + 1));
+      const v = add(this.add.image(x, y, "volcano_pro").setOrigin(0.5, 1).setScale(0.7).setDepth(y));
+      const top = y - (780 - 182) * 0.7;
+      const glow = add(this.add.image(x, top + 10, "glow").setTint(0xff7a1a).setScale(2.4).setAlpha(0.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(y + 1));
       this.tweens.add({ targets: glow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 });
-      if (effectsOn()) add(this.add.particles(x, y - 390, "puff", {
+      if (effectsOn()) add(this.add.particles(x, top, "puff", {
         lifespan: 2600, speedY: { min: -120, max: -60 }, speedX: { min: -20, max: 40 }, scale: { start: 1, end: 3 }, alpha: { start: 0.6, end: 0 }, tint: 0x5a4a4a, frequency: 220,
       }).setDepth(y + 2));
-      this.tweens.add({ targets: v, scaleY: 1.08, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      this.tweens.add({ targets: v, scaleY: 0.72, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       add(this.sign(x, y + 280, "THE VOLCANO", "the Magma King waits", "#ffb08a"));
     } else if (m === "path" && save.stage >= 5) {
       // the road out of the village down to the sea
@@ -2821,6 +2871,20 @@ export class BattleScene extends Phaser.Scene {
       if (this.arena.island && !onIsle(this.arena, nx, ny, 110)) [nx, ny] = toIsle(this.arena, nx, ny, 110);
       // the crater: the rim stops you (the lava beyond it is too deep)
       if (this.arena.crater && !inOval(this.arena.crater, nx, ny, 90)) [nx, ny] = toOval(this.arena.crater, nx, ny, 90);
+      // the crater's lava lake is too hot to set foot in: walk round it
+      const lake = this.arena.crater?.lake;
+      if (lake && inOval(lake, nx, ny, -70)) {
+        const ang = Math.atan2((ny - lake.cy) / (lake.ry + 70), (nx - lake.cx) / (lake.rx + 70));
+        [nx, ny] = [lake.cx + Math.cos(ang) * (lake.rx + 72), lake.cy + Math.sin(ang) * (lake.ry + 72)];
+      }
+      // quake island: only where there is island under you (no hiding at the very edge)
+      if (this.quake.cells.length && !this.cellAt(nx, ny)) {
+        if (this.cellAt(nx, this.hero.y)) ny = this.hero.y;
+        else if (this.cellAt(this.hero.x, ny)) nx = this.hero.x;
+        else [nx, ny] = [this.hero.x, this.hero.y];
+      }
+      // the beach in the lobby: the sea stops you at the water's edge
+      if (this.beachLobby()) ny = Math.max(ny, this.arena.center[1] - 330 + 70);
       // buildings are solid: slide along their walls
       if (this.solids.length && this.blocked(nx, ny)) {
         if (!this.blocked(nx, this.hero.y)) ny = this.hero.y;
@@ -3364,7 +3428,10 @@ export class BattleScene extends Phaser.Scene {
       at = j === "boss" ? (PATH_BOSSES[save.stage]?.[0] ?? 45000) - 1500 : j === "mid" ? full * 0.5 : full - 20000;
       this.hero.y = p.startY - (p.startY - p.endY) * f;
       if (f > LANTERN_AT && this.lantern) this.holdLantern(true);
-      if (f > HAMMER_AT && !this.smash.has) this.takeHammer();
+      if (f > HAMMER_AT && !this.smash.has) {
+        if (this.smash.kind === "bridge") while (this.smash.planks.length) this.takePlank(0);
+        else this.takeHammer();
+      }
       if (f > LOG_AT && !this.smash.broken) this.logBreaks();
       this.pathBosses = this.pathBosses.filter((t) => t >= at);
     }
@@ -3648,9 +3715,10 @@ export class BattleScene extends Phaser.Scene {
     const [x, y] = [clampX(this.hero.x + Phaser.Math.Between(-140, 140)), clampY(this.hero.y + Phaser.Math.Between(-140, 140))];
     const R = 250 + this.sea.lv * 12;
     const flip = Math.random() < 0.5;
+    // (the whale art faces left: flipped, it faces right, the way it swims when dir is 1)
     const dir = flip ? -1 : 1;
     // 1. a whale-shaped shadow glides in under the water and circles the spot, growing as it rises
-    const shadow = this.add.image(x - dir * 500, y + 40, "whale_shadow").setDepth(3).setScale(0.6).setAlpha(0).setFlipX(flip);
+    const shadow = this.add.image(x - dir * 500, y + 40, "whale_shadow").setDepth(3).setScale(0.6).setAlpha(0).setFlipX(!flip);
     this.tweens.add({ targets: shadow, x, y, alpha: 1, scale: 1.1, duration: 900, ease: "Sine.out" });
     this.tweens.add({ targets: shadow, scale: 1.5, angle: dir * 25, duration: 700, delay: 900, ease: "Quad.in" });
     const ring = this.add.ellipse(x, y, R * 2, R).setStrokeStyle(10, 0xff4a4a, 0.9).setDepth(4).setScale(0.6);
@@ -3668,7 +3736,7 @@ export class BattleScene extends Phaser.Scene {
       bub?.destroy();
       if (!this.fighting) return;
       // 2. it bursts up out of the water in an arc, spouting from its blowhole
-      const whale = this.add.image(x - dir * 60, y + 40, "sea_whale").setOrigin(0.5, 0.8).setScale(0.5, 0.2).setDepth(y + 50).setFlipX(flip).setAngle(-dir * 40);
+      const whale = this.add.image(x - dir * 60, y + 40, "sea_whale").setOrigin(0.5, 0.8).setScale(0.5, 0.2).setDepth(y + 50).setFlipX(!flip).setAngle(-dir * 40);
       const arc = { t: 0 };
       this.tweens.add({
         targets: arc, t: 1, duration: 1100, ease: "Linear",
@@ -4363,21 +4431,22 @@ export class BattleScene extends Phaser.Scene {
       Q.quakeT = 4200 - 2000 * k + Math.random() * 800;
       this.quakePattern(k);
     }
-    // the volcano lobs lava bombs at you
+    // the volcano hurls meteors: where you are heading, then round you (more and more of them)
     Q.bombT -= delta;
     if (Q.bombT <= 0) {
-      Q.bombT = 6000 - 3000 * k;
+      Q.bombT = 5400 - 2400 * k;
       const [vx, vy] = this.heroVel;
-      const n = 1 + Math.floor(k * 3);
+      const n = 1 + Math.floor(k * 4);
       const [kx, ky] = this.arena.quake!.crater;
       this.sparks.setParticleTint(0xff8a1a);
       this.sparks.explode(16, kx, ky);
       for (let i = 0; i < n; i++) {
-        const [x, y] = i === 0 ? [this.hero.x + vx * 0.8, this.hero.y + vy * 0.8] : [this.hero.x + Phaser.Math.Between(-500, 500), this.hero.y + Phaser.Math.Between(-400, 400)];
-        const [bx, by] = toIsle(this.arena, x, y, 120);
-        this.time.delayedCall(i * 220, () => this.fighting && this.addStrike(bx, by, 150, 1300, this.heroMax * 0.1, "lava", undefined, true));
+        let [x, y] = i === 0 ? [this.hero.x + vx * 0.9, this.hero.y + vy * 0.9] : [this.hero.x + Phaser.Math.Between(-520, 520), this.hero.y + Phaser.Math.Between(-420, 420)];
+        if (!this.cellAt(x, y)) [x, y] = i === 0 ? [this.hero.x, this.hero.y] : [NaN, NaN];
+        if (!Number.isNaN(x)) this.meteor(x, y, i * 260);
       }
     }
+    this.rockTick(delta);
     // aftershocks: everything shakes, rocks fall, cracks give way at once
     Q.shockT -= delta;
     if (Q.shockT <= 0) {
@@ -4541,13 +4610,117 @@ export class BattleScene extends Phaser.Scene {
     buzz(250);
     this.cameras.main.shake(1100, 0.014);
     for (const c of Q.cells) if (c.state === "crack") c.t = Math.min(c.t, 500);
-    for (let i = 0; i < 6; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = i === 0 ? 0 : 200 + Math.random() * 500;
-      const [x, y] = toIsle(this.arena, this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.8, 120);
-      this.time.delayedCall(300 + i * 200, () => this.fighting && this.addStrike(x, y, 140, 1100, this.heroMax * 0.12, "rock", undefined, true));
+    // a ring of meteors round you (and one right on you): get out before you are walled in
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.random() * 0.4;
+      const d = i === 6 ? 0 : 260 + Math.random() * 120;
+      const [x, y] = [this.hero.x + Math.cos(a) * d, this.hero.y + Math.sin(a) * d * 0.8];
+      if (this.cellAt(x, y)) this.meteor(x, y, 200 + (i === 6 ? 700 : i * 90));
     }
     this.time.delayedCall(1400, () => this.fighting && this.crackSome(4, 1600));
+  }
+
+  /**
+   * A meteor: its shadow grows on the ground (ringed in red) while it streaks down trailing fire; it
+   * smashes in and stays a few seconds as a solid boulder you can't walk through (or sinks in lava).
+   */
+  private meteor(x: number, y: number, delay = 0): void {
+    this.time.delayedCall(delay, () => {
+      if (!this.fighting || this.quake.done) return;
+      const key = ["meteor_a", "meteor_b", "meteor_c"][Phaser.Math.Between(0, 2)];
+      const R = 125;
+      const ms = 1250;
+      const shadow = this.add.ellipse(x, y, R * 2, R * 0.9, 0x1a0a0a, 0.4).setDepth(-860).setScale(0.25);
+      const ring = this.add.ellipse(x, y, R * 2, R * 0.9).setStrokeStyle(8, 0xff4a2a, 0.9).setDepth(-859);
+      this.tweens.add({ targets: shadow, scale: 1, duration: ms, ease: "Quad.in" });
+      this.tweens.add({ targets: ring, alpha: 0.35, duration: 130, yoyo: true, repeat: -1 });
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const spot = { x, y };
+      this.quake.incoming.push(spot);
+      const rock = this.add.image(x + side * 650, y - 1500, key).setOrigin(0.5, 0.88).setScale(0.6).setDepth(TOP + 30).setFlipX(Math.random() < 0.5);
+      const trail = effectsOn() ? this.add.particles(0, 0, "puff", {
+        follow: rock, lifespan: 450, speed: { min: 10, max: 60 }, scale: { start: 1.8, end: 0 }, alpha: { start: 0.9, end: 0 },
+        tint: [0xffe070, 0xff8a1a, 0xff4a1a, 0x4a3a3a], frequency: 16,
+      }).setDepth(TOP + 29) : null;
+      this.tweens.add({
+        targets: rock, x, y, scale: 1.25, angle: -side * 220, duration: ms, ease: "Quad.in",
+        onComplete: () => {
+          trail?.destroy();
+          shadow.destroy();
+          ring.destroy();
+          this.quake.incoming = this.quake.incoming.filter((o) => o !== spot);
+          if (!this.fighting) {
+            rock.destroy();
+            return;
+          }
+          this.meteorLands(rock, x, y, R, key === "meteor_c" ? 280 : 230);
+        },
+      });
+    });
+  }
+
+  private meteorLands(rock: Phaser.GameObjects.Image, x: number, y: number, R: number, w: number): void {
+    const Q = this.quake;
+    rock.setAngle(Phaser.Math.Between(-12, 12)).setDepth(y);
+    this.impact(x, y, R, "dust", 0x9a8a7a);
+    this.sparks.setParticleTint(0xff8a1a);
+    this.sparks.explode(14, x, y - 60);
+    this.puff.setParticleTint(0x7a6a62);
+    this.puff.explode(10, x, y);
+    sfx.thud();
+    this.cameras.main.shake(180, 0.006);
+    if (Math.hypot(this.hero.x - x, (this.hero.y - y) * 1.6) < R + HERO_R * 0.5) {
+      this.hurt(this.heroMax * 0.12);
+      this.callout("METEOR!", "#ffb08a");
+    }
+    for (const e of this.near(x, y, R)) if (!e.type.boss) this.hit(e, e.maxHp * 1.5);
+    // into the lava: it sinks
+    if (this.cellAt(x, y)?.state === "lava") {
+      this.splashLava(x, y, 12);
+      this.tweens.add({ targets: rock, y: y + 70, scaleY: 0.3, alpha: 0, duration: 800, ease: "Quad.in", onComplete: () => rock.destroy() });
+      return;
+    }
+    // a boulder now: solid. If you were right under it, it shoves you aside
+    const rect = new Phaser.Geom.Rectangle(x - w / 2, y - 90, w, 115);
+    if (rect.contains(this.hero.x, this.hero.y)) {
+      const left = this.hero.x < x;
+      const nx = left ? rect.left - 12 : rect.right + 12;
+      if (this.cellAt(nx, this.hero.y)) this.hero.x = nx;
+      else this.hero.y = this.hero.y < y - 20 ? rect.top - 12 : rect.bottom + 12;
+    }
+    this.solids.push(rect);
+    Q.rocks.push({ img: rock, rect, t: 4200 + Math.random() * 1800 });
+  }
+
+  /** Boulders smoke while they cool, then crumble away (sooner if the ground under them falls into lava). */
+  private rockTick(delta: number): void {
+    const Q = this.quake;
+    Q.smokeT -= delta;
+    const smoke = Q.smokeT <= 0 && effectsOn();
+    if (smoke) Q.smokeT = 220;
+    Q.rocks = Q.rocks.filter((r) => {
+      r.t -= delta;
+      const sinking = this.cellAt(r.img.x, r.img.y)?.state === "lava";
+      if (r.t > 0 && !sinking) {
+        if (smoke && Math.random() < 0.3) {
+          this.puff.setParticleTint(0x5a5054);
+          this.puff.explode(1, r.img.x + Phaser.Math.Between(-60, 60), r.img.y - 150);
+        }
+        // the last second: it shakes and cracks
+        if (r.t < 900 && !r.img.getData("cracking")) {
+          r.img.setData("cracking", true);
+          this.tweens.add({ targets: r.img, x: r.img.x + 5, duration: 45, yoyo: true, repeat: 9 });
+        }
+        return true;
+      }
+      this.solids = this.solids.filter((o) => o !== r.rect);
+      this.tweens.killTweensOf(r.img);
+      if (sinking) this.splashLava(r.img.x, r.img.y, 8);
+      this.puff.setParticleTint(0x8a7a72);
+      this.puff.explode(10, r.img.x, r.img.y - 60);
+      this.tweens.add({ targets: r.img, scaleY: 0.2, scaleX: 1.2, alpha: 0, y: r.img.y + (sinking ? 60 : 10), duration: 420, ease: "Quad.in", onComplete: () => r.img.destroy() });
+      return false;
+    });
   }
 
   /** The lighthouse topples over into the sea: nowhere is safe now. */
@@ -4651,8 +4824,12 @@ export class BattleScene extends Phaser.Scene {
     this.hasLantern = true;
     if (!this.heldLantern) this.holdLantern(false);
     for (const [x, y] of c.vents) {
-      const img = this.add.image(x, y, "geyser").setOrigin(0.5, 0.75).setDepth(y - 60);
-      V.vents.push({ x, y, p: 0, cd: 0, img });
+      const img = this.add.image(x, y, "geyser").setOrigin(0.5, 0.75).setDepth(y - 60).setScale(1.6);
+      // a ring round it when it is ready (filling up while you stand in it), and a sign
+      const ring = this.add.graphics().setDepth(TOP + 8705);
+      const tag = text(this, x, y - 190, "STAND HERE!", 46, "#9ae6ff").setDepth(TOP + 8706).setVisible(false);
+      this.tweens.add({ targets: tag, y: y - 215, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      V.vents.push({ x, y, p: 0, cd: 0, img, ring, tag });
     }
     battle.limit = VOLC_MS;
     battle.left = VOLC_MS;
@@ -4697,7 +4874,7 @@ export class BattleScene extends Phaser.Scene {
       cam.shake(700, 0.02);
       buzz(300);
       music.play("boss");
-      this.game.events.emit("boss-intro", { name: "MAGMA KING", tex: "b_magmaking", moves: [`${BOSS_SPECIALS.quake}!`, "Lava Bombs", BOSS_MOVES.ring, BOSS_MOVES.rocks] });
+      this.game.events.emit("boss-intro", { name: "MAGMA KING", tex: "b_magmaking", moves: [`${BOSS_SPECIALS.quake}!`, "Lava Bombs", BOSS_MOVES.ring, BOSS_MOVES.rocks], tip: "Stand on a blue GEYSER to crack its armour, then hit it hard!" });
       // the developer can start it weaker
       const jump = V.jump;
       V.jump = "start";
@@ -4756,6 +4933,25 @@ export class BattleScene extends Phaser.Scene {
         if (Math.floor(v.p * 5) > Math.floor(was * 5)) sfx.charge(1 + Math.floor(v.p * 5));
         if (v.p >= 1) this.fireVent(v);
       } else v.p = Math.max(0, v.p - delta / VENT_MS);
+      // ready (and the armour is up): a pulsing blue ring and the sign; charging: the ring fills
+      const ready = v.cd <= 0 && V.armor;
+      v.tag.setVisible(ready && !on);
+      v.ring.clear();
+      if (ready) {
+        const pulse = 1 + Math.sin(this.time.now / 180) * 0.06;
+        v.ring.lineStyle(10, 0x9ae6ff, 0.5).strokeEllipse(v.x, v.y, 340 * pulse, 160 * pulse);
+        if (v.p > 0) {
+          v.ring.lineStyle(16, 0xffffff, 0.95).beginPath();
+          for (let i = 0; i <= 40 * v.p; i++) {
+            const t = -Math.PI / 2 + (i / 40) * Math.PI * 2;
+            const [px, py] = [v.x + Math.cos(t) * 170 * pulse, v.y + Math.sin(t) * 80 * pulse];
+            if (i) v.ring.lineTo(px, py);
+            else v.ring.moveTo(px, py);
+          }
+          v.ring.strokePath();
+        }
+      }
+      v.img.setAlpha(v.cd > 0 ? 0.55 : 1);
     }
     // lava bombs: one where you are heading and more round you, faster each phase
     V.bombT -= delta;
@@ -4953,6 +5149,10 @@ export class BattleScene extends Phaser.Scene {
     const V = this.volc;
     V.steam?.destroy();
     V.steam = null;
+    for (const v of V.vents) {
+      v.ring.clear();
+      v.tag.setVisible(false);
+    }
     // white (as drawn) to a dark rock grey
     this.tweens.addCounter({ from: 255, to: 80, duration: 2500, onUpdate: (tw) => {
       const v = Math.round(tw.getValue() ?? 80);
@@ -4988,12 +5188,12 @@ export class BattleScene extends Phaser.Scene {
     if (level >= 3 && Math.random() < 0.55) st.sides.push([1, 0, 3, 2, 2, 3, 0, 1][first * 2 + Math.floor(Math.random() * 2)]);
     st.phase = "warn";
     // (on the open ocean the islands are always there, so the warning is shorter)
-    st.t = ocean ? Math.max(1900, 3600 - level * 250) : Math.max(2200, 4200 - level * 300);
+    st.t = ocean ? Math.max(1700, 3200 - level * 250) : Math.max(2000, 3800 - level * 300);
     if (ocean) for (const isl of sea.islands) {
       const glow = isl.objs[1];
       this.tweens.add({ targets: glow, alpha: 1, scaleX: 1.12, scaleY: 1.12, duration: 300, yoyo: true, repeat: 8 });
     }
-    st.dur = Math.max(2600, 4200 - level * 250);
+    st.dur = Math.max(1800, 3000 - level * 200);
     st.waves = [];
     const names = st.sides.map((x) => ["north", "south", "west", "east"][x]);
     this.banner(st.sides.length > 1 ? "DOUBLE TSUNAMI!" : "TSUNAMI COMING!", "red", 1200);
@@ -5140,7 +5340,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (sea.phase === "wave") {
-      const dur = [6000, 5000, 4200, 3500, 3000][sea.tsunami - 1] ?? 3000;
+      const dur = [4200, 3600, 3000, 2600, 2200][sea.tsunami - 1] ?? 2200;
       sea.waveP = Math.min(1, sea.waveP + delta / dur);
       const p = sea.waveP;
       const [top, bottom, left, right] = [(p * a.h) / 2, a.h - (p * a.h) / 2, (p * a.w) / 2, a.w - (p * a.w) / 2];
@@ -5193,7 +5393,8 @@ export class BattleScene extends Phaser.Scene {
       this.lantern = [img, glow, this.topGlow(x, ly - 60, 2.6, 0xffd24a)];
       this.lamps.push({ x, y: ly - 60, r: 260 });
     }
-    this.placeLogAndHammer();
+    if (p.kind === "sea") this.placeBridge();
+    else this.placeLogAndHammer();
     this.time.delayedCall(2600, () => this.toast(this.story!.goal, "#c8f0a0"));
   }
 
@@ -5223,6 +5424,94 @@ export class BattleScene extends Phaser.Scene {
     this.nightGlow(mid, S.y + 240, 3, 0.5);
   }
 
+  /**
+   * The way to the sea: a river cuts right across the path and its rope bridge is broken. Three planks
+   * lie along the path before it (at the edges of the woods): carry all three to the bridge and stand
+   * on the circle at its foot to hammer them in.
+   */
+  private placeBridge(): void {
+    const p = this.arena.path!;
+    const S = this.smash;
+    const a = this.arena;
+    const mid = a.w / 2;
+    const len = p.startY - p.endY;
+    S.kind = "bridge";
+    S.y = p.startY - len * LOG_AT;
+    S.x = mid;
+    // the river: flowing water between sandy banks, foam at the edges, rocks along them
+    const top = S.y - 420;
+    const water = this.add.tileSprite(0, top, a.w, 420, "sea_tile").setOrigin(0).setDepth(-840).setTint(0xb8e0ff);
+    this.tweens.add({ targets: water, tilePositionX: -512, duration: 6000, repeat: -1 });
+    for (const y of [top, S.y]) {
+      this.add.rectangle(0, y - 26, a.w, 52, 0xc8a870).setOrigin(0).setDepth(-845);
+      const foam = this.add.tileSprite(0, y - 22, a.w, 44, "foam").setOrigin(0).setDepth(-838).setAlpha(0.8);
+      this.tweens.add({ targets: foam, tilePositionX: -256, duration: 3000, repeat: -1 });
+    }
+    for (let x = 80; x < a.w; x += 170) {
+      if (Math.abs(x - mid) < 330) continue;
+      for (const y of [top - 10, S.y + 30]) this.add.image(x + Phaser.Math.Between(-40, 40), y, "rock").setOrigin(0.5, 0.8).setScale(0.5 + Math.random() * 0.4).setDepth(y);
+    }
+    if (effectsOn()) this.add.particles(0, 0, "puff", {
+      x: { min: 0, max: a.w }, y: { min: top + 20, max: S.y - 20 }, lifespan: 900, speedX: { min: -200, max: -120 },
+      scale: { start: 0.3, end: 0.05 }, alpha: { start: 0.6, end: 0 }, tint: 0xffffff, frequency: 60,
+    }).setDepth(-837);
+    S.log = this.add.image(mid, S.y + 40, "bridge_broken").setOrigin(0.5, 1).setDepth(-836);
+    this.solid(mid, S.y + 10, a.w, 450);
+    S.solid = this.solids[this.solids.length - 1];
+    this.nightGlow(mid, S.y + 240, 3, 0.5);
+    // the planks, glinting at the edges of the path
+    [0.3, 0.45, 0.6].forEach((f, i) => {
+      const y = p.startY - len * f;
+      const x = mid + (i % 2 ? 1 : -1) * 150;
+      const glow = this.add.image(x, y - 30, "glow").setTint(0xffd890).setScale(1.6).setAlpha(0.8).setDepth(y - 1).setBlendMode(Phaser.BlendModes.ADD);
+      const img = this.add.image(x, y, "plank").setOrigin(0.5, 0.7).setDepth(y).setAngle(-15);
+      this.tweens.add({ targets: img, y: y - 22, angle: 15, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      this.tweens.add({ targets: glow, scale: 2.2, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      S.planks.push([img, glow, this.topGlow(x, y - 30, 2, 0xffd890)]);
+    });
+  }
+
+  /** A plank picked up: it goes on your back (three and you can mend the bridge). */
+  private takePlank(k: number): void {
+    const S = this.smash;
+    const [img] = S.planks[k];
+    S.planks[k].forEach((o) => {
+      this.tweens.killTweensOf(o);
+      o.destroy();
+    });
+    S.planks.splice(k, 1);
+    S.got++;
+    this.sparks.setParticleTint(0xffd890);
+    this.sparks.explode(20, (img as Phaser.GameObjects.Image).x, (img as Phaser.GameObjects.Image).y - 40);
+    sfx.item();
+    if (!S.held) S.held = this.add.image(this.hero.x, this.hero.y, "plank").setOrigin(0.5, 0.5).setScale(0.6);
+    if (S.got >= 3) {
+      S.has = true;
+      this.banner("3 PLANKS!", "gold", 900);
+      this.toast("Got them all! Fix the bridge over the river", "#c8f0a0");
+    } else this.callout(`PLANK ${S.got}/3`, "#ffd890");
+  }
+
+  /** The bridge is mended: the planks slam in one after another and the way to the sea is open. */
+  private bridgeBuilt(): void {
+    const S = this.smash;
+    S.broken = true;
+    this.solids = this.solids.filter((r) => r !== S.solid);
+    const br = S.log!;
+    br.setTexture("bridge_fixed").setScale(1, 0.2);
+    this.tweens.add({ targets: br, scaleY: 1, duration: 500, ease: "Back.out" });
+    for (let i = 0; i < 6; i++) this.time.delayedCall(i * 80, () => sfx.hammer());
+    sfx.happy();
+    buzz(150);
+    this.cameras.main.shake(300, 0.008);
+    this.sparks.setParticleTint(0xffd890);
+    this.sparks.explode(40, S.x, S.y - 200);
+    this.splash(S.x, S.y - 200, 16, 0.8);
+    this.banner("THE BRIDGE IS FIXED!", "green", 1000);
+    if (S.held) this.tweens.add({ targets: S.held, alpha: 0, scale: 0.2, duration: 400, onComplete: () => S.held?.destroy() });
+    S.held = null;
+  }
+
   /** The hammer goes in your hand (it rides on your shoulder until you smash something). */
   private takeHammer(): void {
     const S = this.smash;
@@ -5248,9 +5537,20 @@ export class BattleScene extends Phaser.Scene {
       const dir = this.hero.flipX ? -1 : 1;
       const swinging = S.p > 0 && this.inSmashRing();
       const sw = swinging ? Math.sin(this.time.now / 70) * 70 : 0;
-      S.held.setPosition(this.hero.x - dir * 40, this.hero.y - 120).setAngle(dir * (-35 + sw)).setFlipX(dir < 0).setDepth(this.hero.y + 3);
+      if (S.kind === "bridge") S.held.setPosition(this.hero.x - dir * 30, this.hero.y - 110 + (swinging ? sw * 0.2 : 0)).setAngle(dir * 70).setDepth(this.hero.y - 2).setScale(0.45 + S.got * 0.07);
+      else S.held.setPosition(this.hero.x - dir * 40, this.hero.y - 120).setAngle(dir * (-35 + sw)).setFlipX(dir < 0).setDepth(this.hero.y + 3);
     }
     if (S.broken || !S.log) return;
+    if (S.kind === "bridge" && !S.has) {
+      const k = S.planks.findIndex((o) => Math.hypot(this.hero.x - (o[0] as Phaser.GameObjects.Image).x, this.hero.y - (o[0] as Phaser.GameObjects.Image).y) < 170);
+      if (k >= 0) this.takePlank(k);
+      else if (this.hero.y < S.y + 420 && this.time.now - S.saidNeed > 4000) {
+        S.saidNeed = this.time.now;
+        this.callout(`FIND THE PLANKS! ${S.got}/3`, "#ffb0a0");
+        sfx.error();
+      }
+      return;
+    }
     if (!S.has) {
       if (S.hammer && Math.hypot(this.hero.x - (S.hammer[0] as Phaser.GameObjects.Image).x, this.hero.y - (S.hammer[0] as Phaser.GameObjects.Image).y) < 170) this.takeHammer();
       else if (this.hero.y < S.y + 420 && this.time.now - S.saidNeed > 4000) {
@@ -5284,6 +5584,10 @@ export class BattleScene extends Phaser.Scene {
   /** The log splits: chunks fly off into the woods and the path is open again. */
   private logBreaks(): void {
     const S = this.smash;
+    if (S.kind === "bridge") {
+      this.bridgeBuilt();
+      return;
+    }
     S.broken = true;
     this.solids = this.solids.filter((r) => r !== S.solid);
     const log = S.log!;
@@ -5671,6 +5975,7 @@ export class BattleScene extends Phaser.Scene {
     if (m === "light") this.lightTick(delta, fighting);
     if (m === "volcano") this.volcanoTick(delta, fighting);
     if (m === "quake") this.quakeTick(delta, fighting);
+    battle.safe = false;
     battle.goal = this.modeGoal();
   }
 
@@ -5682,13 +5987,14 @@ export class BattleScene extends Phaser.Scene {
       const f = Phaser.Math.Clamp((p.startY - this.hero.y) / (p.startY - p.endY), 0, 1);
       const where = p.kind === "sea" ? "SEA" : "VILLAGE";
       const S = this.smash;
-      const todo = !this.hasLantern ? "  •  find the lantern" : !S.has && !S.broken ? "  •  find the hammer" : !S.broken ? "  •  smash the log" : "";
+      const todo = !this.hasLantern ? "  •  find the lantern" : S.kind === "bridge" ? (!S.has && !S.broken ? `  •  planks ${S.got}/3` : !S.broken ? "  •  fix the bridge" : "") : !S.has && !S.broken ? "  •  find the hammer" : !S.broken ? "  •  smash the log" : "";
       return { frac: f, text: `${where} ${Math.floor(f * 100)}%${todo}`, color: 0x8ad65a, icon: p.kind === "sea" ? "icon_fish" : "house_a", alarm: battle.left >= 0 && battle.left < 15000 };
     }
     if (m === "ocean") {
       const o = this.ocean;
       if (this.side.phase !== "calm") {
         const safe = this.onIsland();
+        battle.safe = safe;
         return { frac: 1, text: safe ? "SAFE ON THE ISLAND" : "TSUNAMI! GET ON AN ISLAND!", color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
       }
       const start = this.arena.h - 600;
@@ -5724,10 +6030,12 @@ export class BattleScene extends Phaser.Scene {
       const sea = this.sea;
       if (!sea.tsunami && this.side.phase !== "calm") {
         const safe = this.onIsland();
+        battle.safe = safe;
         return { frac: 1, text: safe ? "SAFE ON THE ISLAND" : "TSUNAMI! GET ON AN ISLAND!", color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
       }
       if (sea.tsunami) {
         const safe = this.onIsland();
+        battle.safe = safe;
         return { frac: sea.phase === "wave" ? sea.waveP : 0, text: `TSUNAMI ${sea.tsunami}/${SEA_WAVES}  •  ${safe ? "SAFE ON THE ISLAND" : "GET ON AN ISLAND!"}`, color: safe ? 0x7ad651 : 0x4fa8ff, icon: "mode_sea", alarm: !safe };
       }
       return { frac: Math.min(1, sea.lv / 6), text: `ATTACK LEVEL ${sea.lv}`, color: sea.lv >= 5 ? 0xf26464 : 0x4fa8ff, icon: "mode_sea", alarm: false };
@@ -6139,6 +6447,8 @@ export class BattleScene extends Phaser.Scene {
   private beastTick(delta: number, fighting: boolean): void {
     const b = this.beast;
     if (!b || b.escaped) return;
+    // the clock to the boss keeps running (after the beast is your friend too)
+    if (this.state === "fight" && this.stageMode === "feed") battle.left = Math.max(0, FEED_MS - this.elapsed);
     if (b.friend) {
       if (fighting) this.friendTick(delta);
       return;
@@ -6151,7 +6461,6 @@ export class BattleScene extends Phaser.Scene {
         this.beastEscape();
         return;
       }
-      battle.left = Math.max(0, FEED_MS - this.elapsed);
       if (!b.want && b.fed < FEEDS && this.elapsed >= b.foodAt) this.wishStart(b.wishes?.[b.fed] ?? "snack");
     }
     if (b.want && this.state === "fight") this.wishTick(delta);
@@ -8791,6 +9100,10 @@ export class BattleScene extends Phaser.Scene {
       // the lantern first (it is on the way), then the end of the path
       const S = this.smash;
       if (this.lantern) out.push({ x: this.lantern[0].x, y: this.lantern[0].y - 60, icon: "lantern", label: "LANTERN", color: 0xffd24a });
+      else if (S.kind === "bridge" && !S.has && S.planks.length) {
+        const pk = S.planks.map((o) => o[0] as Phaser.GameObjects.Image).sort((m, n) => Math.hypot(m.x - this.hero.x, m.y - this.hero.y) - Math.hypot(n.x - this.hero.x, n.y - this.hero.y))[0];
+        out.push({ x: pk.x, y: pk.y - 60, icon: "plank", label: `PLANK ${S.got}/3`, color: 0xffd890 });
+      } else if (S.kind === "bridge" && S.log && !S.broken) out.push({ x: S.x, y: S.y + 185, icon: "plank", label: "FIX IT!", color: 0xffd24a });
       else if (!S.has && S.hammer) out.push({ x: (S.hammer[0] as Phaser.GameObjects.Image).x, y: (S.hammer[0] as Phaser.GameObjects.Image).y - 60, icon: "hammer", label: "HAMMER", color: 0xc8e0ff });
       else if (S.log && !S.broken) out.push({ x: S.x, y: S.y + 185, icon: "log_big", label: "SMASH!", color: 0xffd24a });
       else out.push({ x: this.arena.w / 2, y: p.endY, icon: p.kind === "sea" ? "icon_fish" : "house_a", label: p.kind === "sea" ? "THE SEA" : "VILLAGE", color: 0x8ad65a });

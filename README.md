@@ -44,7 +44,7 @@ hour of fishing brings.
   floating off into the haze over a sea of clouds, with sparkles, light beams, drifting rocks and a glow
   (bloom) pass. On top: the DICE IDLE logo (letters pop in and float), a striped loading bar and tips, then
   **TAP TO START** (the tap also turns the sound on). Without 3D support it still shows the logo and bar.
-- **The story** (once, for new players; again from **Settings → Interface → Story**; SKIP at any time),
+- **The story** (once, for new players; again from **Settings → Game → Story**; SKIP at any time),
   about 40 s with cinema bars, captions and its own music: five lands float above the clouds, each lit by a
   Crystal; the Storm comes with lightning; monsters rain down on the lands and a crowned boss rises from the
   clouds and drinks every Crystal's light; the lands go dark... until a pair of eyes lights up in an old
@@ -230,12 +230,18 @@ hour of fishing brings.
   3. **THE BEAST**: Feed the Beast (its 6 wishes, below) in the dark; if it breaks out the stage is **lost**.
   4. **BIG BOSS**: the huge boss and its 3 kids with **your beast fighting beside you** and everything maxed
      out; beat the big boss in **3:00** (its kids run when it falls). Then the beast says goodbye and goes home.
-  5. **TO THE SEA**: another path (the same length, its own hammer and log, two bosses, 1:35) down to a
-     beach with a pier.
+  5. **TO THE SEA**: another path (the same length, two bosses, 1:35) down to a beach with a pier. At 70%
+     a **river** cuts right across it and its rope **bridge is broken**: find the **3 planks** glinting on the
+     path before it (a pin points to the nearest), then stand in the circle at the bridge for 5 s to hammer
+     them in. THE BRIDGE IS FIXED! and the way to the sea is open.
   **The little manga** (`src/data/comics.ts`): the first time you start each of the first ten stages, a
-  cream manga page flips in (about 5 s, tap to skip) and four panels ink in one by one: the new place with a
-  narration box, an extreme close-up of you with concentration lines, what you are up against with your
-  speech bubble, and you sprinting under the stage's title.
+  cream manga page flips in (about 5 s, tap to skip) and four panels ink in one by one, in one of **three
+  page layouts** that take turns (slanted panels; the danger big on top; a round close-up laid over a
+  diagonal split). Every panel is clipped to its own frame. The panels: the new place (sky, a moon, two rows
+  of hills, the things there with the main one up front, a narration box), a sharp drawn close-up of your box
+  face whose **mood** fits the stage (shocked, determined, scared, happy: eyes, sweat, a tear, blush,
+  sparkles), the danger with screen tone, speed lines, the stage's own **sound effect** (RUMBLE!, KRA-KOOM!,
+  ROOOAR!...) and your speech bubble pointing at your face, and you sprinting under the stage's title.
   What opens: **ROLL and PETS** after stage 2 (new players start with no pets), **fishing, the Boss Rush and
   the Dice Rain event** after stage 5 (locked cards and tabs show a padlock; an UNLOCKED! card celebrates).
   The tutorial's roll and Boss Rush steps wait until those open.
@@ -243,6 +249,8 @@ hour of fishing brings.
   put). You ride a little boat; dice fall from the sky, whale shadows grow under you then the whale bursts up,
   purple rings turn into tentacle slams, octopi swim in from the edges, gulls fly over. The attack level goes
   up every 30 s (1-6); surprise tsunamis come from the side at 1:00 and 2:00 and whirlpools open from level 3.
+  Tsunamis sweep across fast. While you are safe on an island during a tsunami the screen edges glow soft
+  green.
   After 3:00 a storm rolls in (rain, lightning) and five tsunami waves rush in from every side, each faster
   with fewer islands; only the sandy islands that rise before each wave are safe. Survive all five to win.
 - **Land Ho! (stage 7, then every 9 stages)**: a big open ocean (6000 x 24000) dotted with ~40 little islands
@@ -266,27 +274,36 @@ hour of fishing brings.
   **bubbling lava** (5% every 0.4 s while you stand in it), and after 10-13 s the lava cools to a black
   **crust** you can walk on again (until it breaks once more). The ground gives way in patterns that get
   faster and meaner: right under you and where you are heading, **a crack running across the whole island**
-  (a row or a column), **a ring round you with one way out** (then your own piece), or bits all over. The
-  volcano lobs **lava bombs** at you, every ~20 s an **AFTERSHOCK** shakes everything (rocks fall, every
-  crack gives way at once) and at 1:02 **the lighthouse topples into the sea** (its ground was safe until
+  (a row or a column), **a ring round you with one way out** (then your own piece), or bits all over. You
+  can only walk where there is island (no safe strip at the shore). The volcano hurls **meteors**: round 3D
+  rocks (three shapes, cratered, lava glowing in their cracks) streaking down trailing fire, their shadow
+  growing in a red ring where they will land (more of them as time goes on). A meteor that lands stays as a
+  **solid boulder** for 4-6 s (it smokes, shakes, then crumbles), so they can wall you in against the lava;
+  one that lands in lava sinks. Every ~20 s an **AFTERSHOCK** shakes everything (a ring of meteors round you,
+  every crack gives way at once) and at 1:02 **the lighthouse topples into the sea** (its ground was safe until
   then). Palms and trees sink into the lava with their piece; monsters standing on a piece that falls go
   with it, and the lava burns the ones you lead into it. Magma slimes climb out of fresh lava, fire bats fly
   in. At 2:00 comes **THE BIG ONE**: the whole island cracks, a fountain of lava bursts up under you and
   throws you, trailing fire, right across the sea into the volcano's crater (stage 10).
-- **The Volcano (stage 10, then every 9 stages)**: the eruption threw you into it. A boss stage. The crater is an oval ash floor in a sea of
-  lava with a lava lake in the middle; the **Magma King** (a new boss: a molten rock giant with a crown of
+- **The Volcano (stage 10, then every 9 stages)**: the eruption threw you into it. A boss stage. The crater is
+  drawn in 3D: an oval floor of basalt slabs (lit edges, warm seams) shaded darker toward the rim like a bowl,
+  layered cliffs with lava falls rising behind it on the far side, a lip of big boulders on the near side, a
+  shimmering lava sea outside, and the **lava lake** in the middle ringed by boulders (you can't walk into
+  it); the **Magma King** (a new boss: a molten rock giant with a crown of
   fire and a furnace heart, walk frames, 2.3x size) rises out of the lake. Beat it in **4:00**.
-  Its rock **armour** takes only 20% damage: stand on one of the 3 **water geysers** for 2.5 s to blast it
+  Its rock **armour** takes only 20% damage: stand on one of the 3 **water geysers** for 2.5 s to blast it (a
+  ready geyser has a pulsing blue ring and a bouncing STAND HERE! sign, the ring fills while you stand in it,
+  and the boss card says how to beat it)
   (the spray also heals you 12%) and the armour cracks for 8 s (steam, a stun, x1.5 damage); a geyser
   refills in 12 s. It lobs **lava bombs** at you (warning circles, one where you are heading) and uses its
   Earthquake, Bullet Ring, Rock Throw and Stomp. **Phase 2** (66%): THE LAVA RISES, the floor shrinks to
   three quarters and magma slimes crawl out of the lava. **Phase 3** (33%): ENRAGED, it climbs out of the
-  lake and charges after you, meteor showers every 9 s, geysers refill in 8 s. The lake and the lava burn
+  lake and charges after you, meteor showers every 9 s, geysers refill in 8 s. The lava closing in burns
   (7% every 0.4 s). Beating it cools the lava to rock. New monsters: magma slimes and fire bats.
 - **Tsunami waves** are towering walls of water: a curling white crest, deep blue body with streaks, a dark
   shadow running ahead, foam and spray off the top; they rise as they come, roar and shake the screen.
 - **The lobby shows the next stage**: the camp, the ruined village, the caged beast, the road to the sea, a
-  beach with the sea, a pier and your boat for the sea stages (and the lighthouse with its turning light, the volcano with the ground cracking open, or the smoking volcano), the crystal / air zone for later modes. It is
+  beach with the sea (you can't walk into it), a pier and your boat for the sea stages (and the lighthouse with its turning light, or the detailed volcano spitting sparks, with the ground cracking open in front of it for Quake Island), the crystal / air zone for later modes. It is
   rebuilt every time you change stage.
 - **Buildings are solid**: houses, ruins and the village gate's posts block you (you slide along their walls).
 - **Developer tools** (`src/devtools.ts`, `DEV_TOOLS`; turn it off before release): an x1/x3 speed button
@@ -301,7 +318,7 @@ hour of fishing brings.
   (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 Quake Island, 10 the Volcano).
 - **Bosses arrive with a close-up**: when a boss lands the camera swoops over and zooms in on it for a
   second, then back to you; you can keep moving through every boss cutscene.
-- **The whale** (the sea): its shadow glides in under you while it sings, it bursts out in an arc
+- **The whale** (the sea): its shadow glides in under you while it sings (head first), it bursts out in an arc
   spouting from its blowhole, crashes down in a crown of water with rings of waves, and its tail flips
   up as it dives.
 - **More sounds**: kicks, splashes, a whale song, hammer blows and splitting wood, gems, the beast's happy
@@ -633,14 +650,18 @@ hour of fishing brings.
 - **Music**: little synthesized chiptune loops; Music and Sound toggles in Settings. The lobby has a sunny,
   bouncy tune in C major (a sing-along melody, light drums, a hopping bass, a warm pad and glockenspiel
   sparkles); fights, bosses and the story have their own.
-- **Settings**: a cyan header with coloured tabs on the left and ON/OFF rows on the right.
+- **Settings**: a dark sheet tinted by the tab you are on: a spinning gear, your **profile card** (your
+  hero, name, account, best stage, kills and rolls, RENAME), **pill tabs** across (Sound, Graphics, Game,
+  Account) and a grid of big **tiles**: tap anywhere on a tile to flip its sliding switch (it lights up in the
+  tab's colour when on); Story, Language, Google Play and Leaderboards tiles have a button. RESET SAVE at
+  the bottom of Account.
   - **Audio**: Music, Sound, Vibration.
   - **Graphics**: Toaster mode (fewer ground patches and scenery, no zone effects), Zone effects (fog,
     light beams, torch fire, the dizzy edge) and Screen shake.
   - **Interface**: Damage numbers, HP numbers, the opening story, and **Language**.
 - **16 languages**: English, Español, Português, Français, Deutsch, Русский, Türkçe, العربية, עברית, हिन्दी,
   Bahasa Indonesia, ไทย, Tiếng Việt, 日本語, 한국어 and 简体中文. The game starts in the phone's language (English if
-  it isn't one of them); Settings → Interface → Language picks another (the game restarts in it). Hebrew
+  it isn't one of them); Settings → Game → Language picks another (the game restarts in it). Hebrew
   and Arabic read right to left. How it works (`src/i18n/`): the game is written in English and every text
   passes through `t()`, hooked in where all text is drawn (Phaser's Text and the canvas used by the drawn
   signs and ribbons), so nothing else in the code has to know about languages. Each language is a

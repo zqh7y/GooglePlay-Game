@@ -14,6 +14,10 @@ export function makeQuakeTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "quake_crust", HOLE, HOLE, (c) => hole(c, 11, false));
   canvasTexture(scene, "quake_crack", HOLE, HOLE, (c) => cracks(c, 5));
   canvasTexture(scene, "quake_crack2", HOLE, HOLE, (c) => cracks(c, 19));
+  // meteors: three shapes of round, lit, cratered rock glowing through its cracks
+  canvasTexture(scene, "meteor_a", 260, 240, (c) => meteor(c, 3, 1, 1, 0.05));
+  canvasTexture(scene, "meteor_b", 260, 240, (c) => meteor(c, 17, 0.95, 0.95, 0.16));
+  canvasTexture(scene, "meteor_c", 260, 240, (c) => meteor(c, 29, 1.18, 0.78, 0.09));
   // the mode's icon: a smoking volcano over cracked ground with lava in the cracks
   canvasTexture(scene, "mode_quake", 128, 128, (c) => {
     c.lineJoin = "round";
@@ -356,4 +360,100 @@ function volcanoPro(c: Ctx): void {
     c.strokeStyle = "#140a0a";
     c.stroke();
   }
+}
+
+/**
+ * A meteor rock in 3D: a lumpy ball lit from the top left (a soft highlight, a dark far side), craters
+ * with lit lower lips, lava glowing in its cracks, orange light bouncing up from below, a contact shadow.
+ */
+function meteor(c: Ctx, seed: number, sx: number, sy: number, lumpy: number): void {
+  let s = seed;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const [cx, cy, R] = [130, 112, 92];
+  // the shadow it casts on the ground
+  const sh = c.createRadialGradient(cx, 214, 4, cx, 214, 120);
+  sh.addColorStop(0, "rgba(0,0,0,0.5)");
+  sh.addColorStop(1, "rgba(0,0,0,0)");
+  c.fillStyle = sh;
+  c.beginPath();
+  c.ellipse(cx, 212, 118 * sx, 26, 0, 0, Math.PI * 2);
+  c.fill();
+  const pts: [number, number][] = [];
+  for (let i = 0; i < 28; i++) {
+    const t = (i / 28) * Math.PI * 2;
+    const d = R * (1 - lumpy + r() * lumpy * 2) * (1 + Math.sin(t * 3 + seed) * lumpy * 0.5);
+    pts.push([cx + Math.cos(t) * d * sx, cy + Math.sin(t) * d * sy]);
+  }
+  const body = () => {
+    c.beginPath();
+    pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.closePath();
+  };
+  body();
+  const g = c.createRadialGradient(cx - R * 0.38 * sx, cy - R * 0.42 * sy, 6, cx, cy, R * 1.15);
+  g.addColorStop(0, "#a8949a");
+  g.addColorStop(0.35, "#6a585e");
+  g.addColorStop(0.75, "#3a2c32");
+  g.addColorStop(1, "#1e1418");
+  c.fillStyle = g;
+  c.fill();
+  c.save();
+  body();
+  c.clip();
+  // orange light from the lava below, on the underside
+  const up = c.createLinearGradient(0, cy + R * 0.2, 0, cy + R);
+  up.addColorStop(0, "rgba(255,120,30,0)");
+  up.addColorStop(1, "rgba(255,120,30,0.55)");
+  c.fillStyle = up;
+  c.fillRect(0, 0, 260, 240);
+  // craters: a dark bowl with a lit lower lip
+  for (let i = 0; i < 6; i++) {
+    const [x, y] = [cx + (r() - 0.5) * R * 1.3 * sx, cy + (r() - 0.5) * R * 1.2 * sy];
+    const cr = 8 + r() * 16;
+    c.fillStyle = "rgba(20,10,14,0.55)";
+    c.beginPath();
+    c.ellipse(x, y, cr, cr * 0.75, 0, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = "rgba(220,200,205,0.45)";
+    c.lineWidth = 3;
+    c.beginPath();
+    c.ellipse(x, y, cr, cr * 0.75, 0, 0.2, Math.PI - 0.2);
+    c.stroke();
+  }
+  // glowing cracks
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  const cracks: [number, number][][] = [];
+  for (let i = 0; i < 3; i++) {
+    let [x, y] = [cx + (r() - 0.5) * R, cy + (r() - 0.5) * R * 0.8];
+    let a = r() * Math.PI * 2;
+    const line: [number, number][] = [[x, y]];
+    for (let k = 0; k < 4; k++) {
+      a += (r() - 0.5) * 1.4;
+      x += Math.cos(a) * 22;
+      y += Math.sin(a) * 18;
+      line.push([x, y]);
+    }
+    cracks.push(line);
+  }
+  for (const [w, col] of [[16, "rgba(255,110,20,0.35)"], [7, "#ff7a1a"], [3, "#ffe070"]] as [number, string][]) {
+    c.lineWidth = w;
+    c.strokeStyle = col;
+    for (const line of cracks) {
+      c.beginPath();
+      line.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+      c.stroke();
+    }
+  }
+  // a soft shine on the lit side
+  const shine = c.createRadialGradient(cx - R * 0.45 * sx, cy - R * 0.5 * sy, 2, cx - R * 0.45 * sx, cy - R * 0.5 * sy, R * 0.5);
+  shine.addColorStop(0, "rgba(255,255,255,0.45)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  c.fillStyle = shine;
+  c.fillRect(0, 0, 260, 240);
+  c.restore();
+  body();
+  c.lineWidth = 7;
+  c.strokeStyle = INK;
+  c.stroke();
 }
