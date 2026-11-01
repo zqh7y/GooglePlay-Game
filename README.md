@@ -287,7 +287,7 @@ hour of fishing brings.
   throws you, trailing fire, right across the sea into the volcano's crater (stage 10).
 - **The Volcano (stage 10, then every 9 stages)**: the eruption threw you into it. A boss stage. The crater is
   drawn in 3D: an oval floor of basalt slabs (lit edges, warm seams) shaded darker toward the rim like a bowl,
-  layered cliffs with lava falls rising behind it on the far side, a lip of big boulders on the near side, a
+  a lip of big boulders along the near rim and heaps of round boulders the rest of the way round, a
   shimmering lava sea outside, and the **lava lake** in the middle ringed by boulders (you can't walk into
   it); the **Magma King** (a new boss: a molten rock giant with a crown of
   fire and a furnace heart, walk frames, 2.3x size) rises out of the lake. Beat it in **4:00**.

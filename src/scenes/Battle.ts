@@ -1384,36 +1384,16 @@ export class BattleScene extends Phaser.Scene {
     this.add.ellipse(c.cx, c.cy, c.rx * 2 + 20, c.ry * 2 + 20).setStrokeStyle(40, 0x24161a, 0.95).setDepth(-995);
     const edge = this.add.ellipse(c.cx, c.cy, c.rx * 2 + 70, c.ry * 2 + 70).setStrokeStyle(12, 0xffa030, 0.8).setDepth(-995);
     this.tweens.add({ targets: edge, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    // the far side of the crater rises as cliffs behind the floor (lava pouring down some of them): each
-    // stands on the rim where it is highest under it, so none of it covers the floor
-    const edgeY = (x: number) => c.cy - c.ry * Math.sqrt(Math.max(0, 1 - ((x - c.cx) / c.rx) ** 2));
-    let n = 0;
-    for (let x = c.cx - c.rx * 0.8; x <= c.cx + c.rx * 0.8 + 1; x += 250) {
-      const w = 300;
-      const inner = x + (x < c.cx ? w / 2 : -w / 2) * (Math.abs(x - c.cx) < w / 2 ? 0 : 1);
-      const y = edgeY(inner) + 22;
-      const k = 1 - Math.abs(x - c.cx) / c.rx;
-      const key = n % 4 === 1 ? "crater_fall" : n % 2 ? "crater_wall2" : "crater_wall";
-      const wall = this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(y - 400).setScale(0.78, 0.7 + k * 0.6).setFlipX(n % 3 === 0);
-      if (key === "crater_fall") {
-        this.nightGlow(x, y, 4, 0.6);
-        if (effectsOn()) this.add.particles(x, y - 20, "spark", {
-          x: { min: -40, max: 40 }, lifespan: 700, speedY: { min: -260, max: -120 }, speedX: { min: -120, max: 120 }, gravityY: 400,
-          scale: { start: 0.6, end: 0 }, tint: [0xffd040, 0xff8a1a], frequency: 120,
-        }).setDepth(wall.depth + 1);
-      }
-      n++;
-    }
     // the near side: a lip of boulders lying along the rim (just outside the floor)
     for (let t = Math.PI * 0.16; t <= Math.PI * 0.84; t += 0.1) {
       const [x, y] = [c.cx + Math.cos(t) * c.rx, c.cy + Math.sin(t) * c.ry];
       const ang = Phaser.Math.RadToDeg(Math.atan2(-c.ry * Math.cos(t), c.rx * Math.sin(t)));
       this.add.image(x, y, "crater_lip").setOrigin(0.5, 0.22).setDepth(y + 300).setScale(0.8).setAngle(ang).setFlipX(Math.round(t * 10) % 2 === 0);
     }
-    // the two sides: heaps of boulders on the rim
+    // the rest of the rim: heaps of boulders all the way round
     const heaps = ["meteor_a", "meteor_b", "meteor_c"];
     let h = 0;
-    for (const [t0, t1] of [[-0.62, Math.PI * 0.16], [Math.PI * 0.84, Math.PI + 0.62]]) {
+    for (const [t0, t1] of [[Math.PI * 0.84, Math.PI * 2.16]]) {
       for (let t = t0; t <= t1; t += 0.07) {
         const [x, y] = [c.cx + Math.cos(t) * c.rx * 1.04, c.cy + Math.sin(t) * c.ry * 1.04];
         this.add.image(x, y + 30, heaps[h++ % 3]).setOrigin(0.5, 0.8).setScale(0.5 + ((h * 29) % 10) / 30).setDepth(y + 30).setTint(0x9a8a90).setFlipX(h % 2 === 0);

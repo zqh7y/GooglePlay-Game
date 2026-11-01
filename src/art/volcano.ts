@@ -12,11 +12,7 @@ export function makeVolcanoTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "lava_tile", 512, 512, (c) => lavaTile(c));
   // the crater floor: slabs of basalt (each lit on its top left, shadowed bottom right), warm seams, grit
   canvasTexture(scene, "ash_tile", 512, 512, (c) => basaltTile(c));
-  // the crater's walls behind the floor: layered cliffs (some with a lava fall), the near lip of boulders,
-  // and the bowl's shading (dark toward the rim)
-  canvasTexture(scene, "crater_wall", 400, 560, (c) => craterWall(c, 5, false));
-  canvasTexture(scene, "crater_wall2", 400, 560, (c) => craterWall(c, 23, false));
-  canvasTexture(scene, "crater_fall", 400, 560, (c) => craterWall(c, 41, true));
+  // the near lip of the crater (boulders), and the bowl's shading (dark toward the rim)
   canvasTexture(scene, "crater_lip", 420, 220, (c) => craterLip(c));
   canvasTexture(scene, "crater_shade", 256, 256, (c) => {
     const g = c.createRadialGradient(128, 128, 40, 128, 128, 128);
@@ -25,7 +21,10 @@ export function makeVolcanoTextures(scene: Phaser.Scene): void {
     g.addColorStop(0.92, "rgba(10,4,6,0.5)");
     g.addColorStop(1, "rgba(10,4,6,0.7)");
     c.fillStyle = g;
-    c.fillRect(0, 0, 256, 256);
+    // only the round part: the square's corners stay clear (they lie over the lava)
+    c.beginPath();
+    c.arc(128, 128, 128, 0, Math.PI * 2);
+    c.fill();
   });
   // a lava bomb: a glowing rock with a fiery tail
   canvasTexture(scene, "lava_bomb", 120, 160, (c) => {
@@ -311,111 +310,6 @@ function basaltTile(c: Ctx): void {
     c.lineTo(q3[0], q3[1]);
     c.stroke();
   }
-}
-
-/** A stretch of the crater's cliff: a jagged top, strata bands, gullies, ledges; maybe a lava fall. */
-function craterWall(c: Ctx, seed: number, fall: boolean): void {
-  const [W, H] = [400, 560];
-  let s = seed;
-  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  const top: [number, number][] = [[-10, 140]];
-  for (let x = 20; x <= W - 20; x += 40) top.push([x, 60 + r() * 90]);
-  top.push([W + 10, 140]);
-  const shape = () => {
-    c.beginPath();
-    c.moveTo(-10, H);
-    top.forEach(([x, y]) => c.lineTo(x, y));
-    c.lineTo(W + 10, H);
-    c.closePath();
-  };
-  shape();
-  const g = c.createLinearGradient(0, 60, 0, H);
-  g.addColorStop(0, "#7a6a70");
-  g.addColorStop(0.35, "#4a3c42");
-  g.addColorStop(0.8, "#2a1e22");
-  g.addColorStop(1, "#5a2a1a");
-  c.fillStyle = g;
-  c.fill();
-  c.save();
-  shape();
-  c.clip();
-  // strata bands
-  for (let y = 150; y < H; y += 46 + r() * 30) {
-    c.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.14)";
-    c.beginPath();
-    c.moveTo(0, y);
-    for (let x = 0; x <= W; x += 50) c.lineTo(x, y + (r() - 0.5) * 14);
-    c.lineTo(W, y + 22);
-    c.lineTo(0, y + 22);
-    c.closePath();
-    c.fill();
-  }
-  // gullies running down and ridges between them (lit on their left)
-  for (let i = 0; i < 7; i++) {
-    const x = 20 + r() * (W - 40);
-    c.lineWidth = 8 + r() * 10;
-    c.strokeStyle = "rgba(10,4,6,0.35)";
-    c.beginPath();
-    c.moveTo(x, 120);
-    c.quadraticCurveTo(x + (r() - 0.5) * 60, H * 0.6, x + (r() - 0.5) * 40, H);
-    c.stroke();
-    c.lineWidth = 3;
-    c.strokeStyle = "rgba(220,200,206,0.18)";
-    c.beginPath();
-    c.moveTo(x - 10, 120);
-    c.quadraticCurveTo(x - 10 + (r() - 0.5) * 60, H * 0.6, x - 10 + (r() - 0.5) * 40, H);
-    c.stroke();
-  }
-  // ledges
-  for (let i = 0; i < 4; i++) {
-    const [x, y, w] = [r() * W, 200 + r() * 260, 50 + r() * 70];
-    c.fillStyle = "rgba(150,132,138,0.4)";
-    c.beginPath();
-    c.ellipse(x, y, w, 7, 0, 0, Math.PI * 2);
-    c.fill();
-  }
-  // the lava at the foot lights it from below
-  const glow = c.createLinearGradient(0, H - 160, 0, H);
-  glow.addColorStop(0, "rgba(255,110,30,0)");
-  glow.addColorStop(1, "rgba(255,110,30,0.6)");
-  c.fillStyle = glow;
-  c.fillRect(0, 0, W, H);
-  if (fall) {
-    // a lava fall pouring over the edge
-    const x = W / 2 + (r() - 0.5) * 60;
-    const fg = c.createLinearGradient(x - 40, 0, x + 40, 0);
-    fg.addColorStop(0, "rgba(255,90,20,0.2)");
-    fg.addColorStop(0.5, "rgba(255,230,120,1)");
-    fg.addColorStop(1, "rgba(255,90,20,0.2)");
-    c.fillStyle = fg;
-    c.beginPath();
-    c.moveTo(x - 26, 70);
-    c.bezierCurveTo(x - 30, 250, x - 46, 420, x - 60, H);
-    c.lineTo(x + 60, H);
-    c.bezierCurveTo(x + 46, 420, x + 30, 250, x + 26, 70);
-    c.closePath();
-    c.fill();
-    c.strokeStyle = "rgba(255,250,200,0.8)";
-    c.lineWidth = 4;
-    for (let k = 0; k < 4; k++) {
-      const ox = (r() - 0.5) * 30;
-      c.beginPath();
-      c.moveTo(x + ox * 0.5, 90);
-      c.quadraticCurveTo(x + ox, 300, x + ox * 1.6, H);
-      c.stroke();
-    }
-  }
-  c.restore();
-  // the lit rim along the top
-  c.beginPath();
-  top.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
-  c.lineWidth = 8;
-  c.strokeStyle = "rgba(230,200,190,0.6)";
-  c.stroke();
-  shape();
-  c.lineWidth = 6;
-  c.strokeStyle = INK;
-  c.stroke();
 }
 
 /** The near edge of the crater: a row of big round boulders seen from above, lit on top. */
