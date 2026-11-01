@@ -1,6 +1,7 @@
 import { ItemDef, PET_LIST } from "./items";
 import { DICE_TIERS, tierIndex } from "./tiers";
 import { beginnerPow } from "./balance";
+import { power } from "./stages";
 
 /**
  * How luck turns into pets. Luck x1B means a pet far rarer than 1 in 1B is 1B times more
@@ -14,7 +15,7 @@ const RAREST_FIRST = [...PET_LIST].reverse();
 
 /** Beginner luck (see balance.ts): your total roll luck counts for less on the first stages. */
 export { beginnerPow };
-export const stageLuck = (luck: number, bestStage: number) => Math.max(1, luck) ** beginnerPow(bestStage);
+export const stageLuck = (luck: number, bestStage: number) => Math.max(1, luck) ** beginnerPow(power(bestStage));
 
 /** True with probability p, accurate even for tiny chances like 1 in 500Sp. */
 function chance(p: number): boolean {

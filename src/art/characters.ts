@@ -219,6 +219,17 @@ export function slime(color: number, extra = ""): (ctx: Ctx) => void {
       }
       if (extra === "sand") for (const [x, y] of [[40, 70], [96, 66], [104, 96], [34, 98]]) t.paint(rgba(darken(color, 0.25)), () => t.C(x, y, 3));
     });
+    if (extra === "alien") {
+      // two antennae with glowing tips
+      for (const [x0, x1] of [[56, 40], [86, 102]]) {
+        t.tube(() => {
+          ctx.moveTo(x0, 40);
+          ctx.quadraticCurveTo((x0 + x1) / 2, 14, x1, 10);
+        }, 6, darken(color, 0.15));
+        t.paint(radial(ctx, x1, 10, 18, [[0, "rgba(255,255,200,0.9)"], [1, "rgba(255,255,120,0)"]]), () => t.C(x1, 10, 18));
+        t.part(() => t.C(x1, 10, 8), 0xfff27a, undefined, 3);
+      }
+    }
     if (extra === "ice") {
       t.part(() => {
         t.poly([[52, 42], [56, 18], [64, 38]], 2);
@@ -472,7 +483,41 @@ export const MONSTER_ART: Record<string, [number, number, (ctx: Ctx) => void]> =
   e_magma: [140, 132, slime(0xff6a1a)],
   e_magma_b: [140, 132, slime(0xc8301a)],
   e_firebat: [170, 110, bat(0xd8431a)],
+  // Sakura Valley: pink slimes, mushrooms and bats
+  e_slime_pk: [140, 132, slime(0xff8ac8)],
+  e_mush_pk: [130, 150, mushroom(0xff6aa8, 0xfff0f6)],
+  e_bat_pk: [170, 110, bat(0xff9ad0)],
+  // the Moon: green alien slimes, glowing purple mushrooms and little flying saucers
+  e_alien: [140, 132, slime(0x8aef5a, "alien")],
+  e_mush_moon: [130, 150, mushroom(0x8a6aff, 0xe8e0ff, true)],
+  e_ufo: [170, 120, ufo],
 };
+
+/** A little flying saucer: a metal disc with lights round it and a glass dome with an angry alien inside. */
+function ufo(ctx: Ctx): void {
+  const t = toon(ctx, olFor(0x8a9ab0), 5, true);
+  t.paint("rgba(140,255,160,0.25)", () => {
+    ctx.moveTo(60, 84);
+    ctx.lineTo(110, 84);
+    ctx.lineTo(130, 120);
+    ctx.lineTo(40, 120);
+    ctx.closePath();
+  });
+  head(ctx, 85, 50, () => {
+    t.part(() => t.E(85, 48, 30, 28), 0x9ae6ff, () => {
+      t.part(() => t.E(85, 56, 17, 16), 0x8aef5a);
+      angryFace(t, 85, 54, 8, 0.6);
+    });
+    t.gloss(74, 36, 9, 5);
+  }, 2, 0.04);
+  t.part(() => t.E(85, 76, 78, 20), 0xb8c4d4, () => {
+    t.paint(rgba(0xffffff, 0.35), () => t.E(85, 70, 60, 7));
+    for (let i = 0; i < 6; i++) {
+      const x = 30 + i * 22;
+      t.part(() => t.C(x, 80, 6), i % 2 ? 0xffe066 : 0xff7ab8, undefined, 2);
+    }
+  });
+}
 
 export function makeCharacterTextures(scene: Phaser.Scene): void {
   canvasTexture(scene, "hero", HERO_W, HERO_H, (ctx) => drawHero(ctx, 0));

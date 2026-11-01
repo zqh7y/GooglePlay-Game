@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { power } from "../data/stages";
 import { INK_N, canvasTexture, darken, lighten, rgba } from "../art/draw";
 import { makeEventTextures } from "../art/fishing";
 import { makeGadgetTextures } from "../art/gadgets";
@@ -73,7 +74,7 @@ const potionReward = (minutes: number): Reward => ({
 function diceRewards(n: number, bonus: number): Reward[] {
   const got: Partial<Record<Tier, number>> = {};
   for (let i = 0; i < n; i++) {
-    const t = rollDiceTier(save.stage + bonus);
+    const t = rollDiceTier(power(save.stage) + bonus);
     got[t] = (got[t] ?? 0) + 1;
   }
   return (Object.entries(got) as [Tier, number][]).map(([t, k]) => diceReward(t, k));
@@ -254,7 +255,7 @@ interface Ware {
   rewards: (scene: Phaser.Scene) => Reward[];
 }
 
-const stageTierPlus = (k: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), Math.floor((save.stage - 1) / 20) + k)];
+const stageTierPlus = (k: number): Tier => DICE_TIERS[Math.min(DICE_TIERS.indexOf("SSS"), Math.floor((power(save.stage) - 1) / 20) + k)];
 
 /** Wares by rarity (common to legendary). Dice follow your stage's tier. */
 const WARES: Ware[][] = [

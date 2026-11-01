@@ -3,6 +3,8 @@ import { rushBossHp } from "../data/bosses";
 import { ITEMS, MAX_LEVEL, copiesFor, owned } from "../data/items";
 import { DICE_TIERS, Tier } from "../data/tiers";
 import { TREE_BY_ID, stepsOf } from "../data/tree";
+import { LAST_STAGE } from "../data/stages";
+import { STORY_CHAPTERS } from "../data/story";
 
 export interface PetState {
   level: number;
@@ -92,6 +94,10 @@ export interface SaveData {
   dev: boolean;
   /** developer god mode: you (and your pets, the crystal, the beast) can't die */
   god: boolean;
+  /** story chapters cleared (they are played on the side: see data/story.ts) */
+  storyDone: number;
+  /** the Boss Rush's next boss (its own progress, apart from the main stages) */
+  rushAt: number;
   /** gamepasses bought (kept forever) */
   passes: string[];
   /** the daily pack chain: which day and how many steps claimed */
@@ -197,6 +203,8 @@ function fresh(): SaveData {
     passes: [],
     dev: false,
     god: false,
+    storyDone: 0,
+    rushAt: 1,
     settings: { vibrate: true, toaster: false, effects: true, shake: true, dmgNumbers: true, hpNumbers: true },
     firstPlay: Date.now(),
     diceWins: 0,
@@ -259,8 +267,14 @@ function load(): SaveData {
         data.stage = Math.max(data.stage, stage);
       }
       delete data.bossRush;
-      data.stage = Math.min(data.stage, MAX_STAGE);
-      data.bestStage = Math.max(data.bestStage, data.stage);
+      // from before the story went on the side: the old stages 1-10 were its chapters, and the Boss Rush
+      // went along the stages
+      if (raw.storyDone === undefined) {
+        data.storyDone = Math.min(STORY_CHAPTERS, Math.max(0, data.bestStage - 1));
+        data.rushAt = Math.max(1, Math.min(MAX_STAGE, data.stage));
+      }
+      data.stage = Math.max(1, Math.min(data.stage, LAST_STAGE));
+      data.bestStage = Math.min(LAST_STAGE, Math.max(data.bestStage, data.stage));
       return data;
     }
   } catch {
@@ -327,7 +341,7 @@ export function resetSave(): void {
 export const hasPass = (id: string) => save.passes.includes(id);
 
 /** The highest stage you may pick: the best you reached (every stage in developer mode). */
-export const stageCap = () => (save.dev ? 100 : Math.max(1, save.bestStage));
+export const stageCap = () => (save.dev ? LAST_STAGE : Math.max(1, save.bestStage));
 
 /** ms left in the beginners' Dice Rain event (0 when it is over) */
 export const diceEventLeft = () => Math.max(0, save.firstPlay + 14 * 86400000 - Date.now());

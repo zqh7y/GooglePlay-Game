@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { canvasTexture, darken, lighten, rgba } from "../art/draw";
 import { vividCard } from "../art/ps";
-import { MAX_STAGE } from "../data/balance";
+import { LAST_STAGE, power } from "../data/stages";
 import { BOSS_EVERY, bossForStage } from "../data/bosses";
 import { stageInfo } from "../data/modes";
 import { REGIONS, Region, STAGES_PER_REGION, regionForStage, regionUnlocked } from "../data/regions";
@@ -118,14 +118,15 @@ export class MapScreen extends Screen {
     // name above (a little "World N" over the big name), progress icons beside it
     const last = r.from + STAGES_PER_REGION - 1;
     const cleared = Phaser.Math.Clamp(save.bestStage - r.from, 0, STAGES_PER_REGION);
-    const bosses = Math.floor(cleared / BOSS_EVERY);
+    const bossStages = Array.from({ length: STAGES_PER_REGION }, (_, k) => r.from + k).filter((st) => st % BOSS_EVERY === 0);
+    const bosses = bossStages.filter((st) => st < save.bestStage).length;
     const parts: Phaser.GameObjects.GameObject[] = [
       glow, planet,
       text(s, x, y - 290, `World ${i + 1}`, 34, "#ffffff", { stroke: 8 }),
       fitText(text(s, x, y - 240, r.name, 58, "#ffffff", { stroke: 12 }), 560),
     ];
     const icons: [string, string][] = open
-      ? [["mode_boss", `${bosses}/${STAGES_PER_REGION / BOSS_EVERY}`], ["icon_star", `${cleared}/${STAGES_PER_REGION}`]]
+      ? [["mode_boss", `${bosses}/${bossStages.length}`], ["icon_star", `${cleared}/${STAGES_PER_REGION}`]]
       : [["icon_lock", `stage ${r.from}`]];
     icons.forEach(([icon, val], k) => {
       const ix = x + (k - (icons.length - 1) / 2) * 170;
@@ -182,7 +183,7 @@ export class MapScreen extends Screen {
       info.add([
         s.add.image(W / 2 - 330, cy + 300, mode.icon).setScale(0.8),
         text(s, W / 2 - 270, cy + 280, boss ? `BOSS ${st}` : `STAGE ${st}`, 50, "#ffffff", { stroke: 10 }).setOrigin(0, 0.5),
-        fitText(text(s, W / 2 - 270, cy + 330, boss ? bossForStage(st).name : mode.name, 32, mode.css, { stroke: 8 }).setOrigin(0, 0.5), 340),
+        fitText(text(s, W / 2 - 270, cy + 330, boss ? bossForStage(power(st)).name : mode.name, 32, mode.css, { stroke: 8 }).setOrigin(0, 0.5), 340),
       ]);
     };
     for (let k = 0; k < STAGES_PER_REGION; k++) {
@@ -191,13 +192,13 @@ export class MapScreen extends Screen {
       const y = cy - h / 2 + 230 + Math.floor(k / 5) * 170;
       const boss = st % BOSS_EVERY === 0;
       const done = st < save.bestStage;
-      const can = st <= stageCap() && st <= MAX_STAGE;
+      const can = st <= stageCap() && st <= LAST_STAGE;
       const fill = !can ? 0x6a6a7a : done ? 0xffcf3a : st === save.stage ? 0xff9a3c : 0xffffff;
       const c = s.add.container(x, y);
       c.add(s.add.circle(0, 6, 66, 0x111111));
       c.add(s.add.circle(0, 0, 64, fill).setStrokeStyle(7, 0x111111));
       if (boss) {
-        const face = s.add.image(0, 4, bossForStage(st).tex);
+        const face = s.add.image(0, 4, bossForStage(power(st)).tex);
         face.setScale(100 / Math.max(face.width, face.height));
         if (!can) face.setTintFill(0x22222e);
         c.add(face);

@@ -2,9 +2,40 @@
 
 An idle RNG game for Android. Roll dice for **100 pets** (from 1 in 2 up to 1 in 500Sp),
 grow your **luck** through the **upgrade tree**, and fight with your box-shaped survivor and pets:
-every stage is a **5 minute survival run** (Survivor.io style) on a big open field where you also have to
-protect the land's crystal. Meanwhile your hero's **fishing line** catches money, dice, gems, potions and
-legends around the clock. The game ends at **stage 100**.
+the game is **30 stages in 5 places** (the Forest, Sakura Valley, Antarctica, the Moon and the Sea), each a
+**3 minute run** (Survivor.io style) where something happens every minute, with a **story** of 10 chapters
+on the side for rewards. Meanwhile your hero's **fishing line** catches money, dice, gems, potions and
+legends around the clock. The game ends at **stage 30**.
+
+## The main stages and the story
+
+- **30 main stages** (`src/data/stages.ts`), 6 in each place: **Green Forest** (1-6), **Sakura Valley**
+  (7-12, pink trees, pink slimes, mushrooms and bats, petals falling), **Antarctica** (13-18, snow and ice),
+  **The Moon** (19-24, grey ground full of craters, moon rocks, purple crystals, little landed rockets, green
+  alien slimes with antennae, glowing purple mushrooms and flying saucers) and **Sunny Sea** (25-30, a sandy
+  beach with palms, shells and starfish, crabs and gulls). Five modes take turns: **Guard** (the crystal),
+  **Dice Hunt** (find 12 dice; the boss comes when you have them all), **Air Zone**, **Dice Rain** (dodge the
+  giant dice) and **Boss Battle** (every 5th stage: the boss and its 3 kids, fully powered up).
+- **Every stage lasts 3:00 and something happens every minute**: at **1:00 the stage's own twist** (no
+  two stages have the same one: a Lucky Chest falls from the sky, a Golden Slime runs away from you, healing
+  hearts bloom, dice rain down, a Mushroom Frenzy, a Firefly Night, a Petal Storm that heals, Fireworks that
+  blast monsters, a Lantern Totem for double damage, Cherry Bombs that burst in chains, Golden Koi, a Spirit
+  Swarm, Icicle Rain, Slippery Ice, a Frozen Giant with a treasure, the Polar Night, an Ice Chest, the Aurora
+  Magnet, Low Gravity, a Meteor Shower, a UFO that beams monsters up, Star Shower, Moon Frenzy, an Alien
+  Swarm, a Crab March, a Thunderstorm, a Pirate Giant, Seashell Hearts, Bubble Bombs, The Last Storm), at
+  **2:00 the place's event** (the Forest: a STAMPEDE charging through; Sakura: a SPRING WIND blowing you
+  sideways; Antarctica: a BLIZZARD that slows you while icicles fall; the Moon: a COMET STORM; the Sea: HIGH
+  TIDE with crabs from every side), and at **3:00 the boss**. A Dice Hunt or Boss Battle has to be done in
+  3:00. The start card shows the twist and the event ("1:00 LUCKY CHEST • 2:00 STAMPEDE!").
+- **Difficulty** climbs the old 1-100 curve over the 30 stages (`power` in `src/data/stages.ts`: gentle
+  early, steeper later), and the Forest (stages 1-6) goes easy on new players (softer bites).
+- **The story on the side** (the **Story** button in the lobby): its 10 chapters (the path to the village,
+  the village hunt, the beast, the big boss, the path to the sea with the broken bridge, the sea, Land Ho!,
+  the lighthouse, Quake Island, the volcano) are played on their own; they never move your stage. The first
+  clear of each gives **gems and dice** (chapters 5 and 10 also a **Golden Ticket**); cleared chapters can be
+  played again. A chapter opens once the one before is cleared and you have reached its main stage (chapter
+  N at stage 3N-2). The chapters keep their manga pages.
+- **The Boss Rush** has its own progress now (its next boss), apart from the main stages.
 
 Built with **Phaser 3 + TypeScript + Vite** (the 3D loading screen and story intro use **three.js**), wrapped for Google Play with **Capacitor** (`android/`).
 Online features (leaderboards, world pet counts, optional Google Play sign-in) run on **Firebase**: see
@@ -313,7 +344,8 @@ hour of fishing brings.
   time): you can't die. Hits only flash you white, your pets can't be knocked out, the crystal can't break
   and the story beast escaping doesn't lose the stage. It is saved, and only works while `DEV_TOOLS` or
   developer mode is on. Running out of time still loses.
-- **Stage modes** (`src/data/modes.ts`): after the story, stages cycle through 9 modes up to 100: the Sea,
+- **Stage modes** (`src/data/modes.ts`; this was the old cycle, the main stages now use the five modes above
+  and the story chapters the rest): the Sea,
   Land Ho!, the Lighthouse, Quake Island, the Volcano, Crystal, Feed the Beast, Air Zone, Boss Battle
   (stage 6 is the first Sea, 7 Land Ho!, 8 the Lighthouse, 9 Quake Island, 10 the Volcano).
 - **Bosses arrive with a close-up**: when a boss lands the camera swoops over and zooms in on it for a
@@ -707,7 +739,9 @@ hour of fishing brings.
 | `src/data/skills.ts` | The 16 in-run skills (from drops) |
 | `src/data/gadgets.ts` | The 8 gadgets, their tiers, levels and stats |
 | `src/data/tiers.ts` | Tiers A to uSSS: names, colours, dice odds per stage, airdrop odds, dice luck |
-| `src/data/regions.ts` | The five lands: stages, colours, crystal, scenery, monsters |
+| `src/data/regions.ts` | The five places: stages, colours, crystal, scenery, monsters |
+| `src/data/stages.ts` | The 30 main stages: modes, difficulty, each stage's twist, each place's event |
+| `src/game/run.ts` | What is being played: a main stage or a story chapter |
 | `src/data/rarity.ts` | The 10 rarity tiers and their colours |
 | `src/data/luck.ts` | How luck turns into pets: the roll and the chance of each pet and class (shared with the simulator) |
 | `src/systems/roll.ts` | Rolling pets into your collection |

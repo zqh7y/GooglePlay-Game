@@ -1,14 +1,21 @@
 /**
- * The story: the first five stages are chapters, each with its own map and goal, played at night
- * (the Storm took the light). After stage 5 the stages go round the usual modes.
+ * The story: ten chapters played on the side of the main stages (from the STORY card in the lobby),
+ * each with its own map and goal; the first time you clear one you get its reward. A chapter opens once
+ * the one before is cleared and you have reached its main stage. Chapters 1-5 are played at night
+ * (the Storm took the light); 6-10 are the sea, Land Ho!, the lighthouse, Quake Island and the volcano.
  *   1 WAKE UP      a path through the dark woods: reach the village in 1:30 (a lantern on the way, a fallen log to smash)
  *   2 THE VILLAGE  find the 20 dice lost in the ruined village in 4:00, then beat its boss
  *   3 THE BEAST    feed the caged beast: it must not break out
  *   4 BIG BOSS     the huge boss and its 3 kids, with the beast on your side: 3:00
  *   5 TO THE SEA   the path down to the sea (fishing opens)
- * Rolling (and pets) opens once stage 2 is cleared; fishing, the Boss Rush and Dice Rain after stage 5.
+ * Rolling (and pets) opens once main stage 2 is cleared; fishing, the Boss Rush and Dice Rain after stage 5.
  */
 export const STORY_STAGES = 5;
+export const STORY_CHAPTERS = 10;
+/** the main stage you must have reached to play a chapter */
+export const chapterNeeds = (ch: number) => (ch - 1) * 3 + 1;
+/** what clearing a chapter for the first time gives: gems and dice (chapters 5 and 10 also a Golden Ticket) */
+export const chapterReward = (ch: number) => ({ gems: 20 + ch * 10, dice: 4 + ch, tickets: ch % 5 === 0 ? 1 : 0 });
 
 export interface StoryChapter {
   /** the chapter's name (the lobby, the start screen, the story card) */
@@ -65,7 +72,7 @@ export const SMASH_MS = 5000;
 /** the village: dice to find */
 export const HUNT_DICE = 20;
 
-/** What opens as you go: the stage you must have reached (bestStage) */
+/** What opens as you go: the main stage you must have reached (bestStage) */
 export const ROLL_OPEN = 3;
 export const STORY_DONE = STORY_STAGES + 1;
 export const rollOpen = (best: number) => best >= ROLL_OPEN;

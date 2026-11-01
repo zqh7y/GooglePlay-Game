@@ -1,4 +1,5 @@
 import { HERO_BASE_DMG, HERO_TEAM_SHARE, heroHpAt } from "../data/balance";
+import { power } from "../data/stages";
 import { GadgetKind, STARTER_GADGET, gadgetDps } from "../data/gadgets";
 import { ITEMS, levelMult } from "../data/items";
 import { save } from "./save";
@@ -29,4 +30,4 @@ export function teamDps(gadget: GadgetKind = STARTER_GADGET): { hero: number; pe
   return { hero, pets, total: hero + pets, perPet };
 }
 
-export const heroMaxHp = () => heroHpAt(save.stage) * villageHpMult();
+export const heroMaxHp = () => heroHpAt(power(save.stage)) * villageHpMult();

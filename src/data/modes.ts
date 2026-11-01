@@ -1,23 +1,21 @@
-import { STORY_STAGES, storyFor } from "./story";
+import { mainMode } from "./stages";
+import { storyFor } from "./story";
 
 /**
- * Every stage has a mode. The first five are the story (see data/story.ts): 1 Path to the village,
- * 2 Village hunt, 3 Feed the Beast, 4 Boss Battle, 5 Path to the sea. From stage 6 the modes go
- * round a cycle of nine: the Sea (6), Land Ho! (7), the Lighthouse (8), Quake Island (9), the Volcano (10),
- * Crystal, Feed the Beast, Air Zone, Boss Battle, and again.
+ * Every stage has a mode. The main stages (data/stages.ts) take turns through Guard (crystal), Dice
+ * Hunt, Air Zone, Dice Rain and Boss Battle. The story chapters (data/story.ts) have their own: 1 the
+ * Path to the village, 2 the Village hunt, 3 Feed the Beast, 4 the Big Boss, 5 the Path to the sea,
+ * 6 the Sea, 7 Land Ho!, 8 the Lighthouse, 9 Quake Island, 10 the Volcano.
  */
 export type StageMode = "air" | "crystal" | "feed" | "dice" | "boss" | "path" | "hunt" | "sea" | "ocean" | "light" | "quake" | "volcano";
-
-/** Dice Rain is not in the cycle: it is the beginners' event (see DICE_EVENT_DAYS) */
-export const MODE_ORDER: StageMode[] = ["sea", "ocean", "light", "quake", "volcano", "crystal", "feed", "air", "boss"];
 
 /** New players get the Dice Rain event for their first two weeks. */
 export const DICE_EVENT_DAYS = 14;
 
-const STORY_MODES: StageMode[] = ["path", "hunt", "feed", "boss", "path"];
+const CHAPTER_MODES: StageMode[] = ["path", "hunt", "feed", "boss", "path", "sea", "ocean", "light", "quake", "volcano"];
 
-export const modeForStage = (stage: number): StageMode =>
-  stage <= STORY_STAGES ? STORY_MODES[Math.max(1, stage) - 1] : MODE_ORDER[(stage - STORY_STAGES - 1) % MODE_ORDER.length];
+export const modeForStage = (stage: number): StageMode => mainMode(stage);
+export const chapterMode = (ch: number): StageMode => CHAPTER_MODES[Math.min(CHAPTER_MODES.length, Math.max(1, ch)) - 1];
 
 export interface ModeInfo {
   name: string;
@@ -33,11 +31,11 @@ export interface ModeInfo {
 export const MODE_INFO: Record<StageMode, ModeInfo> = {
   air: {
     name: "AIR ZONE", banner: "STAY IN THE AIR!", icon: "mode_air", color: 0x4fd8ff, css: "#9ef0ff",
-    goal: "Stay in the air zone!",
+    goal: "Stay in the air zone for 3:00!",
   },
   crystal: {
-    name: "CRYSTAL", banner: "SURVIVE 5:00!", icon: "mode_crystal", color: 0xff7ad8, css: "#ffc2f0",
-    goal: "Guard the crystal!",
+    name: "GUARD", banner: "GUARD THE CRYSTAL!", icon: "mode_crystal", color: 0xff7ad8, css: "#ffc2f0",
+    goal: "Guard the crystal for 3:00!",
   },
   feed: {
     name: "FEED THE BEAST", banner: "FEED THE BEAST!", icon: "mode_feed", color: 0xffa040, css: "#ffd29a",
@@ -45,11 +43,11 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
   },
   dice: {
     name: "DICE RAIN", banner: "DODGE THE DICE!", icon: "mode_dice", color: 0xffe066, css: "#fff2a8",
-    goal: "Dodge the giant dice!",
+    goal: "Dodge the giant dice for 3:00!",
   },
   boss: {
     name: "BOSS BATTLE", banner: "BOSS BATTLE!", icon: "mode_boss", color: 0xff4a4a, css: "#ffb0b0",
-    goal: "Beat 4 bosses!",
+    goal: "Beat the boss and its 3 kids in 3:00!",
   },
   path: {
     name: "THE PATH", banner: "RUN!", icon: "icon_clock", color: 0x6ab84a, css: "#c8f0a0",
@@ -77,15 +75,20 @@ export const MODE_INFO: Record<StageMode, ModeInfo> = {
   },
   hunt: {
     name: "DICE HUNT", banner: "FIND THE DICE!", icon: "die_A", color: 0xffb03a, css: "#ffe0a0",
-    goal: "Find the dice!",
+    goal: "Find 12 dice in 3:00!",
   },
 };
 
-/** The mode's info for a stage: story chapters use their own name, banner and goal. */
+/** The mode's info for a main stage. */
 export function stageInfo(stage: number): ModeInfo {
-  const info = MODE_INFO[modeForStage(stage)];
-  const ch = storyFor(stage);
-  return ch ? { ...info, name: ch.title, banner: ch.title, goal: ch.goal } : info;
+  return MODE_INFO[modeForStage(stage)];
+}
+
+/** A story chapter's: its own name, banner and goal where it has them. */
+export function chapterInfo(ch: number): ModeInfo {
+  const info = MODE_INFO[chapterMode(ch)];
+  const story = storyFor(ch);
+  return story ? { ...info, name: story.title, banner: story.title, goal: story.goal } : info;
 }
 
 /** Air Zone: the zone covers 10% of the map and moves every 30 s; the next one shows 8 s early. */

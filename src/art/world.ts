@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { LAND_ART } from "./lands";
 import { Ctx, canvasTexture, darken, lighten, linear, radial, rgba, twinkle } from "./draw";
 import { Toon, toon } from "./toon";
 
@@ -422,7 +423,7 @@ const ART: Record<string, [number, number, (ctx: Ctx) => void]> = {
 export const crystalKey = (id: string) => `crystal_${id}`;
 
 export function makeWorldTextures(scene: Phaser.Scene, crystals: { id: string; crystal: number }[]): void {
-  for (const [key, [w, h, draw]] of Object.entries(ART)) canvasTexture(scene, key, w, h, draw);
+  for (const [key, [w, h, draw]] of Object.entries({ ...ART, ...LAND_ART })) canvasTexture(scene, key, w, h, draw);
   for (const c of crystals) canvasTexture(scene, crystalKey(c.id), 240, 310, heartCrystal(c.crystal));
 }
 

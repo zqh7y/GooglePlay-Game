@@ -1,4 +1,5 @@
 import { BOOSTS } from "../data/boosts";
+import { power } from "../data/stages";
 import {
   EVENT_REWARDS, EventReward, FIRST_CATCH_SHELLS, TICKET_IN_BIG_PRIZE, ticketChance, FISH_UPGRADES, FISH_UP_BY_ID, FishUpId, PRIZES, Prize, ROW_SHELLS, SHINY_MULT, SUPER_LUCK, catchSecs, coolerHours,
   deepMult, doubleChance, eventGoal, eventReward, fishLuck, goldMult, netMult, rollPrize, shinyChance, superEvery, upgradeCost,
@@ -185,7 +186,7 @@ export function buyFish(id: FishUpId): boolean {
 export function eventNext(): { k: number; reward: EventReward; from: number; goal: number } {
   const e = save.fishing.event;
   const k = Math.min(e.claimed, EVENT_REWARDS - 1);
-  return { k, reward: eventReward(e.round, k, save.stage), from: k ? eventGoal(e.round, k - 1) : 0, goal: eventGoal(e.round, k) };
+  return { k, reward: eventReward(e.round, k, power(save.stage)), from: k ? eventGoal(e.round, k - 1) : 0, goal: eventGoal(e.round, k) };
 }
 
 /** How many event rewards are waiting to be claimed. */
@@ -233,7 +234,7 @@ export function claimEvent(): EventReward[] {
   const e = save.fishing.event;
   const out: EventReward[] = [];
   while (e.claimed < EVENT_REWARDS && e.points >= eventGoal(e.round, e.claimed)) {
-    const r = eventReward(e.round, e.claimed, save.stage);
+    const r = eventReward(e.round, e.claimed, power(save.stage));
     // the big prize might hold a Golden Ticket
     if (r.kind === "grand" && Math.random() < TICKET_IN_BIG_PRIZE) r.ticket = true;
     payEventReward(r);

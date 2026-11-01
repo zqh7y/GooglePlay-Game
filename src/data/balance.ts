@@ -2,13 +2,14 @@
  * Difficulty and reward curves, shared by the game and the progression simulator
  * (so tuning here is what players actually get).
  *
- * A stage is a 5 minute survival run: monsters come faster and tougher every minute,
- * and at 5:00 the boss arrives. Kill it to clear the stage.
+ * A stage is a 3 minute run: monsters come faster and tougher every minute, something happens
+ * at 1:00 and 2:00, and at 3:00 the boss arrives. Kill it to clear the stage. The curves run from
+ * 1 to 100 (MAX_STAGE): the 30 main stages climb it (see data/stages.ts power).
  */
 export const MAX_STAGE = 100;
-export const STAGE_MS = 5 * 60 * 1000;
-/** the stage timer is shown as 5 marks, one per minute */
-export const MINUTES = 5;
+export const STAGE_MS = 3 * 60 * 1000;
+/** the stage timer is shown as 3 marks, one per minute */
+export const MINUTES = 3;
 
 /**
  * Monster health grows every stage: very steeply over the first stages (your first good

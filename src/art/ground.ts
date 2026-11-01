@@ -108,6 +108,22 @@ function paintPatch(ctx: Ctx, land: Region, x: number, y: number, r: number, ran
         });
       }
       break;
+    case "moon":
+      // a crater: a dark bowl, lit on its far rim, shadowed on its near one
+      ctx.fillStyle = rgba(darken(land.ground, 0.18));
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rgba(darken(land.ground, 0.3));
+      ctx.beginPath();
+      ctx.ellipse(x, y + r * 0.06, r * 0.82, r * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = rgba(lighten(land.ground, 0.25));
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 0.55, 0, 0.15, Math.PI - 0.15);
+      ctx.stroke();
+      break;
     case "snow":
       ctx.fillStyle = "#cfe8f8";
       ctx.beginPath();
@@ -166,7 +182,7 @@ function paintTile(ctx: Ctx, land: Region, rand: () => number): void {
     b.add(ink, true, width + 4, draw);
     b.add(fill, false, 0, draw);
   };
-  const grassy = land.detail !== "sand" && land.detail !== "snow";
+  const grassy = land.detail !== "sand" && land.detail !== "snow" && land.detail !== "moon";
   // chunky tufts: three round-tipped blades, dark outline, light tips
   for (let n = 0; n < (grassy ? 60 : 30); n++) {
     const x0 = rand() * TILE;
@@ -184,7 +200,17 @@ function paintTile(ctx: Ctx, land: Region, rand: () => number): void {
         ctx.quadraticCurveTo(x + 13 * s, y - 6 * s, x + 12 * s, y);
         ctx.closePath();
       };
-      if (land.detail === "sand") {
+      if (land.detail === "moon") {
+        // little craters and moon dust
+        b.add(rgba(darken(land.ground, 0.22)), false, 0, () => {
+          ctx.moveTo(x + 11 * s, y);
+          ctx.ellipse(x, y, 11 * s, 6 * s, 0, 0, Math.PI * 2);
+        });
+        b.add(rgba(lighten(land.ground, 0.22)), true, 3, () => {
+          ctx.moveTo(x + 11 * s, y + 1);
+          ctx.ellipse(x, y + 1, 11 * s, 6 * s, 0, 0.2, Math.PI - 0.2);
+        });
+      } else if (land.detail === "sand") {
         outlined(rgba(lighten(land.ground, 0.12)), () => {
           ctx.moveTo(x + 14 * s, y);
           ctx.ellipse(x, y, 14 * s, 9 * s, 0, 0, Math.PI * 2);
@@ -205,7 +231,7 @@ function paintTile(ctx: Ctx, land: Region, rand: () => number): void {
   b.flush(ctx);
   // little flowers, clovers and mushrooms with outlines
   const petals = ["#ffffff", "#ff9ad0", "#ffe066", "#9ad8ff", "#c8a0ff"];
-  for (let n = 0; n < (grassy ? 22 : 10); n++) {
+  for (let n = 0; n < (grassy ? 22 : land.detail === "moon" ? 0 : 10); n++) {
     const x0 = rand() * TILE;
     const y0 = rand() * TILE;
     const kind = rand();

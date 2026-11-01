@@ -1,4 +1,5 @@
 import { TapRush } from "./tapRush";
+import { power } from "../data/stages";
 import Phaser from "phaser";
 import { HERO_HAND } from "../art/characters";
 import { INK_N, lighten, rgba } from "../art/draw";
@@ -310,7 +311,7 @@ export class FishScreen extends Screen {
       bar, text(s, 0, -h / 2 + 196, `${fmt(e.points)} / ${fmt(last)} catches`, 26),
     ]);
     for (let k = 0; k < EVENT_REWARDS; k++) {
-      const r = eventReward(e.round, k, save.stage);
+      const r = eventReward(e.round, k, power(save.stage));
       const col = k % 2;
       const row = Math.floor(k / 2);
       const x = col ? 220 : -220;
