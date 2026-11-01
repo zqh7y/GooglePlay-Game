@@ -609,6 +609,8 @@ export class BattleScene extends Phaser.Scene {
   private light = this.freshLight();
   /** Quake island: the pieces of the island, the things standing on it, and the quake's timers */
   private quake = this.freshQuake();
+  /** which way you are facing (you turn as you walk) */
+  private faceLeft = false;
   /** the Volcano: the Magma King, its phase and armour, the geysers, the shrinking floor, the timers */
   private volc = this.freshVolc();
   /** things you cannot walk through (houses, ruins, the gate's posts) */
@@ -868,7 +870,8 @@ export class BattleScene extends Phaser.Scene {
     if (!data?.autostart) this.drawPreview();
 
     const [hx0, hy0] = this.heroStart();
-    this.hero = this.add.image(hx0, hy0, "hero").setOrigin(0.5, 0.95);
+    this.hero = this.add.image(hx0, hy0, "hero").setOrigin(0.5, 0.95).setFlipX(true);
+    this.faceLeft = false;
     this.handImg = this.add.image(0, 0, gadgetKey(STARTER_GADGET));
     this.refreshHand();
     this.fortImg = this.add.image(0, 0, "ring").setTint(0xffd08a).setAlpha(0).setScale(1.4, 0.7);
@@ -1064,7 +1067,7 @@ export class BattleScene extends Phaser.Scene {
     music.play("calm");
     if (reason === "hero") {
       this.hero.setTint(0x8a8a8a);
-      this.tweens.add({ targets: this.hero, angle: this.hero.flipX ? -90 : 90, duration: 400, ease: "Bounce.out" });
+      this.tweens.add({ targets: this.hero, angle: this.faceLeft ? -90 : 90, duration: 400, ease: "Bounce.out" });
     }
     if (reason !== "quit") this.banner(reason === "time" ? "TIME'S UP!" : reason === "hero" ? "YOU FELL!" : "ALL BOSSES BEATEN!", reason === "done" ? "gold" : "red", 1100);
     sfx[reason === "done" ? "fanfare" : "error"]();
@@ -1381,27 +1384,40 @@ export class BattleScene extends Phaser.Scene {
     this.add.ellipse(c.cx, c.cy, c.rx * 2 + 20, c.ry * 2 + 20).setStrokeStyle(40, 0x24161a, 0.95).setDepth(-995);
     const edge = this.add.ellipse(c.cx, c.cy, c.rx * 2 + 70, c.ry * 2 + 70).setStrokeStyle(12, 0xffa030, 0.8).setDepth(-995);
     this.tweens.add({ targets: edge, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    // the far side of the crater rises as cliffs behind the floor (lava pouring down some of them);
-    // the near side is a lip of boulders
-    const arc = (k: number, t: number): [number, number] => [c.cx + Math.cos(t) * c.rx * k, c.cy + Math.sin(t) * c.ry * k];
+    // the far side of the crater rises as cliffs behind the floor (lava pouring down some of them): each
+    // stands on the rim where it is highest under it, so none of it covers the floor
+    const edgeY = (x: number) => c.cy - c.ry * Math.sqrt(Math.max(0, 1 - ((x - c.cx) / c.rx) ** 2));
     let n = 0;
-    for (let t = Math.PI * 0.92; t <= Math.PI * 2.08; t += 0.15) {
-      const [x, y] = arc(1.03, t);
-      const side = Math.abs(Math.cos(t));
+    for (let x = c.cx - c.rx * 0.8; x <= c.cx + c.rx * 0.8 + 1; x += 250) {
+      const w = 300;
+      const inner = x + (x < c.cx ? w / 2 : -w / 2) * (Math.abs(x - c.cx) < w / 2 ? 0 : 1);
+      const y = edgeY(inner) + 22;
+      const k = 1 - Math.abs(x - c.cx) / c.rx;
       const key = n % 4 === 1 ? "crater_fall" : n % 2 ? "crater_wall2" : "crater_wall";
-      const w = this.add.image(x, y + 40, key).setOrigin(0.5, 1).setDepth(y - 400).setScale(1.15, 1.25 - side * 0.55).setAngle(Math.cos(t) * -8).setFlipX(n % 3 === 0);
+      const wall = this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(y - 400).setScale(0.78, 0.7 + k * 0.6).setFlipX(n % 3 === 0);
       if (key === "crater_fall") {
         this.nightGlow(x, y, 4, 0.6);
         if (effectsOn()) this.add.particles(x, y - 20, "spark", {
-          x: { min: -50, max: 50 }, lifespan: 700, speedY: { min: -260, max: -120 }, speedX: { min: -120, max: 120 }, gravityY: 400,
+          x: { min: -40, max: 40 }, lifespan: 700, speedY: { min: -260, max: -120 }, speedX: { min: -120, max: 120 }, gravityY: 400,
           scale: { start: 0.6, end: 0 }, tint: [0xffd040, 0xff8a1a], frequency: 120,
-        }).setDepth(w.depth + 1);
+        }).setDepth(wall.depth + 1);
       }
       n++;
     }
-    for (let t = Math.PI * 0.12; t < Math.PI * 0.9; t += 0.12) {
-      const [x, y] = arc(1.04, t);
-      this.add.image(x, y, "crater_lip").setOrigin(0.5, 0.55).setDepth(y + 300).setScale(1.1).setAngle(Math.cos(t) * 20).setFlipX(Math.random() < 0.5);
+    // the near side: a lip of boulders lying along the rim (just outside the floor)
+    for (let t = Math.PI * 0.16; t <= Math.PI * 0.84; t += 0.1) {
+      const [x, y] = [c.cx + Math.cos(t) * c.rx, c.cy + Math.sin(t) * c.ry];
+      const ang = Phaser.Math.RadToDeg(Math.atan2(-c.ry * Math.cos(t), c.rx * Math.sin(t)));
+      this.add.image(x, y, "crater_lip").setOrigin(0.5, 0.22).setDepth(y + 300).setScale(0.8).setAngle(ang).setFlipX(Math.round(t * 10) % 2 === 0);
+    }
+    // the two sides: heaps of boulders on the rim
+    const heaps = ["meteor_a", "meteor_b", "meteor_c"];
+    let h = 0;
+    for (const [t0, t1] of [[-0.62, Math.PI * 0.16], [Math.PI * 0.84, Math.PI + 0.62]]) {
+      for (let t = t0; t <= t1; t += 0.07) {
+        const [x, y] = [c.cx + Math.cos(t) * c.rx * 1.04, c.cy + Math.sin(t) * c.ry * 1.04];
+        this.add.image(x, y + 30, heaps[h++ % 3]).setOrigin(0.5, 0.8).setScale(0.5 + ((h * 29) % 10) / 30).setDepth(y + 30).setTint(0x9a8a90).setFlipX(h % 2 === 0);
+      }
     }
     // the lava lake, ringed by big boulders
     const lake = this.add.tileSprite(0, 0, a.w, a.h, "lava_tile").setOrigin(0).setDepth(-993).setMask(oval(c.lake));
@@ -2391,7 +2407,7 @@ export class BattleScene extends Phaser.Scene {
     const hx = this.hero.x;
     const hy = this.hero.y - 60;
     const first = this.nearestEnemies(hx, hy, 1000, 1)[0];
-    const aim = first ? Math.atan2(first.img.y - first.img.displayHeight * 0.4 - this.handImg.y, first.img.x - this.handImg.x) : this.hero.flipX ? Math.PI : 0;
+    const aim = first ? Math.atan2(first.img.y - first.img.displayHeight * 0.4 - this.handImg.y, first.img.x - this.handImg.x) : this.faceLeft ? Math.PI : 0;
     this.handAim = Phaser.Math.Angle.RotateTo(this.handAim, aim, 0.25);
     // the gadget that just fired kicks up in your hand
     this.handKick = Math.max(0, this.handKick - delta / 220);
@@ -2892,7 +2908,11 @@ export class BattleScene extends Phaser.Scene {
         else [nx, ny] = [this.hero.x, this.hero.y];
       }
       this.hero.setPosition(nx, ny).setScale(1);
-      if (Math.abs(vx) > 0.1) this.hero.setFlipX(vx < 0);
+      // (the box is drawn turned to the left: flipped, it faces right)
+      if (Math.abs(vx) > 0.1) {
+        this.faceLeft = vx < 0;
+        this.hero.setFlipX(!this.faceLeft);
+      }
       // little puffs of dust kicked up as you run
       this.dustT -= delta;
       if (this.dustT <= 0 && len > 0.5 && this.fighting && !this.arena.sea && effectsOn() && !save.settings.toaster) {
@@ -2912,7 +2932,7 @@ export class BattleScene extends Phaser.Scene {
       this.hero.setScale(1 + Math.sin(time / 300) * 0.02, 1 - Math.sin(time / 300) * 0.02);
     }
     this.hero.setDepth(this.hero.y);
-    const dir = this.hero.flipX ? -1 : 1;
+    const dir = this.faceLeft ? -1 : 1;
     const gx = this.hero.x + HERO_HAND.x * dir;
     const gy = this.hero.y + HERO_HAND.y;
     this.handImg.setPosition(gx, gy).setDepth(this.hero.y + 1);
@@ -5534,7 +5554,7 @@ export class BattleScene extends Phaser.Scene {
     const S = this.smash;
     if (S.held) {
       // on your shoulder, or swinging while you smash
-      const dir = this.hero.flipX ? -1 : 1;
+      const dir = this.faceLeft ? -1 : 1;
       const swinging = S.p > 0 && this.inSmashRing();
       const sw = swinging ? Math.sin(this.time.now / 70) * 70 : 0;
       if (S.kind === "bridge") S.held.setPosition(this.hero.x - dir * 30, this.hero.y - 110 + (swinging ? sw * 0.2 : 0)).setAngle(dir * 70).setDepth(this.hero.y - 2).setScale(0.45 + S.got * 0.07);
@@ -5953,7 +5973,7 @@ export class BattleScene extends Phaser.Scene {
     }
     // the lantern swings in your free hand
     if (this.heldLantern) {
-      const dir = this.hero.flipX ? 1 : -1;
+      const dir = this.faceLeft ? 1 : -1;
       this.heldLantern.setPosition(this.hero.x + dir * 46, this.hero.y - 120).setDepth(this.hero.y + 2).setAngle(Math.sin(t / 220) * 10);
       this.heroGlow?.setPosition(this.hero.x, this.hero.y - 80).setScale(6 * flicker);
     }
@@ -6325,7 +6345,7 @@ export class BattleScene extends Phaser.Scene {
     this.coughT -= delta;
     if (this.coughT <= 0) {
       this.coughT = choking ? 450 : 1100;
-      const [x, y] = [this.hero.x + (this.hero.flipX ? -30 : 30), this.hero.y - 120];
+      const [x, y] = [this.hero.x + (this.faceLeft ? -30 : 30), this.hero.y - 120];
       for (let k = 0; k < (choking ? 3 : 1); k++) {
         const p = this.add.image(x, y, "toxic_bubble").setScale(0.5).setDepth(TOP + 14004);
         this.tweens.add({ targets: p, x: x + Phaser.Math.Between(-60, 60), y: y - 70 - k * 20, scale: 1.1, alpha: 0, duration: 650, delay: k * 90, onComplete: () => p.destroy() });
@@ -7327,7 +7347,7 @@ export class BattleScene extends Phaser.Scene {
     if (reason === "hero") {
       this.cameras.main.shake(500, 0.012);
       this.hero.setTint(0x8a8a8a);
-      this.tweens.add({ targets: this.hero, angle: this.hero.flipX ? -90 : 90, duration: 400, ease: "Bounce.out" });
+      this.tweens.add({ targets: this.hero, angle: this.faceLeft ? -90 : 90, duration: 400, ease: "Bounce.out" });
     } else if (reason === "crystal") {
       this.cameras.main.shake(500, 0.012);
       this.crystal.setTint(0x6a6a6a);
@@ -8084,10 +8104,14 @@ export class BattleScene extends Phaser.Scene {
         break;
       case "rock":
       case "root":
-        spikes(kind === "rock" ? "bx_spike_rock" : "bx_spike_root", 1);
-        this.puff.setParticleTint(kind === "rock" ? 0xc8b8a0 : 0x8a6a3a);
-        this.puff.explode(14, x, y);
-        ring(kind === "rock" ? 0xf0dcc0 : 0xb8e08a, 1.5);
+        {
+          // (in the volcano: dark basalt with lava in its cracks)
+          const hot = kind === "rock" && (this.stageMode === "volcano" || this.stageMode === "quake");
+          spikes(hot ? "bx_spike_magma" : kind === "rock" ? "bx_spike_rock" : "bx_spike_root", 1);
+          this.puff.setParticleTint(hot ? 0x5a4a4a : kind === "rock" ? 0xc8b8a0 : 0x8a6a3a);
+          this.puff.explode(14, x, y);
+          ring(hot ? 0xff8a3a : kind === "rock" ? 0xf0dcc0 : 0xb8e08a, 1.5);
+        }
         this.cameras.main.shake(120, 0.006);
         break;
     }

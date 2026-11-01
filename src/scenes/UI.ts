@@ -1778,7 +1778,7 @@ export class UIScene extends Phaser.Scene implements Host {
         const lines = this.add.image(b.x + b.w / 2, b.y + b.h / 2, "comic_lines").setDisplaySize(b.w * 1.6, b.h).setAlpha(0.8);
         inner.add(lines);
         this.tweens.add({ targets: lines, x: b.x + b.w * 0.1, duration: 5000 });
-        const runner = this.add.image(b.x - 80, b.y + b.h * 0.92, "hero_w1").setOrigin(0.5, 0.95).setScale(Math.min(1.6, (b.h * 0.7) / 230));
+        const runner = this.add.image(b.x - 80, b.y + b.h * 0.92, "hero_w1").setOrigin(0.5, 0.95).setScale(Math.min(1.6, (b.h * 0.7) / 230)).setFlipX(true);
         inner.add(runner);
         inner.setData("runner", runner);
         const t1 = text(this, b.x + b.w * 0.62, b.y + b.h * 0.3, `STAGE ${stage}`, 40, "#ffffff", { stroke: 10 });

@@ -211,9 +211,9 @@ function blast(c: Ctx): void {
 }
 
 /** Spikes bursting out of the ground: rock, root or ice. */
-function spikes(kind: "rock" | "root" | "ice") {
+function spikes(kind: "rock" | "root" | "ice" | "magma") {
   return (c: Ctx) => {
-    const [base, dark] = kind === "rock" ? ["#b8a28a", "#7a644e"] : kind === "root" ? ["#8a6a3a", "#5a4020"] : ["#bff0ff", "#5ab8e8"];
+    const [base, dark] = kind === "rock" ? ["#b8a28a", "#7a644e"] : kind === "magma" ? ["#5a484e", "#24181c"] : kind === "root" ? ["#8a6a3a", "#5a4020"] : ["#bff0ff", "#5ab8e8"];
     const list: [number, number, number][] = [[-56, 70, 26], [52, 80, 28], [0, 130, 36], [-26, 95, 24], [30, 105, 26]];
     c.translate(110, 168);
     for (const [x, h, w] of list.sort((a, b) => a[1] - b[1])) {
@@ -237,6 +237,18 @@ function spikes(kind: "rock" | "root" | "ice") {
           c.lineTo(x - w * 0.1, -h * 0.8);
           c.lineWidth = 5;
           c.strokeStyle = "rgba(255,255,255,0.9)";
+          c.stroke();
+        } else if (kind === "magma") {
+          // lava glowing up through a crack in the basalt
+          c.beginPath();
+          c.moveTo(x - w * 0.5, -4);
+          c.lineTo(x - w * 0.15, -h * 0.45);
+          c.lineTo(x + w * 0.05, -h * 0.75);
+          c.lineWidth = 7;
+          c.strokeStyle = "rgba(255,120,30,0.5)";
+          c.stroke();
+          c.lineWidth = 3;
+          c.strokeStyle = "#ffd060";
           c.stroke();
         } else if (kind === "root") {
           for (let k = 1; k < 4; k++) {
@@ -633,6 +645,7 @@ export function makeBossFxTextures(scene: Phaser.Scene): void {
     ["bx_blast", 256, 256, blast],
     ["bx_spike_rock", 220, 180, spikes("rock")],
     ["bx_spike_root", 220, 180, spikes("root")],
+    ["bx_spike_magma", 220, 180, spikes("magma")],
     ["bx_spike_ice", 220, 180, spikes("ice")],
     ["bx_scorch", 256, 128, scorch],
     ["bx_shock", 256, 256, shock],
