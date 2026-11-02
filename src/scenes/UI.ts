@@ -52,8 +52,8 @@ import { TreeScreen } from "../ui/treeScreen";
 import { animateClassTexts, classBadge, classText } from "../ui/classText";
 import { BtnColor } from "../art/ui";
 import { MODE_INFO, StageMode, chapterInfo, stageInfo } from "../data/modes";
-import { ROLL_OPEN, STORY_CHAPTERS, STORY_STAGES, chapterNeeds, chapterReward, rollOpen, storyDone, storyFor } from "../data/story";
-import { LAST_STAGE, PLACE_EVENTS, power, twistFor } from "../data/stages";
+import { ROLL_OPEN, STORY_CHAPTERS, STORY_DMG, STORY_STAGES, chapterNeeds, chapterPower, chapterReward, rollOpen, storyDone, storyFor } from "../data/story";
+import { LAST_STAGE, PLACE_EVENTS, STAGES_PER_PLACE, power, twistFor } from "../data/stages";
 import { run } from "../game/run";
 import { DEV_TOOLS, GOD_BTN, SPEED_BTN } from "../devtools";
 import type { DailyReward } from "../systems/goals";
@@ -189,9 +189,19 @@ export class UIScene extends Phaser.Scene implements Host {
   private lastCount = 0;
   /** the fishing event's card in the lobby */
   private eventCard!: Phaser.GameObjects.Container;
-  private diceEventCard!: Phaser.GameObjects.Container;
-  private diceEventTime!: Phaser.GameObjects.Text;
-  private diceEventBadge?: Phaser.GameObjects.Container;
+  /** the small Dice Rain button on the left (while the beginners' event runs) */
+  private rainSide?: Phaser.GameObjects.Container;
+  /** the icons on a main stage's time bar, and the stage and mode they were set for */
+  private minuteIcons: Phaser.GameObjects.Image[] = [];
+  private minuteFor = "";
+  /** the big STORY card on the right of the lobby */
+  private storyBox?: {
+    c: Phaser.GameObjects.Container; glow: Phaser.GameObjects.Image; icon: Phaser.GameObjects.Image; ch: Phaser.GameObjects.Text;
+    name: Phaser.GameObjects.Text; bar: Phaser.GameObjects.Graphics; num: Phaser.GameObjects.Text; badge: Phaser.GameObjects.Container;
+    lock: Phaser.GameObjects.Image; shown: string;
+  };
+  /** was the next chapter already ready last time we looked (undefined: not looked yet) */
+  private storyWasReady?: boolean;
   private eventBar!: Phaser.GameObjects.Graphics;
   private eventText!: Phaser.GameObjects.Text;
   private eventGlow!: Phaser.GameObjects.Image;
@@ -821,10 +831,14 @@ export class UIScene extends Phaser.Scene implements Host {
       this.toast(save.afk ? "AFK on: your hero walks around and picks up dice" : "AFK off: walk with the joystick", "#b6f59a");
     });
     side(5, "icon_trophy", "Ranks", () => showLeaderboard(this, this, () => (this.openModal = null)));
-    side(6, "icon_book", "Story", () => this.showStory(), () => this.storyWaiting());
+    // the beginners' Dice Rain: a small button here while it runs (the big card on the right is the story)
+    this.rainSide = side(6, "die_S", "Dice Rain", () => {
+      unlockAudio();
+      this.showDiceEvent();
+    }, () => !!this.rainSide?.visible && this.rainReady() > 0);
     if (DEV_TOOLS) side(7, "icon_gear", "DEV", () => this.showDev());
     this.buildEventCard();
-    this.buildDiceEventCard();
+    this.buildStoryCard();
     this.afkRing = afk.list[0] as Phaser.GameObjects.Arc;
     this.afkLabel = afk.list[3] as Phaser.GameObjects.Text;
     this.refreshAfk();
@@ -861,8 +875,10 @@ export class UIScene extends Phaser.Scene implements Host {
     }, { size: 40 });
     // developer god mode: you can't die (toggle any time in a fight)
     this.godBtn = button(this, GOD_BTN.x, GOD_BTN.y, GOD_BTN.w, GOD_BTN.h, save.god ? "green" : "grey", "GOD", () => this.toggleGod(), { size: 36 });
+    // a main stage's big moments, on the time bar: 1:00 the twist, 2:00 the event, 3:00 the boss
+    this.minuteIcons = [0, 1, 2].map(() => this.add.image(0, 91, "icon_clock").setVisible(false));
     this.run.add([
-      band, this.hudBars, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn, this.godBtn,
+      band, this.hudBars, ...this.minuteIcons, this.progressText, this.levelText, this.stageText, this.crystalIcon, this.shieldText, gunPanel, this.skillBar, this.streakHud, this.speedBtn, this.godBtn,
       iconButton(this, 62, 165, "icon_pause", 86, () => this.showPause()),
       iconButton(this, 160, 165, "icon_odds", 86, () => this.showStats()),
     ]);
@@ -956,45 +972,123 @@ export class UIScene extends Phaser.Scene implements Host {
     this.refreshEventCard();
   }
 
-  /** The beginners' Dice Rain event card (first 14 days): a bouncing die, the time left. */
-  private buildDiceEventCard(): void {
+  /**
+   * The STORY card, big on the right of the lobby: the next chapter's picture and name, and the bar of
+   * your team DPS against what the chapter needs (win battles to fill it). It glows with a "!" once the
+   * chapter is ready to play, and shows the reward for clearing it: +10% damage for good.
+   */
+  private buildStoryCard(): void {
     const x = this.W - 136;
     const y = this.L.hudBottom + 680;
-    const glow = this.add.image(0, 0, "glow").setTint(0xffe066).setScale(1.5, 1.6).setAlpha(0.5);
-    this.tweens.add({ targets: glow, alpha: 0.9, duration: 600, yoyo: true, repeat: -1 });
-    const shadow = this.add.ellipse(0, 50, 90, 22, 0x000000, 0.3);
-    const die = this.add.image(0, -10, "die_S").setScale(1.25);
-    this.tweens.add({ targets: die, y: -40, angle: 20, duration: 450, yoyo: true, repeat: -1, ease: "Quad.out" });
-    this.tweens.add({ targets: shadow, scaleX: 0.7, duration: 450, yoyo: true, repeat: -1, ease: "Quad.out" });
-    const ribbon = this.add.image(0, -126, "event_ribbon").setScale(0.84).setTint(0xffd0ff);
-    this.diceEventTime = text(this, 0, 104, "", 24, "#ffffff", { stroke: 6 });
+    const glow = this.add.image(0, 0, "glow").setTint(0xffd23f).setScale(1.6, 1.7).setAlpha(0);
+    this.tweens.add({ targets: glow, alpha: { from: 0.35, to: 0.95 }, duration: 520, yoyo: true, repeat: -1 });
+    const halo = this.add.image(0, -22, "glow").setTint(0xe0c0ff).setScale(0.9).setAlpha(0.7);
+    this.tweens.add({ targets: halo, scale: 1.1, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const icon = this.add.image(0, -22, "icon_book");
+    this.tweens.add({ targets: icon, y: -34, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const lock = this.add.image(54, 10, "icon_lock").setScale(0.5);
+    // a shine sweeps across the card
+    const shine = this.add.image(-200, 0, "card_shine").setAlpha(0.45).setScale(1, 1.2);
+    const mask = this.make.graphics({}, false);
+    mask.fillStyle(0xffffff).fillRoundedRect(x - 112, y - 127, 224, 254, 24);
+    shine.setMask(mask.createGeometryMask());
+    this.tweens.add({ targets: shine, x: 200, duration: 900, repeat: -1, repeatDelay: 2200, ease: "Sine.inOut" });
+    const ribbon = this.add.image(0, -126, "event_ribbon").setScale(0.84).setTint(0xd8b8ff);
+    const word = fitText(text(this, 0, -132, "STORY", 32, "#fff3c8"), 170);
+    this.tweens.add({ targets: [ribbon, word], scale: "*=1.06", duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const ch = text(this, 0, -86, "", 22, "#f0e0ff", { stroke: 6 });
+    const name = text(this, 0, 44, "", 28, "#ffffff", { stroke: 8 });
+    // the reward sticker: +10% damage for good
+    const sticker = this.add.container(66, 6, [
+      this.add.rectangle(0, 0, 104, 40, 0xffd23f).setStrokeStyle(4, 0x4a2f1d),
+      fitText(text(this, 0, -1, `+${Math.round(STORY_DMG * 100)}% DMG`, 20, "#4a2f1d", { stroke: false }), 96),
+    ]).setAngle(12);
+    this.tweens.add({ targets: sticker, angle: 4, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const bar = this.add.graphics();
+    const num = text(this, 0, 104, "", 22);
+    const badge = this.add.container(98, -112, [this.add.circle(0, 0, 22, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(this, 0, -1, "!", 30, "#ffffff", { stroke: 5 })]);
+    this.tweens.add({ targets: badge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
     const c = this.add.container(x, y, [
-      glow, this.add.image(0, 0, vividCard(this, 0xffa040, 230, 250)), shadow, die, ribbon,
-      text(this, 0, -132, "NEW!", 32, "#fff3c8"), fitText(text(this, 0, 70, "DICE RAIN", 34, "#ffffff", { stroke: 8 }), 220), this.diceEventTime,
+      glow, this.add.image(0, 0, vividCard(this, 0x8a5ae0, 230, 250)), halo, icon, lock, shine, ribbon, word, ch, name, sticker, bar, num, badge,
     ]).setSize(240, 270).setInteractive({ useHandCursor: true });
+    // when the chapter is ready the card shakes a little now and then, so it can't be missed
+    this.time.addEvent({
+      delay: 2400, loop: true, callback: () => {
+        if (!this.storyBox?.badge.visible || battle.mode !== "lobby") return;
+        this.tweens.add({ targets: c, angle: { from: -4, to: 4 }, duration: 80, yoyo: true, repeat: 3, onComplete: () => c.setAngle(0) });
+      },
+    });
     c.on("pointerdown", () => this.tweens.add({ targets: c, scale: 0.92, duration: 60 }));
     c.on("pointerout", () => c.setScale(1));
     c.on("pointerup", () => {
       c.setScale(1);
       unlockAudio();
       sfx.click();
-      this.showDiceEvent();
+      this.showStory();
     });
-    // a red "!" when prizes are waiting
-    this.diceEventBadge = this.add.container(92, -112, [this.add.circle(0, 0, 22, 0xf03e3e).setStrokeStyle(5, 0xffffff), text(this, 0, -1, "!", 30, "#ffffff", { stroke: 5 })]);
-    this.tweens.add({ targets: this.diceEventBadge, scale: 1.18, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    c.add(this.diceEventBadge);
-    this.diceEventCard = c;
     this.lobby.add(c);
+    this.storyBox = { c, glow, icon, ch, name, bar, num, badge, lock, shown: "" };
+    this.refreshStoryCard();
+  }
+
+  /** Where a chapter stands: cleared, the next one, its stage reached, your DPS against what it needs. */
+  private chapterGate(ch: number) {
+    const done = save.storyDone >= ch;
+    const next = save.storyDone + 1 === ch;
+    const stageOk = save.bestStage >= chapterNeeds(ch);
+    const dps = teamDps().total;
+    const rec = recommendedDps(chapterPower(ch));
+    const open = done || (next && stageOk && dps >= rec) || save.dev;
+    return { done, next, stageOk, dps, rec, open };
+  }
+
+  private refreshStoryCard(): void {
+    const k = this.storyBox;
+    if (!k) return;
+    const nextCh = save.storyDone + 1;
+    const all = nextCh > STORY_CHAPTERS;
+    const g = all ? null : this.chapterGate(nextCh);
+    const ready = !!g && g.next && g.stageOk && g.dps >= g.rec;
+    const pic = all ? "icon_trophy" : chapterInfo(nextCh).icon;
+    if (k.shown !== pic) {
+      k.shown = pic;
+      k.icon.setTexture(pic);
+      k.icon.setScale(96 / Math.max(k.icon.width, k.icon.height));
+    }
+    k.icon.clearTint();
+    if (g && !g.stageOk) k.icon.setTint(0x6a6a7a);
+    k.ch.setText(all ? "THE END" : `CHAPTER ${nextCh}`);
+    fitText(k.ch, 200);
+    k.name.setText(all ? "ALL CLEARED" : chapterInfo(nextCh).name);
+    fitText(k.name, 210);
+    k.lock.setVisible(!!g && !g.stageOk);
+    k.bar.clear();
+    if (all) {
+      k.num.setText(`+${Math.round(STORY_DMG * 100 * STORY_CHAPTERS)}% DMG`).setColor("#ffe066");
+    } else if (!g!.stageOk) {
+      drawBar(k.bar, -92, 92, 184, 24, 0, 0x8a8a9a);
+      k.num.setText(`STAGE ${chapterNeeds(nextCh)}`).setColor("#ffe6b8");
+    } else {
+      drawBar(k.bar, -92, 92, 184, 24, Phaser.Math.Clamp(g!.dps / g!.rec, 0, 1), ready ? 0xffd23f : 0xc070ff);
+      k.num.setText(ready ? "PLAY!" : `DPS ${fmt(g!.dps)}/${fmt(g!.rec)}`).setColor(ready ? "#ffe066" : "#ffffff");
+    }
+    fitText(k.num, 176);
+    k.glow.setVisible(ready);
+    k.badge.setVisible(ready);
+    // a chapter just got ready (you won a battle or got stronger): say so
+    if (ready && this.storyWasReady === false && battle.mode === "lobby") {
+      this.toast(`CHAPTER ${nextCh} is ready! Tap STORY`, "#e0c0ff");
+      sfx.fanfare();
+    }
+    this.storyWasReady = ready;
   }
 
   private refreshEventCard(): void {
     const left = diceEventLeft();
-    // the beginners' Dice Rain shows up once the story is done
-    this.diceEventCard?.setVisible(left > 0 && storyDone(save.bestStage));
+    // the beginners' Dice Rain shows up once fishing opens
+    this.rainSide?.setVisible(left > 0 && storyDone(save.bestStage));
     this.refreshLocks();
-    if (left > 0) this.diceEventTime?.setText(dhm(left));
-    this.diceEventBadge?.setVisible(this.rainReady() > 0);
+    this.refreshStoryCard();
     const e = save.fishing.event;
     const ready = eventReady();
     const n = eventNext();
@@ -1143,6 +1237,38 @@ export class UIScene extends Phaser.Scene implements Host {
     this.badges.push({ obj, show });
   }
 
+  /**
+   * The icons of what comes at 1:00, 2:00 and 3:00 on a main stage's time bar (where the bar reaches at
+   * that minute: from the right on a countdown). The next one bounces in the last seconds before it;
+   * the ones already past go dim.
+   */
+  private placeMinuteIcons(time: number): void {
+    const on = battle.main && !battle.rush && battle.mode === "run";
+    const key = on ? `${save.stage}${battle.stageMode}` : "";
+    if (key !== this.minuteFor) {
+      this.minuteFor = key;
+      const tl = on ? this.stageTimeline(battle.stageMode) : [];
+      this.minuteIcons.forEach((ic, i) => {
+        ic.setVisible(on);
+        if (!on) return;
+        ic.setTexture(tl[i][0]);
+        ic.setData("k", 50 / Math.max(ic.width, ic.height));
+      });
+    }
+    if (!on) return;
+    const W = this.W;
+    const t = battle.limit ? battle.limit - Math.max(0, battle.left) : battle.time;
+    this.minuteIcons.forEach((ic, i) => {
+      const m = i + 1;
+      const f = battle.limit ? 1 - m / MINUTES : m / MINUTES;
+      ic.setX(Phaser.Math.Clamp(24 + (W - 48) * f, 50, W - 50));
+      const soon = t < m * 60000 && m * 60000 - t < 6000;
+      const past = t >= m * 60000;
+      const k = ic.getData("k") as number;
+      ic.setScale(k * (soon ? 1.25 + 0.25 * Math.sin(time / 90) : 1)).setAlpha(past ? 0.35 : 1);
+    });
+  }
+
   private updateHud(time: number): void {
     if (battle.mode === "lobby") {
       this.luckPill.setValue(`Luck ${luckText(stageLuck(luck(), save.bestStage))}`);
@@ -1201,6 +1327,7 @@ export class UIScene extends Phaser.Scene implements Host {
       for (let m = 1; m < MINUTES; m++) g.fillStyle(INK_N, 0.6).fillRect(24 + ((W - 48) * m) / MINUTES - 2, 74, 4, 34);
       this.progressText.setText(`${mmss(battle.time)} / ${mmss(STAGE_MS)}`);
     }
+    this.placeMinuteIcons(time);
     // level and XP (the Boss Rush clock instead, in a Boss Rush)
     if (battle.rush) {
       const f = battle.rushLeft / RUSH_MS;
@@ -1897,10 +2024,14 @@ export class UIScene extends Phaser.Scene implements Host {
   }
 
   /** How to play this stage's mode, in pictures: three panels with an icon and a word or two. */
-  private modeIntro(mode: StageMode, story = false): void {
+  private modeIntro(mode: StageMode, story = false, main = false): void {
     const ch = story ? storyFor(run.chapter) : null;
     if (ch) {
-      this.storyCard(mode);
+      this.chapterIntro(mode);
+      return;
+    }
+    if (main) {
+      this.stageIntro(mode);
       return;
     }
     const W = this.W;
@@ -1940,11 +2071,94 @@ export class UIScene extends Phaser.Scene implements Host {
     this.time.delayedCall(2900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
   }
 
+  /** What happens at 1:00, 2:00 and 3:00 of a main stage: [icon, name, card colour]. */
+  private stageTimeline(mode: StageMode): [string, string, number][] {
+    const tw = twistFor(save.stage);
+    const pe = PLACE_EVENTS[regionForStage(save.stage).id];
+    const clock = mode === "hunt" || mode === "boss";
+    return [
+      [tw.icon, tw.name, 0x3aa0f0],
+      ["sign_warn", pe.name, 0xff8a2a],
+      clock ? ["icon_clock", "TIME'S UP!", 0xe04a4a] : ["mode_boss", "THE BOSS!", 0xe04a4a],
+    ];
+  }
+
+  /**
+   * A main stage begins, like a film: black bars slide in, the place and the stage number slam down,
+   * then its three big moments pop up one by one on a timeline (1:00 the stage's own twist, 2:00 the
+   * place's event, 3:00 the boss), so you know something is coming every minute.
+   */
+  private stageIntro(mode: StageMode): void {
+    const { W, H } = this;
+    const st = save.stage;
+    const land = regionForStage(st);
+    const info = stageInfo(st);
+    const D = 5400;
+    const top = this.add.rectangle(W / 2, -80, W, 160, 0x000000, 0.9).setDepth(D);
+    const bot = this.add.rectangle(W / 2, H + 80, W, 160, 0x000000, 0.9).setDepth(D);
+    this.tweens.add({ targets: top, y: 80, duration: 320, ease: "Quad.out" });
+    this.tweens.add({ targets: bot, y: H - 80, duration: 320, ease: "Quad.out" });
+    const place = text(this, W / 2, -60, `${land.name.toUpperCase()}  •  ${((st - 1) % STAGES_PER_PLACE) + 1}/${STAGES_PER_PLACE}`, 34, "#ffe6b8", { stroke: 8 }).setDepth(D + 1);
+    this.tweens.add({ targets: place, y: 90, duration: 320, ease: "Quad.out" });
+    // the title: the stage number slams down on a band of the mode's colour
+    const head = this.add.container(W / 2, H * 0.3).setDepth(D + 1);
+    const band = this.add.graphics();
+    band.fillStyle(0x000000, 0.35).fillRect(-W / 2, -112, W, 236);
+    band.fillStyle(info.color, 0.92).fillRect(-W / 2, -120, W, 228);
+    band.fillStyle(0xffffff, 0.25).fillRect(-W / 2, -120, W, 10);
+    const num = text(this, 0, -36, `STAGE ${st}`, 130, "#ffe066", { stroke: 18 }).setScale(3).setAlpha(0);
+    const icon = this.add.image(-W / 2 + 110, 56, info.icon);
+    icon.setScale(84 / Math.max(icon.width, icon.height));
+    const name = fitText(text(this, 0, 62, `${info.name}  •  ${info.goal}`, 36, "#ffffff", { stroke: 9 }), W - 300);
+    head.add([band, num, icon, name]);
+    head.setScale(1, 0);
+    this.tweens.add({ targets: head, scaleY: 1, duration: 260, delay: 120, ease: "Back.out" });
+    this.tweens.add({
+      targets: num, scale: 1, alpha: 1, duration: 260, delay: 300, ease: "Quad.in", onComplete: () => {
+        this.cameras.main.shake(160, 0.006);
+        sfx.fanfare();
+      },
+    });
+    // the timeline: what happens each minute
+    const line = this.add.container(W / 2, H * 0.53).setDepth(D + 1);
+    const gap = Math.min(300, (W - 120) / 3);
+    const rail = this.add.graphics();
+    rail.fillStyle(0x000000, 0.55).fillRoundedRect(-gap - 30, -14, gap * 2 + 60, 28, 14);
+    rail.fillStyle(0xffe066, 1).fillRoundedRect(-gap - 30, -8, gap * 2 + 60, 16, 8);
+    rail.setScale(0, 1);
+    line.add(rail);
+    this.tweens.add({ targets: rail, scaleX: 1, duration: 400, delay: 650, ease: "Quad.out" });
+    this.stageTimeline(mode).forEach(([ic, nm, col], i) => {
+      const x = (i - 1) * gap;
+      const chip = this.add.container(x, 0).setScale(0);
+      const pic = this.add.image(0, -6, ic);
+      pic.setScale(92 / Math.max(pic.width, pic.height));
+      chip.add([
+        this.add.image(0, 0, vividCard(this, col, gap - 30, 250)),
+        text(this, 0, -96, `${i + 1}:00`, 44, "#ffe066", { stroke: 10 }),
+        pic,
+        fitText(text(this, 0, 78, nm, 28, "#ffffff", { stroke: 8 }), gap - 50),
+      ]);
+      line.add(chip);
+      this.tweens.add({ targets: pic, y: -18, duration: 520, yoyo: true, repeat: -1, delay: i * 140, ease: "Sine.inOut" });
+      this.tweens.add({ targets: chip, scale: 1, duration: 300, delay: 800 + i * 320, ease: "Back.out", onStart: () => sfx.click() });
+    });
+    const go = text(this, W / 2, H * 0.53 + 200, "GET READY!", 54, "#ffffff", { stroke: 12 }).setDepth(D + 1).setScale(0);
+    this.tweens.add({ targets: go, scale: 1, duration: 300, delay: 1900, ease: "Back.out" });
+    // and away it all goes
+    this.time.delayedCall(3900, () => {
+      this.tweens.add({ targets: [head, line, go], alpha: 0, scale: 0.8, duration: 300, onComplete: () => [head, line, go].forEach((o) => o.destroy()) });
+      this.tweens.add({ targets: top, y: -80, duration: 360, ease: "Quad.in", onComplete: () => top.destroy() });
+      this.tweens.add({ targets: [bot], y: H + 80, duration: 360, ease: "Quad.in", onComplete: () => bot.destroy() });
+      this.tweens.add({ targets: place, y: -60, duration: 360, ease: "Quad.in", onComplete: () => place.destroy() });
+    });
+  }
+
   /**
    * A story chapter begins: a night-blue storybook card with the chapter number and name, a line of
    * story, and three pictures of what to do.
    */
-  private storyCard(mode: StageMode): void {
+  private chapterIntro(mode: StageMode): void {
     const { W, H } = this;
     const ch = storyFor(run.chapter)!;
     const info = MODE_INFO[mode];
@@ -1979,55 +2193,56 @@ export class UIScene extends Phaser.Scene implements Host {
     this.time.delayedCall(mode === "boss" ? 3400 : 3900, () => this.tweens.add({ targets: card, scale: 0, alpha: 0, duration: 260, ease: "Back.in", onComplete: () => card.destroy() }));
   }
 
-  /** Is there a story chapter you can play now that you haven't cleared yet? */
-  private storyWaiting(): boolean {
-    const next = save.storyDone + 1;
-    return next <= STORY_CHAPTERS && save.bestStage >= chapterNeeds(next);
-  }
-
   /**
-   * The story, on the side: its ten chapters in a list, each with its reward for the first clear.
-   * Cleared ones can be played again; the next one opens once you reach its main stage.
+   * The story: its ten chapters in a list, each with its reward for the first clear (and +10% damage
+   * for good). The next one opens once you reach its main stage and your team DPS is high enough for
+   * it: win battles to get there. Cleared ones can be played again.
    */
   private showStory(): void {
     if (battle.mode !== "lobby") return;
     const rowH = 104;
-    const h = 300 + STORY_CHAPTERS * rowH;
+    const h = 330 + STORY_CHAPTERS * rowH;
     const m = this.showModal(modal(this, 940, h, "STORY", "purple", () => (this.openModal = null)));
     const b = m.body;
-    b.add(label(this, 0, -h / 2 + 130, "Play the story for rewards. It doesn't move your stage.", 28, "#7a5aa0", 820));
+    const bonus = Math.round(STORY_DMG * 100 * save.storyDone);
+    b.add(label(this, 0, -h / 2 + 128, `Every chapter cleared: +${Math.round(STORY_DMG * 100)}% damage forever!`, 30, "#7a5aa0", 840));
+    b.add(label(this, 0, -h / 2 + 174, bonus > 0 ? `Your story bonus: +${bonus}% DMG  •  Win battles to raise your DPS` : "Win battles to raise your DPS", 26, "#9a7ab0", 840));
     for (let ch = 1; ch <= STORY_CHAPTERS; ch++) {
-      const y = -h / 2 + 220 + (ch - 1) * rowH;
-      const done = save.storyDone >= ch;
-      const next = save.storyDone + 1 === ch;
-      const open = done || (next && save.bestStage >= chapterNeeds(ch)) || save.dev;
+      const y = -h / 2 + 250 + (ch - 1) * rowH;
+      const { done, next, stageOk, dps, rec, open } = this.chapterGate(ch);
       const info = chapterInfo(ch);
       const g = this.add.graphics();
-      g.fillStyle(done ? 0xe8f8e0 : next && open ? 0xfff2d0 : 0xeeeaf2, 1).fillRoundedRect(-430, y - 46, 860, 92, 22);
-      g.lineStyle(4, done ? 0x8ad06a : next && open ? 0xffb03a : 0xc8c0d0, 1).strokeRoundedRect(-430, y - 46, 860, 92, 22);
+      g.fillStyle(done ? 0xe8f8e0 : next && open ? 0xfff2d0 : next ? 0xf4ecff : 0xeeeaf2, 1).fillRoundedRect(-430, y - 46, 860, 92, 22);
+      g.lineStyle(next ? 6 : 4, done ? 0x8ad06a : next && open ? 0xffb03a : next ? 0xa070f0 : 0xc8c0d0, 1).strokeRoundedRect(-430, y - 46, 860, 92, 22);
       const icon = this.add.image(-372, y, info.icon);
       icon.setScale(64 / Math.max(icon.width, icon.height));
-      if (!open) icon.setTint(0x6a6a7a);
+      if (!open && !(next && stageOk)) icon.setTint(0x6a6a7a);
       b.add([g, icon,
         text(this, -322, y - 18, `CHAPTER ${ch}`, 24, "#9a7ab0", { stroke: false }).setOrigin(0, 0.5),
-        fitText(text(this, -322, y + 16, info.name, 34, open ? "#3a2a4a" : "#9a90a4", { stroke: false }).setOrigin(0, 0.5), 300),
+        fitText(text(this, -322, y + 16, info.name, 34, open || next ? "#3a2a4a" : "#9a90a4", { stroke: false }).setOrigin(0, 0.5), 250),
       ]);
       const r = chapterReward(ch);
       if (!done) {
         b.add([
-          this.add.image(30, y, "icon_gem").setScale(0.4), text(this, 58, y, `${r.gems}`, 30, "#4a8ad0", { stroke: false }).setOrigin(0, 0.5),
-          this.add.image(150, y, "icon_dice").setScale(0.4), text(this, 178, y, `${r.dice}`, 30, "#c9893a", { stroke: false }).setOrigin(0, 0.5),
+          this.add.image(-40, y, "icon_gem").setScale(0.38), text(this, -16, y, `${r.gems}`, 28, "#4a8ad0", { stroke: false }).setOrigin(0, 0.5),
+          this.add.image(70, y, "icon_dice").setScale(0.38), text(this, 94, y, `${r.dice}`, 28, "#c9893a", { stroke: false }).setOrigin(0, 0.5),
+          text(this, 196, y, `+${Math.round(STORY_DMG * 100)}%`, 26, "#e0503a", { stroke: false }),
         ]);
-        if (r.tickets) b.add(this.add.image(250, y, "icon_ticket").setScale(0.4));
-      } else b.add(text(this, 120, y, "CLEARED", 30, "#5aa83a", { stroke: false }));
+        if (r.tickets) b.add(this.add.image(196, y - 30, "icon_ticket").setScale(0.28));
+      } else b.add(text(this, 80, y, "CLEARED", 30, "#5aa83a", { stroke: false }));
       if (open) {
         b.add(button(this, 350, y, 140, 72, done ? "blue" : "green", done ? "AGAIN" : "PLAY", () => {
           m.close();
           run.chapter = ch;
           this.time.delayedCall(150, () => this.confirmStart("story"));
         }, { size: 28 }));
+      } else if (next && stageOk) {
+        // the stage is reached: the DPS it needs, as a bar
+        const bar = this.add.graphics();
+        drawBar(bar, 266, y + 2, 164, 24, Phaser.Math.Clamp(dps / rec, 0, 1), 0xa070f0, 0xd8d0e0);
+        b.add([bar, fitText(text(this, 348, y - 22, `DPS ${fmt(dps)}/${fmt(rec)}`, 22, "#7a5aa0", { stroke: false }), 170)]);
       } else {
-        b.add([this.add.image(310, y, "icon_lock").setScale(0.5), text(this, 370, y, next ? `Stage ${chapterNeeds(ch)}` : "", 24, "#9a90a4", { stroke: false })]);
+        b.add([this.add.image(300, y, "icon_lock").setScale(0.5), text(this, 370, y, next ? `Stage ${chapterNeeds(ch)}` : "", 24, "#9a90a4", { stroke: false })]);
       }
     }
   }

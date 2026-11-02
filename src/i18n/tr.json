@@ -1406,5 +1406,14 @@
 "SAKURA VALLEY": "SAKURA VADISI",
 "ANTARCTICA": "ANTARKTIKA",
 "THE MOON": "AY",
-"SUNNY SEA": "GÜNEŞLI DENIZ"
+"SUNNY SEA": "GÜNEŞLI DENIZ",
+"ALL CLEARED": "HEPSİ TAMAM",
+"PLAY!": "OYNA!",
+"+{0}% DMG": "+%{0} HASAR",
+"THE BOSS!": "PATRON!",
+"GET READY!": "HAZIR OL!",
+"Win battles to raise your DPS": "DPS'ini artırmak için savaş kazan",
+"Your story bonus: +{0}% DMG": "Hikâye bonusun: +%{0} HASAR",
+"Every chapter cleared: +{0}% damage forever!": "Her bölüm: sonsuza dek +%{0} hasar!",
+"CHAPTER {0} is ready! Tap STORY": "BÖLÜM {0} hazır! HİKÂYE'ye dokun"
 }

@@ -1412,5 +1412,14 @@
 "SAKURA VALLEY": "หุบเขาซากุระ",
 "ANTARCTICA": "แอนตาร์กติกา",
 "THE MOON": "ดวงจันทร์",
-"SUNNY SEA": "ทะเลแดดจ้า"
+"SUNNY SEA": "ทะเลแดดจ้า",
+"ALL CLEARED": "ผ่านหมดแล้ว",
+"PLAY!": "เล่น!",
+"+{0}% DMG": "ดาเมจ +{0}%",
+"THE BOSS!": "บอส!",
+"GET READY!": "เตรียมตัว!",
+"Win battles to raise your DPS": "ชนะการต่อสู้เพื่อเพิ่ม DPS",
+"Your story bonus: +{0}% DMG": "โบนัสเนื้อเรื่อง: ดาเมจ +{0}%",
+"Every chapter cleared: +{0}% damage forever!": "ผ่านแต่ละบท: ดาเมจ +{0}% ถาวร!",
+"CHAPTER {0} is ready! Tap STORY": "บทที่ {0} พร้อมแล้ว! แตะเนื้อเรื่อง"
 }

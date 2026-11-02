@@ -1,3 +1,5 @@
+import { LAST_STAGE, power } from "./stages";
+
 /**
  * The story: ten chapters played on the side of the main stages (from the STORY card in the lobby),
  * each with its own map and goal; the first time you clear one you get its reward. A chapter opens once
@@ -14,8 +16,16 @@ export const STORY_STAGES = 5;
 export const STORY_CHAPTERS = 10;
 /** the main stage you must have reached to play a chapter */
 export const chapterNeeds = (ch: number) => (ch - 1) * 3 + 1;
+/**
+ * How strong a chapter is: like the main stage two ahead of the one that opens it (chapter 1 like
+ * stage 3, chapter 10 like stage 30), so to play it you also need the team DPS for that stage
+ * (recommendedDps at this power): grind the battles to get there.
+ */
+export const chapterPower = (ch: number) => power(Math.min(LAST_STAGE, chapterNeeds(Math.min(STORY_CHAPTERS, Math.max(1, ch))) + 2));
+/** every chapter cleared makes your whole team hit this much harder, for good */
+export const STORY_DMG = 0.1;
 /** what clearing a chapter for the first time gives: gems and dice (chapters 5 and 10 also a Golden Ticket) */
-export const chapterReward = (ch: number) => ({ gems: 20 + ch * 10, dice: 4 + ch, tickets: ch % 5 === 0 ? 1 : 0 });
+export const chapterReward = (ch: number) => ({ gems: 40 + ch * 20, dice: 6 + ch * 2, tickets: ch % 5 === 0 ? 1 : 0 });
 
 export interface StoryChapter {
   /** the chapter's name (the lobby, the start screen, the story card) */

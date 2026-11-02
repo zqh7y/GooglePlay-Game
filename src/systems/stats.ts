@@ -1,6 +1,7 @@
 import { indexBonus } from "./goals";
 import { Effect, TREE, TREE_BY_ID, TreeNode, perAt, stepCost, stepsOf } from "../data/tree";
 import { hasPass, persist, save } from "./save";
+import { STORY_DMG } from "../data/story";
 
 /** Everything the upgrade tree (and the luck potion) adds up to. A hexagon bought in part counts in part. */
 export const stepsBought = (node: TreeNode) => save.tree[node.id] ?? 0;
@@ -38,7 +39,8 @@ export const rollTime = () =>
 export const dicePerRoll = () => 1 + sum("multi");
 export const autoUnlocked = () => sum("auto") > 0;
 export const cashMult = () => product("cash") * (hasPass("vip") ? 1.25 : 1);
-export const dmgMult = () => product("dmg");
+/** (with the story's bonus: every chapter cleared adds STORY_DMG, for good) */
+export const dmgMult = () => product("dmg") * (1 + STORY_DMG * save.storyDone);
 export const heroDmgMult = () => product("heroDmg");
 /** You start with one pet in your team and can unlock up to three. */
 export const MAX_PETS = 3;

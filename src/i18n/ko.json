@@ -1410,5 +1410,14 @@
 "SAKURA VALLEY": "벚꽃 계곡",
 "ANTARCTICA": "남극",
 "THE MOON": "달",
-"SUNNY SEA": "맑은 바다"
+"SUNNY SEA": "맑은 바다",
+"ALL CLEARED": "모두 클리어",
+"PLAY!": "플레이!",
+"+{0}% DMG": "피해 +{0}%",
+"THE BOSS!": "보스!",
+"GET READY!": "준비!",
+"Win battles to raise your DPS": "전투에서 이겨 DPS를 올리세요",
+"Your story bonus: +{0}% DMG": "스토리 보너스: 피해 +{0}%",
+"Every chapter cleared: +{0}% damage forever!": "챕터를 깰 때마다: 영구 피해 +{0}%!",
+"CHAPTER {0} is ready! Tap STORY": "{0}장 준비 완료! 스토리를 누르세요"
 }

@@ -27,14 +27,29 @@ legends around the clock. The game ends at **stage 30**.
   sideways; Antarctica: a BLIZZARD that slows you while icicles fall; the Moon: a COMET STORM; the Sea: HIGH
   TIDE with crabs from every side), and at **3:00 the boss**. A Dice Hunt or Boss Battle has to be done in
   3:00. The start card shows the twist and the event ("1:00 LUCKY CHEST • 2:00 STAMPEDE!").
-- **Difficulty** climbs the old 1-100 curve over the 30 stages (`power` in `src/data/stages.ts`: gentle
-  early, steeper later), and the Forest (stages 1-6) goes easy on new players (softer bites).
-- **The story on the side** (the **Story** button in the lobby): its 10 chapters (the path to the village,
+- **A main stage starts like a film**: black bars slide in, the place (SAKURA VALLEY • 2/6) and STAGE N slam
+  down on a band of the mode's colour with its goal, then three cards pop up on a timeline: **1:00** the
+  twist, **2:00** the place's event, **3:00** THE BOSS! (or TIME'S UP! in a Dice Hunt or Boss Battle). The
+  same three icons sit on the time bar during the fight: the next one bounces in the last 6 seconds before
+  it, the ones already past go dim.
+- **Difficulty** climbs the old 1-100 curve over the 30 stages (`power` in `src/data/stages.ts`), tuned with
+  the simulator so every stage takes a little longer than the one before (minutes at first, a few hours
+  near the end, about 78 hours to stage 30), and the Forest (stages 1-6) goes easy on new players.
+- **The story is the big card on the right of the lobby** (where Dice Rain used to be; Dice Rain is now a
+  small button on the left while its event runs). The card shows the next chapter's picture and name and a
+  bar of **your team DPS against what the chapter needs**: each chapter is as strong as the main stage two
+  after the one that opens it, so you **win battles to get stronger** until the bar fills. Then it glows,
+  shakes now and then, gets a red "!" and says PLAY!, and a toast tells you the chapter is ready. Every
+  chapter cleared also gives **+10% damage to your whole team, for good** (the sticker on the card; the
+  Story list shows your total bonus). In the simulator the chapters open about every 3 stages, from 0.1 h
+  (chapter 1) to 76 h (chapter 10).
+- **The story's chapters**: its 10 chapters (the path to the village,
   the village hunt, the beast, the big boss, the path to the sea with the broken bridge, the sea, Land Ho!,
   the lighthouse, Quake Island, the volcano) are played on their own; they never move your stage. The first
   clear of each gives **gems and dice** (chapters 5 and 10 also a **Golden Ticket**); cleared chapters can be
-  played again. A chapter opens once the one before is cleared and you have reached its main stage (chapter
-  N at stage 3N-2). The chapters keep their manga pages.
+  played again. A chapter opens once the one before is cleared, you have reached its main stage (chapter
+  N at stage 3N-2) and your team DPS is high enough (the list shows the DPS bar on the next chapter). The
+  chapters keep their manga pages.
 - **The Boss Rush** has its own progress now (its next boss), apart from the main stages.
 
 Built with **Phaser 3 + TypeScript + Vite** (the 3D loading screen and story intro use **three.js**), wrapped for Google Play with **Capacitor** (`android/`).
@@ -417,7 +432,7 @@ hour of fishing brings.
   muzzle ring, lightning has a glowing core with forks, bubbles pop into droplets, glue lands with a
   splat, black holes swirl and suck in particles. Skills show too: Spooky Aura is a purple ghost ring,
   Zoomies kicks up dust and speed lines, Ghost Phase sends out a shockwave and ghost wisps.
-- **Dice Rain event** (the first 14 days): its card in the lobby opens the event screen: dice raining
+- **Dice Rain event** (the first 14 days): its button on the left of the lobby opens the event screen: dice raining
   behind the title, the time left, your **Rain Drops** and a track of **15 prizes** (dice up to S, gems,
   potions, lucky rolls, a Golden Ticket, and two exclusive pets: **Drizzle Kitty** at 380 and **Rain
   Dragon**, 120% of your best pet's damage, at 2,600). PLAY starts the Dice Rain fight: every die you dodge

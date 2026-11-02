@@ -1412,5 +1412,14 @@
 "SAKURA VALLEY": "さくらの谷",
 "ANTARCTICA": "南極",
 "THE MOON": "月",
-"SUNNY SEA": "晴れの海"
+"SUNNY SEA": "晴れの海",
+"ALL CLEARED": "全クリア",
+"PLAY!": "プレイ！",
+"+{0}% DMG": "ダメージ+{0}%",
+"THE BOSS!": "ボス！",
+"GET READY!": "準備しよう！",
+"Win battles to raise your DPS": "バトルに勝ってDPSを上げよう",
+"Your story bonus: +{0}% DMG": "ストーリーボーナス：ダメージ+{0}%",
+"Every chapter cleared: +{0}% damage forever!": "章をクリアするたび：ダメージ+{0}%（永久）！",
+"CHAPTER {0} is ready! Tap STORY": "第{0}章がプレイできる！ストーリーをタップ"
 }

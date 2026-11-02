@@ -13,7 +13,7 @@ export const MAIN_MODES: StageMode[] = ["crystal", "hunt", "air", "dice", "boss"
 export const mainMode = (stage: number): StageMode => MAIN_MODES[(Math.max(1, stage) - 1) % MAIN_MODES.length];
 
 /** How strong a stage is on the old 1-100 difficulty curve: gentle early, steeper later. */
-const POWER = [1, 2, 3, 4, 6, 8, 10, 12, 15, 18, 21, 24, 27, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66, 70, 75, 80, 85, 90, 95, 100];
+const POWER = [1, 2, 3, 6, 8, 10, 12, 13, 14, 16, 17, 19, 20, 21, 22, 23, 26, 30, 33, 36, 39, 42, 48, 58, 70, 82, 91, 97, 99, 100];
 export const power = (stage: number) => POWER[Math.min(LAST_STAGE, Math.max(1, Math.round(stage))) - 1];
 
 /** Dice to find in a Dice Hunt. */

@@ -28,6 +28,12 @@ import { MAX_LEVEL, PET_LIST, copiesFor, levelMult } from "../src/data/items";
 import { TREE, TreeNode, perAt, stepCost, stepsOf } from "../src/data/tree";
 import { RUSH_MS, rushBossHp } from "../src/data/bosses";
 import { petChances, stageLuck } from "../src/data/luck";
+import { LAST_STAGE, power as gamePower } from "../src/data/stages";
+// POWER='[1,2,...]' tries another difficulty table for the 30 stages (for tuning)
+const TRY = process.env.POWER ? (JSON.parse(process.env.POWER) as number[]) : null;
+const power = (st: number) => (TRY ? TRY[Math.min(LAST_STAGE, Math.max(1, st)) - 1] : gamePower(st));
+import { STORY_CHAPTERS, STORY_DMG, chapterNeeds, chapterPower, chapterReward } from "../src/data/story";
+import { recommendedDps } from "../src/data/balance";
 
 // hexagons fully bought, and the steps bought of each (hexagons can come in 3 steps)
 const owned = new Set<string>(["start"]);
@@ -43,6 +49,10 @@ let stage = 1;
 let t = 0;
 let potionLeft = 0;
 let discovered = 1;
+let storyDone = 0;
+const storyAt: string[] = [];
+let rushAt = 1;
+let rollsDone = 0;
 
 const kindTargets = { shot: 1, splash: 2.2, pierce: 1.8, zap: 1, buff: 0 };
 
@@ -66,7 +76,7 @@ function teamDps(): { dps: number; best: number } {
       perHit += dmg;
     }
   }
-  const mult = prod("dmg") * (1 + buff);
+  const mult = prod("dmg") * (1 + STORY_DMG * storyDone) * (1 + buff);
   const hero = (HERO_BASE_DMG + perHit * HERO_TEAM_SHARE) * mult * prod("heroDmg") * gadgetDps(STARTER_GADGET, "A", 1);
   const crit = 1 + (0.05 + sum("crit")) * (3 + sum("critDmg") - 1);
   return { dps: (petDps * mult + hero) * crit, best: Math.max(...team) };
@@ -132,7 +142,7 @@ let earned = 0;
 const ev = { round: 1, points: 0, claimed: 0, dice: 0, gems: 0, tickets: 0, ticketAt: [] as number[] };
 
 const report: string[] = [];
-const marks = new Set([2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100]);
+const marks = new Set(Array.from({ length: LAST_STAGE }, (_, i) => i + 1));
 let dice = 10;
 let fails = 0;
 let rushed = 0;
@@ -152,15 +162,15 @@ const cleared = (how: string) => {
   }
   if (marks.has(stage)) {
     const { best } = teamDps();
-    report.push(`stage ${String(stage).padStart(3)} at ${(t / 3600).toFixed(2).padStart(6)} h   fails ${String(fails).padStart(4)}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   forge ${sum("forge")}   fish speed ${fish.speed} luck ${fish.luck}   ${how}`);
+    report.push(`stage ${String(stage).padStart(3)} (p${String(power(stage)).padStart(3)}) at ${(t / 3600).toFixed(2).padStart(6)} h   rolls ${String(Math.round(rollsDone)).padStart(6)}   fails ${String(fails).padStart(4)}   story ${storyDone}   luck ${luck().toExponential(1)}   best pet #${best} (${PET_LIST[best].rarity})   tree ${owned.size - 1}/${TREE.length - 1}   forge ${sum("forge")}   fish speed ${fish.speed} luck ${fish.luck}   ${how}`);
   }
   stage++;
 };
 const LIMIT = 300 * 3600;
 const forgeAt: number[] = [];
 // after stage 100, keep farming it until the Titan Forge (the best gadgets) is bought
-while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
-  const r = run(Math.min(stage, MAX_STAGE), teamDps().dps);
+while (t < LIMIT && (stage <= LAST_STAGE || sum("forge") < 4)) {
+  const r = run(power(Math.min(stage, LAST_STAGE)), teamDps().dps);
   t += r.secs;
   cash += r.cash;
   earned += r.cash;
@@ -182,7 +192,7 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
     ev.tickets += casts * (((every - 1) * ticketChance(fishLuck(fish.luck)) + ticketChance(fishLuck(fish.luck), true)) / every);
     ev.points += casts * (1 + doubleChance(fish.hook));
     while (ev.points >= eventGoal(ev.round, ev.claimed)) {
-      const rw = eventReward(ev.round, ev.claimed, Math.min(stage, MAX_STAGE));
+      const rw = eventReward(ev.round, ev.claimed, power(Math.min(stage, LAST_STAGE)));
       if ((rw.kind === "dice" || rw.kind === "grand") && !process.env.X_EVDICE) {
         fishDice[rw.tier!] += rw.amount;
         ev.dice += rw.amount;
@@ -217,8 +227,9 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
   }
   // rolling: spend every die (in the tiers this stage drops)
   const rolls = Math.floor(dice) * (1 + sum("multi"));
+  rollsDone += rolls;
   dice -= Math.floor(dice);
-  const tiers = diceTierChances(Math.min(stage, MAX_STAGE));
+  const tiers = diceTierChances(power(Math.min(stage, LAST_STAGE)));
   const ch = PET_LIST.map(() => 0);
   DICE_TIERS.forEach((t, k) => petChances(stageLuck(luck() * DICE_LUCK[t], stage)).forEach((c, i) => (ch[i] += c * tiers[k] * rolls)));
   // and the dice the fishing line brought, in their own tiers
@@ -226,6 +237,7 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
     const n = Math.floor(fishDice[k]);
     if (!n) continue;
     fishDice[k] -= n;
+    rollsDone += n;
     petChances(stageLuck(luck() * DICE_LUCK[k], stage)).forEach((c, i) => (ch[i] += c * n * (1 + sum("multi"))));
   }
   for (let i = 0; i < ch.length; i++) {
@@ -245,8 +257,8 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
       p.level++;
     }
   }
-  if (stage > MAX_STAGE) {
-    // farming stage 100 for the forge
+  if (stage > LAST_STAGE) {
+    // farming the last stage for the forge
   } else if (r.won) {
     gems += 2 + sum("gems");
     cleared("run");
@@ -265,15 +277,25 @@ while (t < LIMIT && (stage <= MAX_STAGE || sum("forge") < 4)) {
       if (open.effect === "forge") forgeAt.push(t / 3600);
     }
   }
-  // Boss Rush: on through the stage bosses while each one dies in time
-  while (stage <= MAX_STAGE && teamDps().dps * 0.8 * (RUSH_MS / 1000) >= rushBossHp(stage)) {
-    if (stage % 5 === 0) gems += 3;
+  // Boss Rush (its own progress now): gems every 5 bosses
+  while (rushAt <= MAX_STAGE && teamDps().dps * 0.8 * (RUSH_MS / 1000) >= rushBossHp(rushAt)) {
+    if (rushAt % 5 === 0) gems += 3;
     t += 8;
     rushed++;
-    cleared("rush");
+    rushAt++;
+  }
+  // the story: a chapter is played as soon as its stage is reached and the team has its DPS
+  while (storyDone < STORY_CHAPTERS && stage >= chapterNeeds(storyDone + 1) && teamDps().dps >= recommendedDps(chapterPower(storyDone + 1))) {
+    storyDone++;
+    const rw = chapterReward(storyDone);
+    gems += rw.gems;
+    dice += rw.dice;
+    t += 150;
+    storyAt.push(`ch${storyDone}@${(t / 3600).toFixed(1)}h(st${stage})`);
   }
 }
 console.log(report.join("\n"));
+console.log(`story: ${storyAt.join("  ")}`);
 const need = (1000 / spawnGap(MINUTES - 1)) * group(MINUTES - 1, stage) * monsterHp(avgBase, stage, MINUTES - 1) * 0.7;
 console.log(`ended: stage ${stage} after ${(t / 3600).toFixed(1)} h, ${fails} failed runs, ${rushed} stages cleared in the Boss Rush, tree ${owned.size - 1}/${TREE.length - 1}, luck ${luck().toExponential(2)}, last minute needs ${need.toExponential(2)} vs dps ${(teamDps().dps * skillMult(MINUTES - 1)).toExponential(2)}`);
 console.log(`forge levels bought at (h): ${forgeAt.map((h) => h.toFixed(1)).join(", ")}   gadget power by minute now (x shuriken): ${[0, 1, 2, 3, 4, 5].map((m) => gadgetAt(m).toFixed(1)).join(" ")}`);

@@ -1,7 +1,7 @@
 import { REGIONS, regionForStage } from "../data/regions";
 import { StageMode, chapterInfo, chapterMode, modeForStage, stageInfo } from "../data/modes";
 import { power } from "../data/stages";
-import { StoryChapter, storyFor } from "../data/story";
+import { StoryChapter, chapterPower, storyFor } from "../data/story";
 import { save } from "../systems/save";
 
 /**
@@ -19,6 +19,6 @@ export const playStory = (): StoryChapter | null => (run.chapter ? storyFor(run.
 export const playLand = () => (run.chapter ? REGIONS[0] : regionForStage(save.stage));
 /**
  * How strong everything is (monsters, your health, rewards, bosses): main stages on the old 1-100 curve
- * (see data/stages.ts power), chapters at their number.
+ * (see data/stages.ts power), chapters at theirs (data/story.ts chapterPower).
  */
-export const pw = (): number => (run.chapter ? run.chapter : power(save.stage));
+export const pw = (): number => (run.chapter ? chapterPower(run.chapter) : power(save.stage));

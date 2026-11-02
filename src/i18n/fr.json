@@ -1383,5 +1383,14 @@
 "SAKURA VALLEY": "VALLÉE SAKURA",
 "ANTARCTICA": "ANTARCTIQUE",
 "THE MOON": "LA LUNE",
-"SUNNY SEA": "MER ENSOLEILLÉE"
+"SUNNY SEA": "MER ENSOLEILLÉE",
+"ALL CLEARED": "TOUT TERMINÉ",
+"PLAY!": "JOUER !",
+"+{0}% DMG": "+{0}% DÉGÂTS",
+"THE BOSS!": "LE BOSS !",
+"GET READY!": "PRÊT ?",
+"Win battles to raise your DPS": "Gagne des combats pour monter ton DPS",
+"Your story bonus: +{0}% DMG": "Ton bonus d'histoire : +{0}% DÉGÂTS",
+"Every chapter cleared: +{0}% damage forever!": "Chaque chapitre terminé : +{0}% de dégâts pour toujours !",
+"CHAPTER {0} is ready! Tap STORY": "Le CHAPITRE {0} est prêt ! Touche HISTOIRE"
 }

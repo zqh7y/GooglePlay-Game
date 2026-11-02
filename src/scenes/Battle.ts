@@ -211,6 +211,8 @@ export const battle = {
   goal: null as { frac: number; text: string; color: number; icon: string; alarm: boolean } | null,
   /** safe from a tsunami (on an island): the screen edges glow green */
   safe: false,
+  /** a main stage (not the story, a Boss Rush or Dice Rain): 1:00 its twist, 2:00 its place's event, 3:00 the boss */
+  main: false,
 };
 
 /** How a Boss Rush ended. */
@@ -1173,11 +1175,12 @@ export class BattleScene extends Phaser.Scene {
     this.stats = freshStats();
     battle.stats = this.stats;
     battle.mode = "run";
+    battle.main = !this.rush && !this.eventRun && !run.chapter;
     if (this.arena.sea && !this.arena.ocean) this.seaCamera(900);
     else this.cameras.main.zoomTo(ZOOM, 900, "Sine.easeInOut");
     this.placePickups();
     sfx.alarm();
-    if (!this.rush) this.game.events.emit("mode-intro", this.stageMode, !!this.story);
+    if (!this.rush) this.game.events.emit("mode-intro", this.stageMode, !!this.story, battle.main);
     this.modeStart();
     // this stage's boss: its walk frames are made now, a little at a time, so it lands without a hitch
     if (!this.rush) this.prepareBoss(pw());
@@ -3716,10 +3719,13 @@ export class BattleScene extends Phaser.Scene {
     return this.arena.path ? this.fromTrees() : this.offScreen();
   }
 
-  /** How strong the monsters are: on a story path you run, so they are as weak as the first stage's. */
+  /**
+   * How strong the monsters are: what is played (a chapter is as strong as its chapterPower). On a story
+   * path you run, and on the island and in the crater the place is the hard part, so they are a bit weaker.
+   */
   private mobStage(): number {
-    // (the lighthouse island's crabs: as strong as the sea's octopi; the storm is the hard part)
-    return this.arena.path ? Math.min(pw(), 2) : this.arena.island ? Math.min(pw(), 3) : this.arena.crater ? Math.min(pw(), 4) : pw();
+    const p = pw();
+    return this.arena.path ? Math.max(1, p * 0.75) : this.arena.island || this.arena.crater ? Math.max(1, p * 0.85) : p;
   }
 
   /** On a path monsters step out of the woods on either side, mostly up ahead of you (some block the path). */

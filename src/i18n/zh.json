@@ -1418,5 +1418,14 @@
 "SAKURA VALLEY": "樱花谷",
 "ANTARCTICA": "南极",
 "THE MOON": "月球",
-"SUNNY SEA": "阳光海"
+"SUNNY SEA": "阳光海",
+"ALL CLEARED": "全部通关",
+"PLAY!": "开始！",
+"+{0}% DMG": "伤害+{0}%",
+"THE BOSS!": "首领！",
+"GET READY!": "准备！",
+"Win battles to raise your DPS": "赢下战斗来提升DPS",
+"Your story bonus: +{0}% DMG": "剧情加成：伤害+{0}%",
+"Every chapter cleared: +{0}% damage forever!": "每通关一章：永久伤害+{0}%！",
+"CHAPTER {0} is ready! Tap STORY": "第{0}章可以玩了！点剧情"
 }

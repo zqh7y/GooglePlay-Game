@@ -1417,5 +1417,14 @@
 "SAKURA VALLEY": "ДОЛИНА САКУРЫ",
 "ANTARCTICA": "АНТАРКТИДА",
 "THE MOON": "ЛУНА",
-"SUNNY SEA": "СОЛНЕЧНОЕ МОРЕ"
+"SUNNY SEA": "СОЛНЕЧНОЕ МОРЕ",
+"ALL CLEARED": "ВСЁ ПРОЙДЕНО",
+"PLAY!": "ИГРАТЬ!",
+"+{0}% DMG": "+{0}% УРОНА",
+"THE BOSS!": "БОСС!",
+"GET READY!": "ПРИГОТОВЬСЯ!",
+"Win battles to raise your DPS": "Побеждай в битвах, чтобы поднять DPS",
+"Your story bonus: +{0}% DMG": "Бонус сюжета: +{0}% УРОНА",
+"Every chapter cleared: +{0}% damage forever!": "Каждая пройденная глава: +{0}% урона навсегда!",
+"CHAPTER {0} is ready! Tap STORY": "ГЛАВА {0} готова! Нажми СЮЖЕТ"
 }

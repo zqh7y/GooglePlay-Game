@@ -1415,5 +1415,14 @@
 "SAKURA VALLEY": "साकुरा घाटी",
 "ANTARCTICA": "अंटार्कटिका",
 "THE MOON": "चाँद",
-"SUNNY SEA": "धूप वाला समुद्र"
+"SUNNY SEA": "धूप वाला समुद्र",
+"ALL CLEARED": "सब पूरा",
+"PLAY!": "खेलो!",
+"+{0}% DMG": "+{0}% नुकसान",
+"THE BOSS!": "बॉस!",
+"GET READY!": "तैयार हो जाओ!",
+"Win battles to raise your DPS": "DPS बढ़ाने के लिए लड़ाइयाँ जीतो",
+"Your story bonus: +{0}% DMG": "कहानी बोनस: +{0}% नुकसान",
+"Every chapter cleared: +{0}% damage forever!": "हर अध्याय पूरा करने पर: हमेशा के लिए +{0}% नुकसान!",
+"CHAPTER {0} is ready! Tap STORY": "अध्याय {0} तैयार है! कहानी दबाओ"
 }

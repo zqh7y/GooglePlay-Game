@@ -1415,5 +1415,14 @@
 "SAKURA VALLEY": "وادي ساكورا",
 "ANTARCTICA": "القارة القطبية الجنوبية",
 "THE MOON": "القمر",
-"SUNNY SEA": "البحر المشمس"
+"SUNNY SEA": "البحر المشمس",
+"ALL CLEARED": "اكتمل كل شيء",
+"PLAY!": "العب!",
+"+{0}% DMG": "+{0}% ضرر",
+"THE BOSS!": "الزعيم!",
+"GET READY!": "استعد!",
+"Win battles to raise your DPS": "انتصر في المعارك لترفع DPS",
+"Your story bonus: +{0}% DMG": "مكافأة القصة: +{0}% ضرر",
+"Every chapter cleared: +{0}% damage forever!": "كل فصل تكمله: +{0}% ضرر للأبد!",
+"CHAPTER {0} is ready! Tap STORY": "الفصل {0} جاهز! اضغط القصة"
 }
